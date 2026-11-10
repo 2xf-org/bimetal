@@ -1,0 +1,50 @@
+\begin{tikzpicture}[x=0.97cm,y=1cm]
+  % The author's files, on the left.
+  \node[yours,minimum width=2.3cm] (crate) at (1.25,3.05) {The author's crate\\\ttt{\#[bimetal::export]}};
+  \node[yours,minimum width=2.3cm] (toml) at (1.25,1.95) {\ttt{bimetal.toml}};
+  \node[yours,minimum width=2.3cm] (lock) at (1.25,0.85) {\ttt{Cargo.lock}};
+
+  % The link crate.
+  \node[part,minimum width=1.9cm,minimum height=1.4cm] (link) at (4.0,1.95) {\textbf{Link crate}\\a small library\\that depends on\\the application};
+  \draw[plain] (crate.east) -- (link.150);
+  \draw[plain] (toml.east) -- (link.west);
+  \draw[plain] (lock.east) -- (link.210);
+
+  % The builds, at the same time.
+  \node[part,minimum width=2.45cm] (discovery) at (7.15,3.8) {Discovery\\native, unoptimized};
+  \node[part,minimum width=2.45cm,draw=wasm,fill=wasm!9] (wasmbuild) at (7.15,2.7) {Module\\\ttt{wasm32}, small};
+  \node[part,minimum width=2.45cm] (pybuild) at (7.15,1.6) {Extension\\release};
+  \node[part,minimum width=2.45cm,draw=addon,fill=addon!9] (nodebuild) at (7.15,0.2) {Addon\\release};
+  \draw[plain] (link.east) -- (discovery.west);
+  \draw[plain] (link.east) -- (wasmbuild.west);
+  \draw[plain] (link.east) -- (pybuild.west);
+  \draw[plain] (link.east) -- (nodebuild.west);
+  \node[note] at (7.15,4.5) {one \ttt{cargo rustc} each, at the same time};
+
+  % What discovery gives.
+  \node[object,minimum width=2.25cm] (contract) at (10.55,3.8) {\textbf{Contract}\\JSON, and its hash};
+  \draw[flow] (discovery.east) -- node[tag,above=1pt] {load, call} (contract.west);
+  \node[object,minimum width=2.25cm] (exports) at (10.55,2.7) {Compare exports,\\check symbols};
+  \draw[flow] (wasmbuild.east) -- (exports.west);
+  \draw[plain] (contract.south) -- (exports.north);
+
+  % The generators, above the projects.
+  \node[part,minimum width=3.1cm] (generators) at (14.5,3.25) {\textbf{Generators}\\Python, TypeScript};
+  \draw[flow] (contract.east) -- (generators.west |- 0,3.5);
+  \draw[flow] (exports.east) -- (generators.west |- 0,3.0);
+
+  % The projects, each with a package inside.
+  \node[yours,minimum width=3.1cm,minimum height=1.25cm] (pyproject) at (14.5,1.6) {};
+  \node[font=\scriptsize,anchor=north] at (pyproject.north) {\ttt{python/}};
+  \node[object,minimum width=2.7cm,minimum height=6.2mm] (pypackage) at (14.5,1.42) {Generated package};
+  \node[yours,minimum width=3.1cm,minimum height=1.25cm] (tsproject) at (14.5,0.0) {};
+  \node[font=\scriptsize,anchor=north] at (tsproject.north) {\ttt{typescript/}};
+  \node[object,minimum width=2.7cm,minimum height=6.2mm] (tspackage) at (14.5,-0.18) {Generated package};
+  \draw[flow] (generators.south) -- node[tag,right=2pt] {write} (pyproject.north);
+  \draw[flow] (generators.east) -- ++(0.28,0) |- (tsproject.east);
+
+  % Native artifacts skip the generators.
+  \draw[flow] (pybuild.east) -- node[tag,above=1pt] {extension} (pypackage.west |- pybuild.east);
+  \draw[flow,draw=addon] (nodebuild.east) -- node[tag,above=1pt] {addon} (tspackage.west |- nodebuild.east);
+  \node[note] at (10.6,-0.48) {native artifacts are installed last and are not committed};
+\end{tikzpicture}

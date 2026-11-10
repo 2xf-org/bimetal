@@ -1,0 +1,34 @@
+% The look of every diagram, defined once.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,backgrounds,decorations.pathreplacing,patterns}
+
+% Okabe and Ito's palette, which survives colour blindness, with gray for everything unemphasised.
+\definecolor{ink}{HTML}{1F2933}
+\definecolor{quiet}{HTML}{6B7280}
+\definecolor{rule}{HTML}{D5D9DE}
+\definecolor{python}{HTML}{0072B2}
+\definecolor{wasm}{HTML}{D55E00}
+\definecolor{addon}{HTML}{009E73}
+\definecolor{amber}{HTML}{E69F00}
+\definecolor{plum}{HTML}{CC79A7}
+
+\tikzset{
+  >={Stealth[length=4.2pt,width=3.4pt]},
+  every picture/.append style={line width=0.55pt, font=\footnotesize, text=ink},
+  part/.style={draw=python, fill=python!9, rounded corners=1.8pt, align=center,
+    minimum height=6.6mm, inner xsep=3pt, inner ysep=1.5pt, font=\scriptsize},
+  object/.style={draw=quiet, fill=rule!45, rounded corners=1.8pt, align=center,
+    minimum height=7mm, inner xsep=3pt, inner ysep=1.5pt, font=\scriptsize},
+  yours/.style={draw=ink, fill=white, rounded corners=1.8pt, align=center,
+    minimum height=7mm, inner xsep=3pt, inner ysep=1.5pt, font=\scriptsize},
+  boundary/.style={draw=quiet, dashed, rounded corners=4pt},
+  flow/.style={->, draw=python, line width=0.7pt},
+  plain/.style={->, draw=quiet, line width=0.55pt},
+  note/.style={font=\scriptsize, text=quiet, align=center, inner sep=1pt},
+  tag/.style={font=\scriptsize, fill=white, inner sep=1pt, align=center},
+  stepmark/.style={circle, draw=ink, fill=white, font=\tiny\bfseries, inner sep=0.6pt, minimum size=3.2mm},
+}
+
+\newtheorem{claim}{Claim}
+\newcommand{\ttt}[1]{\texttt{#1}}
+\emergencystretch=1.5em

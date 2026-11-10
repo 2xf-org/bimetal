@@ -1,0 +1,165 @@
+import { RecordBatch, Schema, Table, Vector, tableFromIPC, tableToIPC } from "apache-arrow";
+
+import { checkNative, nativePromise } from "./runtime.js";
+
+// Arrow values cross into Rust as an IPC stream on either backend: a vector
+// as a one-column table, and a schema as a table without batches.
+
+export function arrowToIpc(value, kind) {
+  if (kind === "array") return tableToIPC(new Table({ values: arrowValue(value, Vector, "Vector") }));
+  if (kind === "table") return tableToIPC(arrowValue(value, Table, "Table"));
+  if (kind === "recordBatch") return tableToIPC(new Table(arrowValue(value, RecordBatch, "RecordBatch")));
+  return tableToIPC(new Table(arrowValue(value, Schema, "Schema")));
+}
+
+// Only values of the apache-arrow copy that this package imports encode
+// correctly. That copy's `instanceof` also accepts values of other copies, so
+// check the prototype chain.
+function arrowValue(value, ArrowType, name) {
+  if (ArrowType.prototype.isPrototypeOf(value)) return value;
+  if (value instanceof ArrowType || value?.constructor?.name === name) {
+    throw new TypeError(
+      `This ${name} comes from a different copy of apache-arrow than the one this package imports, which cannot encode it. Load one copy: keep apache-arrow a peer dependency, and deduplicate it (\`npm dedupe\`, or \`resolve.dedupe\` in Vite). A package linked with a \`file:\` dependency loads apache-arrow from its own node_modules; remove that copy, or install the package from a tarball.`,
+    );
+  }
+  throw new TypeError(`Expected an apache-arrow ${name}`);
+}
+
+export function arrowFromIpc(value, kind) {
+  const table = tableFromIPC(value);
+  if (kind === "array") return table.getChildAt(0);
+  if (kind === "recordBatch") return table.batches[0];
+  if (kind === "schema") return table.schema;
+  return table;
+}
+
+// A stream that Rust returns crosses as an object whose `schema` is an IPC
+// stream, whose `next()` resolves with each batch as an IPC stream of its own,
+// or null at the end, and whose `close()` drops the stream in Rust. Rust makes
+// each batch when `next()` asks, and a failure rejects every later `next()`.
+export class RecordBatchStream {
+  #native;
+  #closed = false;
+
+  constructor(native) {
+    this.#native = native;
+    this.schema = arrowFromIpc(native.schema, "schema");
+  }
+
+  async next() {
+    if (this.#closed) return { done: true, value: undefined };
+    checkNative();
+    const batch = await nativePromise(this.#native.next());
+    if (batch === null) {
+      this.close();
+      return { done: true, value: undefined };
+    }
+    return { done: false, value: arrowFromIpc(batch, "recordBatch") };
+  }
+
+  async return() {
+    this.close();
+    return { done: true, value: undefined };
+  }
+
+  close() {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#native.close();
+  }
+
+  [Symbol.asyncIterator]() {
+    return this;
+  }
+}
+if (globalThis.Symbol.asyncDispose) {
+  RecordBatchStream.prototype[globalThis.Symbol.asyncDispose] = async function () {
+    this.close();
+  };
+}
+
+export function arrowStreamFromHost(native) {
+  return new RecordBatchStream(native);
+}
+
+// A stream argument crosses as its schema, an IPC stream, and a `start` that
+// Rust calls with a feed. The source then writes each batch when Rust asks
+// for it, and closes once Rust drops the stream. A call that fails before
+// Rust starts the source closes it through `closeSources`.
+export async function arrowStreamToHost(source, sources) {
+  const { schema, batches, first } = await openSource(source);
+  let started = false;
+  sources.push(() => {
+    if (!started) void closeSource(batches);
+  });
+  return {
+    schema: arrowToIpc(schema, "schema"),
+    start(feed) {
+      started = true;
+      void writeBatches(feed, schema, batches, first);
+    },
+  };
+}
+
+export function closeSources(sources) {
+  for (const close of sources) close();
+}
+
+// Find a source's schema and its batches. A table has both, an apache-arrow
+// reader has a schema once it is open, and otherwise the first batch has one.
+async function openSource(source) {
+  if (Array.isArray(source?.batches) && source.schema != null) {
+    return { schema: source.schema, batches: source.batches[Symbol.iterator]() };
+  }
+  if (typeof source?.open === "function") await source.open();
+  const batches = source?.[Symbol.asyncIterator]?.() ?? source?.[Symbol.iterator]?.();
+  if (batches === undefined) {
+    throw new TypeError("Expected a Table, or an iterable or async iterable of RecordBatch");
+  }
+  if (source.schema != null) return { schema: source.schema, batches };
+  const first = await batches.next();
+  if (first.done) {
+    throw new TypeError("An empty source has no schema: pass a Table, or an apache-arrow RecordBatchReader");
+  }
+  return { schema: first.value.schema, batches, first: first.value };
+}
+
+async function writeBatches(feed, schema, batches, first) {
+  let pending = first;
+  try {
+    while (true) {
+      checkNative();
+      if (!(await nativePromise(feed.asked()))) break;
+      let batch = pending;
+      pending = undefined;
+      if (batch === undefined) {
+        const next = await batches.next();
+        if (next.done) {
+          feed.finish();
+          return;
+        }
+        batch = next.value;
+      }
+      feed.write(arrowToIpc(inSchema(batch, schema), "recordBatch"));
+    }
+  } catch (error) {
+    feed.fail(error instanceof Error ? error.message : String(error));
+  }
+  // Rust stopped reading, or the source failed.
+  await closeSource(batches);
+}
+
+// A batch crosses with the stream's schema: a table's batches lack its
+// metadata, and the chunks of one source can differ in nullability.
+function inSchema(batch, schema) {
+  const checked = arrowValue(batch, RecordBatch, "RecordBatch");
+  return checked.schema === schema ? checked : new RecordBatch(schema, checked.data);
+}
+
+async function closeSource(batches) {
+  try {
+    await batches.return?.();
+  } catch {
+    // The source had already failed, and Rust has its error.
+  }
+}

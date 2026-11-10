@@ -1,0 +1,11 @@
+error: references are supported only at the outermost level of an exported parameter; use owned values inside Option, Vec, maps, and tuples
+ --> tests/diagnostics/references.rs:6:21
+  |
+6 | pub fn first(names: Option<&str>) -> String {
+  |                     ^^^^^^
+
+error: async exports must return owned values, because the host awaits them after the call returns
+  --> tests/diagnostics/references.rs:11:34
+   |
+11 | pub async fn echo(name: &str) -> &str {
+   |                                  ^

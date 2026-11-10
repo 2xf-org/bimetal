@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Typst through Bimetal</title>
+<pre id="status">loading</pre>
+<div id="pages"></div>
+<script type="module">
+  import { nativeReady, Compiler, TypstError, typstVersion } from "../typeset/index.js";
+
+  const status = document.getElementById("status");
+  const results = {};
+  try {
+    await nativeReady;
+    const started = performance.now();
+    const compiler = new Compiler();
+    results.loadMs = Math.round(performance.now() - started);
+    results.version = typstVersion();
+    results.fonts = compiler.fontCount;
+    compiler.addSource(
+      "main.typ",
+      "#set page(width: 12cm, height: auto)\n= Typst in a browser\nThrough Bimetal. $ sum_(k=1)^n k = (n(n+1))/2 $\n#pagebreak()\nSecond page.",
+    );
+    const compiled = performance.now();
+    const typeset = compiler.compile("main.typ");
+    results.compileMs = Math.round(performance.now() - compiled);
+    results.pages = typeset.pageCount();
+    results.pdfBytes = typeset.pdf().length;
+    results.pngBytes = typeset.png(0).length;
+    for (const svg of typeset.pages()) {
+      const page = document.createElement("div");
+      page.innerHTML = svg;
+      document.getElementById("pages").append(page);
+    }
+    compiler.addSource("bad.typ", "#unknown()");
+    try {
+      compiler.compile("bad.typ");
+    } catch (error) {
+      results.typedError = error instanceof TypstError && error.code;
+      results.diagnostic = error.details.diagnostics[0].message;
+    }
+    results.ok = true;
+  } catch (error) {
+    results.ok = false;
+    results.error = String(error);
+  }
+  window.results = results;
+  status.textContent = JSON.stringify(results, null, 2);
+  // `apps/trials/browser.py` waits for this. A plain static server refuses it.
+  fetch("/results", { method: "POST", body: JSON.stringify(results) }).catch(() => {});
+</script>

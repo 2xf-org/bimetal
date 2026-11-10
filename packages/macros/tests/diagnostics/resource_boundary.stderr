@@ -1,0 +1,34 @@
+error: `resource` needs the resource's name; the wrappers that Bimetal generates have their own `Self`
+  --> tests/diagnostics/resource_boundary.rs:10:27
+   |
+10 |     pub fn fork(&self) -> Self {
+   |                           ^^^^
+
+error: an optional `resource` parameter must be `Option<&T>`
+  --> tests/diagnostics/resource_boundary.rs:33:45
+   |
+33 | pub fn pages(#[bimetal(resource)] document: Option<Document>) -> u32 {
+   |                                             ^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `Document: ContractType` is not satisfied
+  --> tests/diagnostics/resource_boundary.rs:26:30
+   |
+26 |     pub fn compile(&self) -> Document {
+   |                              ^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ContractType` is not implemented for `Document`
+  --> tests/diagnostics/resource_boundary.rs:4:1
+   |
+ 4 | pub struct Document;
+   | ^^^^^^^^^^^^^^^^^^^
+   = note: derive `bimetal::Model` for your own types; bytes, numeric buffers, Arrow values, and resources need `#[bimetal(bytes)]`, `#[bimetal(buffer)]`, `#[bimetal(arrow)]`, or `#[bimetal(resource)]` on the parameter, or `#[bimetal(returns(...))]` on the export
+   = help: the following other types implement trait `ContractType`:
+             &T
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+           and $N others

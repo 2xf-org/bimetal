@@ -1,0 +1,21 @@
+[package]
+name = "typeset"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bimetal = { path = "../../../packages/runtime" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+typst = "0.15"
+typst-assets = { version = "0.15", features = ["fonts"] }
+typst-layout = "0.15"
+typst-pdf = "0.15"
+typst-render = "0.15"
+typst-svg = "0.15"
+
+# The application is its own Cargo workspace. To add it to an existing
+# workspace instead, remove this table and list the directory in that
+# workspace's `members`.
+[workspace]

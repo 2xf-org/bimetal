@@ -1,0 +1,163 @@
+# Bimetal configuration. Edit the tables above [generated]; `bimetal build`
+# maintains [generated].
+
+[application]
+# A second workspace package, which becomes the `geometry` namespace.
+additional_packages = ["showcase-geometry"]
+
+# The Python package and the npm package, in python/ and typescript/.
+[python]
+
+[typescript]
+
+[generated]
+# Fingerprint of the Rust/Cargo sources and the tables above.
+source_fingerprint = "d84321dd2f3b118f454aaee864139fe3"
+
+# Fingerprint of the published files; lets build and check no-op when current.
+output_fingerprint = "c4444b821aa3cbae411e463c32268f41"
+
+# Files that the WebAssembly build, or contract discovery without one, reads,
+# such as Rust sources and include_str! files, relative to the Cargo workspace.
+# source_fingerprint covers them.
+inputs = [
+    "../../../packages/ir/src/disambiguate.rs",
+    "../../../packages/ir/src/discovery.rs",
+    "../../../packages/ir/src/hash.rs",
+    "../../../packages/ir/src/lib.rs",
+    "../../../packages/ir/src/manifest.rs",
+    "../../../packages/ir/src/namespace.rs",
+    "../../../packages/ir/src/python_names.rs",
+    "../../../packages/ir/src/typescript_names.rs",
+    "../../../packages/macros/src/application.rs",
+    "../../../packages/macros/src/attributes.rs",
+    "../../../packages/macros/src/error.rs",
+    "../../../packages/macros/src/export/boundary.rs",
+    "../../../packages/macros/src/export/constant.rs",
+    "../../../packages/macros/src/export/function.rs",
+    "../../../packages/macros/src/export/host_backend.rs",
+    "../../../packages/macros/src/export/mod.rs",
+    "../../../packages/macros/src/export/node.rs",
+    "../../../packages/macros/src/export/python.rs",
+    "../../../packages/macros/src/export/resource.rs",
+    "../../../packages/macros/src/export/wasm.rs",
+    "../../../packages/macros/src/export/wrapper.rs",
+    "../../../packages/macros/src/lib.rs",
+    "../../../packages/macros/src/model.rs",
+    "../../../packages/macros/src/registration.rs",
+    "../../../packages/macros/src/types/callable.rs",
+    "../../../packages/macros/src/types/direct.rs",
+    "../../../packages/macros/src/types/field.rs",
+    "../../../packages/macros/src/types/field_options.rs",
+    "../../../packages/macros/src/types/mod.rs",
+    "../../../packages/macros/src/types/native_name.rs",
+    "../../../packages/macros/src/types/result_types.rs",
+    "../../../packages/macros/src/types/type_ref.rs",
+    "../../../packages/macros/src/types/validation.rs",
+    "../../../packages/runtime/src/arrow.rs",
+    "../../../packages/runtime/src/arrow/arrow_value.rs",
+    "../../../packages/runtime/src/arrow/record_batch_stream.rs",
+    "../../../packages/runtime/src/arrow/table.rs",
+    "../../../packages/runtime/src/contract_type.rs",
+    "../../../packages/runtime/src/convert.rs",
+    "../../../packages/runtime/src/convert/arrow_ipc.rs",
+    "../../../packages/runtime/src/convert/parameter.rs",
+    "../../../packages/runtime/src/convert/wasm.rs",
+    "../../../packages/runtime/src/convert/wasm_arrow.rs",
+    "../../../packages/runtime/src/lib.rs",
+    "../../../packages/runtime/src/owned.rs",
+    "../../../packages/runtime/src/runtime.rs",
+    "../../../packages/runtime/src/runtime/callback.rs",
+    "../../../packages/runtime/src/runtime/contract_error.rs",
+    "../../../packages/runtime/src/runtime/resource.rs",
+    "../../../packages/runtime/src/runtime/rules.rs",
+    "../../../packages/runtime/src/runtime/value_error.rs",
+    "geometry/src/lib.rs",
+    "src/columns.rs",
+    "src/lib.rs",
+    "src/shelf.rs",
+    "src/text.rs",
+]
+
+[generated.python]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "python"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "showcase/__init__.py",
+    "showcase/_native.pyi",
+    "showcase/_runtime.py",
+    "showcase/api.py",
+    "showcase/columns/__init__.py",
+    "showcase/columns/api.py",
+    "showcase/columns/models.py",
+    "showcase/geometry/__init__.py",
+    "showcase/geometry/api.py",
+    "showcase/geometry/models.py",
+    "showcase/models.py",
+    "showcase/py.typed",
+    "showcase/shelf/__init__.py",
+    "showcase/shelf/api.py",
+    "showcase/shelf/models.py",
+    "showcase/text/__init__.py",
+    "showcase/text/api.py",
+    "showcase/text/models.py",
+]
+
+# Packages that the generated code imports; pyproject.toml must depend on them.
+dependencies = [
+    "pydantic",
+    "numpy",
+    "pyarrow",
+]
+
+[generated.typescript]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "typescript"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "showcase/api.d.ts",
+    "showcase/api.js",
+    "showcase/arrow.js",
+    "showcase/columns/api.d.ts",
+    "showcase/columns/api.js",
+    "showcase/columns/index.d.ts",
+    "showcase/columns/index.js",
+    "showcase/columns/models.d.ts",
+    "showcase/columns/models.js",
+    "showcase/geometry/api.d.ts",
+    "showcase/geometry/api.js",
+    "showcase/geometry/index.d.ts",
+    "showcase/geometry/index.js",
+    "showcase/geometry/models.d.ts",
+    "showcase/geometry/models.js",
+    "showcase/index.d.ts",
+    "showcase/index.js",
+    "showcase/models.d.ts",
+    "showcase/models.js",
+    "showcase/native/native.d.ts",
+    "showcase/native/native.js",
+    "showcase/native/native_bg.wasm",
+    "showcase/runtime.d.ts",
+    "showcase/runtime.js",
+    "showcase/shelf/api.d.ts",
+    "showcase/shelf/api.js",
+    "showcase/shelf/index.d.ts",
+    "showcase/shelf/index.js",
+    "showcase/shelf/models.d.ts",
+    "showcase/shelf/models.js",
+    "showcase/text/api.d.ts",
+    "showcase/text/api.js",
+    "showcase/text/index.d.ts",
+    "showcase/text/index.js",
+    "showcase/text/models.d.ts",
+    "showcase/text/models.js",
+]
+
+# Packages that the generated code imports; package.json must list them in
+# peerDependencies.
+dependencies = [
+    "apache-arrow",
+]

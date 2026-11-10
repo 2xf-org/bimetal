@@ -1,0 +1,8 @@
+# The workflows name each action by a commit, which a tag cannot move. This
+# proposes the commit of each new release.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/setup"]
+    schedule:
+      interval: weekly

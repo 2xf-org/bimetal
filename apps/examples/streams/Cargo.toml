@@ -1,0 +1,14 @@
+[package]
+name = "streams"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Stream combinators, such as `map`, for the streams of record batches.
+futures = { version = "0.3", default-features = false }
+bimetal = { path = "../../../packages/runtime", features = ["arrow"] }
+thiserror = "2.0"
+
+# The example is its own workspace, like any application that uses Bimetal.
+[workspace]

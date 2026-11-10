@@ -1,0 +1,3 @@
+# Generated files are compared byte for byte, and the generators write LF.
+* text=auto eol=lf
+*.wasm binary

@@ -1,0 +1,31 @@
+\begin{tikzpicture}[x=1cm,y=0.5cm]
+  \tikzset{laneline/.style={draw=rule, line width=0.5pt},
+    stepnote/.style={font=\scriptsize, align=center, inner sep=1pt, fill=white}}
+  \def\caller{0.7} \def\guard{3.6} \def\module{6.5}
+  \node[font=\scriptsize\bfseries] at (\caller,0.8) {Caller};
+  \node[font=\scriptsize\bfseries] at (\guard,0.8) {Guard};
+  \node[font=\scriptsize\bfseries] at (\module,0.8) {Module};
+  \draw[laneline] (\caller,0.3) -- (\caller,-11.4);
+  \draw[laneline] (\guard,0.3) -- (\guard,-11.4);
+  \draw[laneline] (\module,0.3) -- (\module,-11.4);
+
+  \draw[plain] (\caller,-0.5) -- node[stepnote,above=0.5pt] {async call $a$} (\module,-0.5);
+  \node[stepmark] at (\caller,-0.5) {1};
+  \draw[plain] (\module,-1.6) -- node[stepnote,above=0.5pt] {a pending promise} (\caller,-1.6);
+  \node[stepmark] at (\module,-1.6) {2};
+  \draw[plain] (\caller,-2.9) -- node[stepnote,above=0.5pt] {sync call $b$} (\module,-2.9);
+  \node[stepmark] at (\caller,-2.9) {3};
+  \draw[flow,draw=wasm] (\module,-4.1) -- node[stepnote,above=0.5pt] {the panic's message} (\guard,-4.1);
+  \node[stepmark,draw=wasm] at (\module,-4.1) {4};
+  \draw[flow,draw=wasm] (\module,-5.3) -- node[stepnote,above=0.5pt] {the trap's exception} (\guard,-5.3);
+  \node[stepmark,draw=wasm] at (\module,-5.3) {5};
+  \draw[flow,draw=wasm] (\guard,-6.7) -- node[stepnote,above=0.5pt] {$b$ throws} (\caller,-6.7);
+  \node[stepmark,draw=wasm] at (\guard,-6.7) {6};
+  \draw[flow,draw=wasm] (\guard,-8.0) -- node[stepnote,above=0.5pt] {$a$ rejects} (\caller,-8.0);
+  \node[stepmark,draw=wasm] at (\guard,-8.0) {7};
+  \draw[plain] (\caller,-9.5) -- node[stepnote,above=0.5pt] {call $c$} (2.65,-9.5);
+  \node[stepmark] at (\caller,-9.5) {8};
+  \draw[wasm,line width=0.9pt] (2.65,-9.85) -- (2.65,-9.15);
+  \draw[flow,draw=wasm] (2.65,-10.7) -- node[stepnote,above=0.5pt] {throws, naming the panic} (\caller,-10.7);
+  \node[note,anchor=west] at (4.15,-9.5) {nothing enters};
+\end{tikzpicture}

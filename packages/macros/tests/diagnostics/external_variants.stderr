@@ -1,0 +1,23 @@
+error: a tuple variant crosses only with exactly one field; name the fields of a variant that holds more
+  --> tests/diagnostics/external_variants.rs:10:9
+   |
+10 |     Both(u32, u32),
+   |         ^^^^^^^^^^
+
+error: the value of a one-field variant takes no `#[bimetal(...)]` or `#[serde(...)]` attribute; put rules on the fields of its type
+  --> tests/diagnostics/external_variants.rs:15:11
+   |
+15 |     Value(#[serde(default)] u32),
+   |           ^^^^^^^^^^^^^^^^^
+
+error: an enum variant takes no `#[bimetal(...)]` attribute; put rules on the fields of its data
+  --> tests/diagnostics/external_variants.rs:20:5
+   |
+20 |     #[bimetal(ge = 1)]
+   |     ^^^^^^^^^^^^^^^^^^
+
+error: an internally tagged enum supports unit and named variants
+  --> tests/diagnostics/external_variants.rs:27:10
+   |
+27 |     Value(u32),
+   |          ^^^^^

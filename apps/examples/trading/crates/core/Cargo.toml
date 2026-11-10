@@ -1,0 +1,12 @@
+[package]
+name = "trading-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# The models need no async runtime, so this package also builds for
+# WebAssembly, which the engine cannot.
+[dependencies]
+bimetal.workspace = true
+serde.workspace = true
+thiserror.workspace = true

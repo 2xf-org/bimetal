@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>DataFusion through Bimetal</title>
+<script type="importmap">
+  {
+    "imports": {
+      "apache-arrow": "../node_modules/apache-arrow/Arrow.dom.mjs",
+      "flatbuffers": "../node_modules/flatbuffers/mjs/flatbuffers.js",
+      "tslib": "../node_modules/tslib/tslib.es6.mjs",
+      "json-with-bigint": "../node_modules/json-with-bigint/json-with-bigint.js"
+    }
+  }
+</script>
+<pre id="status">loading</pre>
+<script type="module">
+  import { tableFromArrays } from "apache-arrow";
+  import { nativeReady, QueryError, Session } from "../query/index.js";
+
+  const status = document.getElementById("status");
+  const results = {};
+  try {
+    await nativeReady;
+    const session = new Session();
+    session.addTable(
+      "trades",
+      tableFromArrays({
+        symbol: ["AAPL", "MSFT", "AAPL", "NVDA", "AAPL"],
+        price: new Float64Array([190.5, 410.25, 191.0, 880.0, 189.75]),
+        size: new Int32Array([100, 50, 200, 10, 300]),
+      }),
+    );
+    const started = performance.now();
+    const table = await session.query("select symbol, sum(size) as volume from trades group by symbol order by symbol");
+    results.queryMs = Math.round(performance.now() - started);
+    results.symbols = [...table.getChild("symbol")];
+    const frame = await session.sql("select * from trades where symbol = 'AAPL'");
+    results.count = Number(await frame.count());
+    let rows = 0;
+    for await (const batch of await frame.stream()) rows += batch.numRows;
+    results.streamedRows = rows;
+    session.addFunction("notional", (price, size) => price * size);
+    results.udf = [...(await session.query("select notional(price, cast(size as double)) as n from trades where symbol = 'NVDA'")).getChild("n")];
+    try {
+      await session.query("select nope from trades");
+    } catch (error) {
+      results.typedError = error instanceof QueryError && error.code;
+    }
+    results.ok = true;
+  } catch (error) {
+    results.ok = false;
+    results.error = String(error);
+  }
+  window.results = results;
+  status.textContent = JSON.stringify(results, null, 2);
+  // `apps/trials/browser.py` waits for this. A plain static server refuses it.
+  fetch("/results", { method: "POST", body: JSON.stringify(results) }).catch(() => {});
+</script>

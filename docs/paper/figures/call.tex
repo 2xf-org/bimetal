@@ -1,0 +1,27 @@
+\begin{tikzpicture}[x=1cm,y=0.62cm]
+  \tikzset{laneline/.style={draw=rule, line width=0.5pt},
+    lanetext/.style={font=\scriptsize, align=left, anchor=west, inner sep=1pt}}
+  \def\generated{1.15} \def\wrapper{3.9} \def\user{6.3}
+  \node[font=\scriptsize\bfseries,align=center] at (\generated,0.75) {Generated code};
+  \node[font=\scriptsize\bfseries,align=center] at (\wrapper,0.75) {Wrapper};
+  \node[font=\scriptsize\bfseries,align=center] at (\user,0.75) {The author's Rust};
+  \draw[laneline] (\generated,0.3) -- (\generated,-8.6);
+  \draw[laneline] (\wrapper,0.3) -- (\wrapper,-8.6);
+  \draw[laneline] (\user,0.3) -- (\user,-8.6);
+
+  \node[stepmark] at (\generated,-0.4) {1};
+  \node[lanetext] at (0.05,-1.0) {check and prepare\\arguments};
+  \draw[flow] (\generated,-1.7) -- node[tag,above=0.5pt] {native call} (\wrapper,-1.7);
+  \node[stepmark] at (\wrapper,-1.7) {2};
+  \node[lanetext] at (2.72,-2.5) {decode once,\\check field rules,\\obtain resource};
+  \draw[flow] (\wrapper,-3.5) -- node[tag,above=0.5pt] {call} (\user,-3.5);
+  \node[stepmark] at (\user,-3.5) {3};
+  \draw[flow] (\user,-4.5) -- node[tag,above=0.5pt] {value} (\wrapper,-4.5);
+  \node[stepmark] at (\wrapper,-4.5) {4};
+  \node[lanetext] at (2.72,-5.3) {check field rules,\\encode};
+  \draw[flow] (\wrapper,-6.1) -- node[tag,above=0.5pt] {host value} (\generated,-6.1);
+  \node[stepmark] at (\generated,-6.1) {5};
+  \node[lanetext] at (0.05,-6.95) {validate or freeze,\\raise an error};
+  \draw[plain] (\generated,-7.8) -- ++(-0.8,0) node[note,anchor=east,xshift=-1pt] {};
+  \node[note,anchor=west] at (0.05,-8.15) {to the caller};
+\end{tikzpicture}

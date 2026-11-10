@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Tantivy through Bimetal</title>
+<pre id="status">loading</pre>
+<script type="module">
+  import { nativeReady, BulkWriter, FieldKind, SearchError, firstText } from "../search/index.js";
+
+  const status = document.getElementById("status");
+  const results = {};
+  try {
+    await nativeReady;
+    const writer = new BulkWriter([
+      { name: "title", kind: FieldKind.Text, stored: true },
+      { name: "body", kind: FieldKind.Text },
+    ]);
+    writer.add({ title: "The Old Man and the Sea", body: "an old man who fished alone" });
+    writer.add({ title: "Of Mice and Men", body: "the river runs deep and green" });
+    const index = writer.finish();
+    const searcher = index.searcher();
+    results.documents = Number(searcher.numDocuments());
+    results.best = firstText(searcher.search("river")[0].document, "title");
+    results.walked = [...searcher.hits("the OR man")].length;
+    try {
+      searcher.search("title:");
+    } catch (error) {
+      results.typedError = error instanceof SearchError && error.code;
+    }
+    results.ok = true;
+  } catch (error) {
+    results.ok = false;
+    results.error = String(error);
+  }
+  window.results = results;
+  status.textContent = JSON.stringify(results, null, 2);
+  // `apps/trials/browser.py` waits for this. A plain static server refuses it.
+  fetch("/results", { method: "POST", body: JSON.stringify(results) }).catch(() => {});
+</script>

@@ -1,0 +1,13 @@
+[package]
+name = "greeter"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bimetal = { path = "../../../packages/runtime" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+
+# The example is its own workspace, like any application that uses Bimetal.
+[workspace]

@@ -1,0 +1,12 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \node[object,minimum width=3.45cm,minimum height=2.15cm,fill=rule!18,anchor=north west] (checkout) at (0,0) {};
+  \node[font=\scriptsize\bfseries,anchor=north,align=center] at (checkout.north) {Every checkout has it};
+  \node[font=\scriptsize,anchor=north west,align=left,inner sep=2pt] at (0.08,-0.42) {manifests, \ttt{Cargo.lock}\\the toolchain's version\\tracked \ttt{.cargo/config.toml}\\what the module's build read\\the generator, the author's settings};
+  \node[object,minimum width=3.45cm,minimum height=2.15cm,fill=rule!18,anchor=north west] (machine) at (4.15,0) {};
+  \node[font=\scriptsize\bfseries,anchor=north,align=center] at (machine.north) {Only this machine has it};
+  \node[font=\scriptsize,anchor=north west,align=left,inner sep=2pt] at (4.23,-0.42) {what only a native build read\\files git ignores\\files outside the checkout\\Cargo's home\\environment variables};
+  \node[part,minimum width=3.45cm] (toml) at (1.725,-2.95) {\ttt{bimetal.toml}: committed};
+  \node[part,minimum width=3.45cm] (native) at (5.875,-2.95) {\ttt{.bimetal/native.json}: ignored};
+  \draw[flow] (checkout.south) -- (toml.north);
+  \draw[flow] (machine.south) -- (native.north);
+\end{tikzpicture}

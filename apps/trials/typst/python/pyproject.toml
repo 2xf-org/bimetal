@@ -1,0 +1,21 @@
+[build-system]
+requires = ["pdm-backend>=2.4.9,<3"]
+build-backend = "pdm.backend"
+
+[project]
+name = "typeset"
+version = "0.1.0"
+requires-python = ">=3.11"
+# PyPI rejects any upload with this classifier; remove it to publish.
+classifiers = ["Private :: Do Not Upload"]
+# Add "numpy>=2,<3" when the contract uses buffers, and "pyarrow>=16" when it
+# uses Arrow values.
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[tool.pdm.build]
+includes = ["typeset"]
+# The package ships a native extension, so wheels are platform-specific;
+# pdm_build.py tags them for the stable ABI and the extension's platform.
+is-purelib = false

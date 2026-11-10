@@ -1,0 +1,5 @@
+error: `#[serde(tag = ...)]` is supported only on enums; remove it, or declare the tag as a field
+ --> tests/diagnostics/failed_model.rs:9:12
+  |
+9 | pub struct Point {
+  |            ^^^^^

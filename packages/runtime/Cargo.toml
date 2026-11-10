@@ -1,0 +1,113 @@
+[package]
+name = "bimetal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Runtime and contract macros for Rust APIs that Bimetal compiles into Python and TypeScript packages"
+
+[features]
+# The native Python boundary: pyo3 conversions and generated wrapper
+# registration. It is off by default so that application crates and their test
+# binaries never link libpython; the CLI enables it for the generated link crate.
+# Async exports run on Bimetal's own multi-threaded Tokio runtime, with timers.
+python = [
+    "dep:pyo3",
+    "dep:pythonize",
+    "arrow-array?/ffi",
+    "arrow-array-59?/ffi",
+    "tokio/rt-multi-thread",
+    "tokio/time",
+]
+# The native Node.js boundary: the Node-API addon that the TypeScript package
+# loads with `backend = "node"`. The CLI enables it for the addon's build.
+node = ["dep:napi-sys", "tokio/rt-multi-thread", "tokio/time"]
+# The hosts' types for alloy's `Address`, fixed bytes such as `B256`, `U256`, and
+# `Bytes`, which cross as the hex strings alloy's Serde writes. An application
+# that holds them in models turns on alloy's own `serde` feature.
+alloy = ["dep:alloy-primitives"]
+# Apache Arrow values (`bimetal::arrow`), with arrow-rs 60. It is off by default so
+# that applications without Arrow do not compile it.
+arrow = [
+    "arrow-api",
+    "dep:arrow-array",
+    "dep:arrow-buffer",
+    "dep:arrow-ipc",
+    "dep:arrow-schema",
+    "dep:arrow-select",
+]
+# The same, with arrow-rs 59, whose types are those of a dependency that uses it.
+arrow-59 = [
+    "arrow-api",
+    "dep:arrow-array-59",
+    "dep:arrow-buffer-59",
+    "dep:arrow-ipc-59",
+    "dep:arrow-schema-59",
+    "dep:arrow-select-59",
+]
+# What both turn on; enable one of them instead. A record batch stream is a
+# `Stream`, and an async reader pulls a blocking one on Tokio's blocking threads.
+arrow-api = ["dep:futures-core", "tokio/rt"]
+
+[dependencies]
+bimetal-ir.workspace = true
+bimetal-macros.workspace = true
+
+alloy-primitives = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+# Arrow values cross the Wasm and Node.js boundaries as an IPC stream.
+arrow-buffer = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+arrow-select = { workspace = true, optional = true }
+arrow-array-59 = { workspace = true, optional = true }
+arrow-buffer-59 = { workspace = true, optional = true }
+arrow-ipc-59 = { workspace = true, optional = true }
+arrow-schema-59 = { workspace = true, optional = true }
+arrow-select-59 = { workspace = true, optional = true }
+chrono.workspace = true
+futures-core = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# `sync`: the lock that resource wrappers share with async calls. The `python`
+# and `node` features add the runtime that async exports run on.
+tokio.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Collects the exports for discovery and the native hosts. The Wasm module
+# carries no contract.
+inventory.workspace = true
+napi-sys = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pythonize = { workspace = true, optional = true }
+
+# The crates that only the `python` and `node` features add, again for a
+# target that never holds, so that nothing builds them here. Cargo locks the
+# dependencies of every target, so each application's Cargo.lock pins these
+# crates for the Python extension and the Node.js addon.
+[target.'cfg(any())'.dependencies]
+napi-sys.workspace = true
+pyo3.workspace = true
+pythonize.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Without `wasmbind`, `Utc::now()` panics on `wasm32-unknown-unknown`.
+chrono = { workspace = true, features = ["wasmbind"] }
+getrandom.workspace = true
+getrandom-02.workspace = true
+getrandom-04.workspace = true
+serde-wasm-bindgen.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+
+[dev-dependencies]
+# The alloy fixtures derive Serde, which alloy writes as hex strings.
+alloy-primitives = { workspace = true, features = ["serde"] }
+
+[lints]
+workspace = true

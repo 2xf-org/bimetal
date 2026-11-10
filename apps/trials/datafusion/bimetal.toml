@@ -1,0 +1,116 @@
+# Bimetal configuration. Edit the tables above [generated]; `bimetal build`
+# maintains [generated].
+
+[application]
+
+[python]
+
+[typescript]
+
+[generated]
+# Fingerprint of the Rust/Cargo sources and the tables above.
+source_fingerprint = "2850e4122b84c88cacd24cf4d026f7b1"
+
+# Fingerprint of the published files; lets build and check no-op when current.
+output_fingerprint = "544948b838ca409264c83b4f153b76c3"
+
+# Files that the WebAssembly build, or contract discovery without one, reads,
+# such as Rust sources and include_str! files, relative to the Cargo workspace.
+# source_fingerprint covers them.
+inputs = [
+    "../../../packages/ir/src/disambiguate.rs",
+    "../../../packages/ir/src/discovery.rs",
+    "../../../packages/ir/src/hash.rs",
+    "../../../packages/ir/src/lib.rs",
+    "../../../packages/ir/src/manifest.rs",
+    "../../../packages/ir/src/namespace.rs",
+    "../../../packages/ir/src/python_names.rs",
+    "../../../packages/ir/src/typescript_names.rs",
+    "../../../packages/macros/src/application.rs",
+    "../../../packages/macros/src/attributes.rs",
+    "../../../packages/macros/src/error.rs",
+    "../../../packages/macros/src/export/boundary.rs",
+    "../../../packages/macros/src/export/constant.rs",
+    "../../../packages/macros/src/export/function.rs",
+    "../../../packages/macros/src/export/host_backend.rs",
+    "../../../packages/macros/src/export/mod.rs",
+    "../../../packages/macros/src/export/node.rs",
+    "../../../packages/macros/src/export/python.rs",
+    "../../../packages/macros/src/export/resource.rs",
+    "../../../packages/macros/src/export/wasm.rs",
+    "../../../packages/macros/src/export/wrapper.rs",
+    "../../../packages/macros/src/lib.rs",
+    "../../../packages/macros/src/model.rs",
+    "../../../packages/macros/src/registration.rs",
+    "../../../packages/macros/src/types/callable.rs",
+    "../../../packages/macros/src/types/direct.rs",
+    "../../../packages/macros/src/types/field.rs",
+    "../../../packages/macros/src/types/field_options.rs",
+    "../../../packages/macros/src/types/mod.rs",
+    "../../../packages/macros/src/types/native_name.rs",
+    "../../../packages/macros/src/types/result_types.rs",
+    "../../../packages/macros/src/types/type_ref.rs",
+    "../../../packages/macros/src/types/validation.rs",
+    "../../../packages/runtime/src/arrow.rs",
+    "../../../packages/runtime/src/contract_type.rs",
+    "../../../packages/runtime/src/convert.rs",
+    "../../../packages/runtime/src/convert/arrow_ipc.rs",
+    "../../../packages/runtime/src/convert/parameter.rs",
+    "../../../packages/runtime/src/convert/wasm.rs",
+    "../../../packages/runtime/src/lib.rs",
+    "../../../packages/runtime/src/runtime.rs",
+    "../../../packages/runtime/src/runtime/callback.rs",
+    "../../../packages/runtime/src/runtime/contract_error.rs",
+    "../../../packages/runtime/src/runtime/resource.rs",
+    "../../../packages/runtime/src/runtime/rules.rs",
+    "../../../packages/runtime/src/runtime/value_error.rs",
+    "src/lib.rs",
+    "src/nozstd.rs",
+    "src/scalar.rs",
+]
+
+[generated.python]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "python"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "query/__init__.py",
+    "query/_native.pyi",
+    "query/_runtime.py",
+    "query/api.py",
+    "query/models.py",
+    "query/py.typed",
+]
+
+# Packages that the generated code imports; pyproject.toml must depend on them.
+dependencies = [
+    "pydantic",
+    "pyarrow",
+]
+
+[generated.typescript]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "typescript"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "query/api.d.ts",
+    "query/api.js",
+    "query/arrow.js",
+    "query/index.d.ts",
+    "query/index.js",
+    "query/models.d.ts",
+    "query/models.js",
+    "query/native/native.d.ts",
+    "query/native/native.js",
+    "query/native/native_bg.wasm",
+    "query/runtime.d.ts",
+    "query/runtime.js",
+]
+
+# Packages that the generated code imports; package.json must list them in
+# peerDependencies.
+dependencies = [
+    "apache-arrow",
+]

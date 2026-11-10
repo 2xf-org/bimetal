@@ -1,0 +1,5 @@
+error: remove `#[bimetal(default = ...)]`: `#[serde(default)]` alone is enough, and the hosts fill in the field's Rust `Default`
+ --> tests/diagnostics/bimetal_default.rs:9:15
+  |
+9 |     #[bimetal(default = false)]
+  |               ^^^^^^^

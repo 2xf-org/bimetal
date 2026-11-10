@@ -1,0 +1,3 @@
+# `bimetal check` compares generated files byte for byte, and Bimetal writes LF.
+* text=auto eol=lf
+*.wasm binary

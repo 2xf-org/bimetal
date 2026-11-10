@@ -1,0 +1,23 @@
+{
+  "name": "typeset",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./typeset/index.d.ts",
+      "default": "./typeset/index.js"
+    },
+    "./*": {
+      "types": "./typeset/*/index.d.ts",
+      "default": "./typeset/*/index.js"
+    }
+  },
+  "files": [
+    "typeset"
+  ],
+  "engines": {
+    "node": ">=20.16"
+  }
+}

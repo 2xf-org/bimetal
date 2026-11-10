@@ -1,0 +1,5 @@
+error: an exported method must exist on every host, because Bimetal reads one contract for them all; put the `#[cfg]` inside its body, and return an error where it cannot run, or mark it `#[bimetal(skip)]`
+ --> tests/diagnostics/conditional_method.rs:7:5
+  |
+7 |     #[cfg(not(target_arch = "wasm32"))]
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

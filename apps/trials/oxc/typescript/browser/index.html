@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Oxc through Bimetal</title>
+<pre id="status">loading</pre>
+<script type="module">
+  import { nativeReady, Language, Module, OxcError, check, minify, transform } from "../jstools/index.js";
+
+  const status = document.getElementById("status");
+  const results = {};
+  try {
+    await nativeReady;
+    const source = "export function add(a: number, b: number): number { return a + b; }\nconst x: string = 'y';";
+    results.transformed = transform(source).code;
+    results.minified = minify("function longName(argumentOne) { return argumentOne + 1 }\nconsole.log(longName(2));").code;
+    results.problems = check("let a = 1; let a = 2;").length;
+    const module = new Module(source, Language.Ts);
+    results.astType = module.ast().type;
+    results.statements = [...module.statements()].map((statement) => statement.kind);
+    const visited = [];
+    module.visit((statement) => (visited.push(statement.kind), true));
+    results.visited = visited.length;
+    try {
+      new Module("const = 1");
+    } catch (error) {
+      results.typedError = error instanceof OxcError && error.code;
+    }
+    results.ok = true;
+  } catch (error) {
+    results.ok = false;
+    results.error = String(error);
+  }
+  window.results = results;
+  status.textContent = JSON.stringify(results, null, 2);
+  // `apps/trials/browser.py` waits for this. A plain static server refuses it.
+  fetch("/results", { method: "POST", body: JSON.stringify(results) }).catch(() => {});
+</script>

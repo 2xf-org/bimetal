@@ -1,0 +1,31 @@
+[package]
+name = "frames"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+# Polars has its own Arrow implementation, so `bridge` converts to Bimetal's.
+arrow-array = { version = "60.1", default-features = false, features = ["ffi"] }
+arrow-schema = { version = "60.1", default-features = false, features = ["ffi"] }
+bimetal = { path = "../../../packages/runtime", features = ["arrow"] }
+polars = { version = "0.55", default-features = false, features = ["lazy", "sql", "csv", "json", "strings", "temporal", "dtype-full", "fmt_no_tty", "cum_agg", "abs", "round_series", "is_in", "pivot", "concat_str", "regex"] }
+polars-arrow = { version = "0.55", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+# Native builds keep the engine that `prepare` turns off for a browser.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+polars = { version = "0.55", default-features = false, features = ["streaming"] }
+
+[patch.crates-io]
+polars = { path = "vendor/polars" }
+polars-async = { path = "vendor/polars-async" }
+polars-core = { path = "vendor/polars-core" }
+polars-io = { path = "vendor/polars-io" }
+polars-lazy = { path = "vendor/polars-lazy" }
+
+[workspace]
+resolver = "3"

@@ -1,0 +1,29 @@
+{
+  "name": "frames",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./frames/index.d.ts",
+      "default": "./frames/index.js"
+    },
+    "./*": {
+      "types": "./frames/*/index.d.ts",
+      "default": "./frames/*/index.js"
+    }
+  },
+  "files": [
+    "frames"
+  ],
+  "peerDependencies": {
+    "apache-arrow": ">=21"
+  },
+  "devDependencies": {
+    "apache-arrow": "^21"
+  },
+  "engines": {
+    "node": ">=20.16"
+  }
+}

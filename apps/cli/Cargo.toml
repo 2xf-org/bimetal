@@ -1,0 +1,39 @@
+[package]
+name = "bimetal-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "The `bimetal` command, which builds, checks, and publishes generated Python and TypeScript packages"
+
+[[bin]]
+name = "bimetal"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+# The CLI reads only the host-neutral contract crate. It must never link the
+# pyo3-carrying `bimetal` runtime, which would embed libpython.
+bimetal-ir.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+ignore.workspace = true
+libloading.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+wasm-bindgen-cli-support.workspace = true
+
+[build-dependencies]
+# The hash that fingerprints the generator.
+bimetal-ir.workspace = true
+
+[lints]
+workspace = true

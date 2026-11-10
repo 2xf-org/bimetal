@@ -1,0 +1,23 @@
+{
+  "name": "jstools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./jstools/index.d.ts",
+      "default": "./jstools/index.js"
+    },
+    "./*": {
+      "types": "./jstools/*/index.d.ts",
+      "default": "./jstools/*/index.js"
+    }
+  },
+  "files": [
+    "jstools"
+  ],
+  "engines": {
+    "node": ">=20.16"
+  }
+}

@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Usage: apps/examples/run [--check] [<example>...]
+#
+# Build every example, or the named ones, with this checkout's CLI, and test
+# its host packages; docs/internals/testing.md#the-examples lists every step. With
+# --check, as CI runs it, verify the committed outputs and lockfiles instead
+# of rewriting them.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+# Git Bash runs this script on Windows.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) windows=true ;;
+  *) windows=false ;;
+esac
+
+check=false
+if [[ "${1:-}" == "--check" ]]; then
+  check=true
+  shift
+fi
+
+# Windows may lack `python3`.
+python=python3
+command -v python3 >/dev/null || python=python
+
+cargo build --locked --release -p bimetal-cli
+bimetal="$PWD/target/release/bimetal"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+# Print the path of the one bimetal.toml in the example directory $1, which
+# may lie in one of its packages, as trading's lies in crates/engine.
+bimetal_config() {
+  local configs
+  configs="$(git ls-files --cached --others --exclude-standard -- "$1" | grep -E '(^|/)bimetal\.toml$' || true)"
+  if [[ -z "$configs" || "$configs" == *$'\n'* ]]; then
+    printf 'error: %s must hold exactly one bimetal.toml, not:\n%s\n' "$1" "$configs" >&2
+    return 1
+  fi
+  printf '%s\n' "$configs"
+}
+
+# Print each host of the `bimetal --json` report $1 on a line of its own: the
+# host, its package, and its project directory, separated by tabs. On
+# Windows, a `C:\...` directory becomes `/c/...` here.
+hosts() {
+  local host package directory
+  "$python" -c '
+import json, sys
+for host in json.load(open(sys.argv[1], encoding="utf-8"))["hosts"]:
+    print(host["host"], host["package"], host["directory"], sep="\t")
+' "$1" | while IFS=$'\t' read -r host package directory; do
+    directory="${directory%$'\r'}"
+    if $windows; then
+      directory="$(cygpath -u "$directory")"
+    fi
+    printf '%s\t%s\t%s\n' "$host" "$package" "$directory"
+  done
+}
+
+# Run the Python project's tests, and check its package with mypy and pyright.
+test_python() {
+  local project="$1" package="$2" locked=""
+  if $check; then
+    locked="--locked"
+  fi
+  # shellcheck disable=SC2086 # An empty $locked passes nothing.
+  (cd "$project" && uv run $locked --project . python -m unittest discover -s tests &&
+    uv run $locked --project . mypy --strict -p "$package" &&
+    uv run $locked --project . pyright "${package//.//}")
+}
+
+# Install the npm project's dependencies and run its tests.
+test_typescript() {
+  local install=install
+  if $check; then
+    install=ci
+  fi
+  (cd "$1" && npm "$install" --no-audit --no-fund && npm test)
+}
+
+# Scaffold an application, build it, and call it from every host. It lives
+# outside the repository, whose rust-toolchain.toml and .gitignore would apply
+# to it inside, at a fixed path for this checkout, and builds into target/, so
+# that later runs reuse the build cache.
+check_scaffold() {
+  local app
+  app="${TMPDIR:-/tmp}/bimetal-scaffold-$(printf '%s' "$PWD" | cksum | cut -d ' ' -f 1)/hello-bimetal"
+  local target="$PWD/target/scaffold"
+  # Outside the repository, rustup no longer reads its rust-toolchain.toml.
+  local toolchain
+  toolchain="${RUSTUP_TOOLCHAIN:-$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)}"
+  rm -rf "$app"
+  mkdir -p "$(dirname "$app")"
+  "$bimetal" new "$app" --bimetal-path "$PWD" >/dev/null
+  (cd "$app" && CARGO_TARGET_DIR="$target" RUSTUP_TOOLCHAIN="$toolchain" "$bimetal" build >/dev/null)
+  (cd "$app/python" && uv run --quiet --project . python -c \
+    'from hello_bimetal import greet; assert greet("Ada").message == "Hello, Ada!"')
+  (cd "$app/typescript" && node --input-type=module -e \
+    'const { greet } = await import("./hello-bimetal/index.js"); if (greet("Ada").message !== "Hello, Ada!") process.exit(1);')
+  printf 'scaffolded, built, and called %s\n' "$(basename "$app")"
+}
+
+# The showcase's test files that check the Wasm module itself: its loader, its
+# bundling, and how a trap aborts it. Every other test file runs on the addon too.
+wasm_only_tests=(browser callback-trap trap vite)
+
+# Build the copy of the showcase whose npm package runs on the Node.js
+# backend, and run its TypeScript tests against the addon. A new test file runs
+# here unless it joins the list above, and a name in the list must still exist.
+check_showcase_on_node() {
+  "$python" apps/examples/showcase_node.py
+  (
+    cd target/examples/showcase-node/typescript
+    local excluded="" name file
+    for name in "${wasm_only_tests[@]}"; do
+      if [[ ! -f "tests/$name.test.ts" ]]; then
+        printf 'error: apps/examples/run lists tests/%s.test.ts, which does not exist\n' "$name" >&2
+        return 1
+      fi
+      excluded+=" tests/$name.test.ts "
+    done
+    local files=()
+    for file in tests/*.test.ts; do
+      if [[ "$excluded" != *" $file "* ]]; then
+        files+=("$file")
+      fi
+    done
+    node --test "${files[@]}"
+  )
+}
+
+if (($# == 0)); then
+  set -- $(cd apps/examples && ls -d */ | tr -d /)
+fi
+for name in "$@"; do
+  example="apps/examples/$name"
+  config="$(bimetal_config "$example")"
+  report="$scratch/$example/report.json"
+  printf '\n== %s\n' "$example"
+  mkdir -p "$scratch/$example"
+  if $check; then
+    # The committed outputs must match what this machine builds from the
+    # sources, fingerprints aside, so builds are reproducible. Only this
+    # platform's native artifacts, which are never committed, get installed.
+    "$bimetal" check --rebuild --json --config "$config" >"$report"
+    "$bimetal" build-native --config "$config"
+  else
+    "$bimetal" build --config "$config"
+    "$bimetal" check --json --config "$config" >"$report"
+  fi
+  listed="$(hosts "$report")"
+  while IFS=$'\t' read -r -u 3 host package directory; do
+    printf '\n-- %s package %s in %s\n' "$host" "$package" "$directory"
+    case "$host" in
+      python) test_python "$directory" "$package" ;;
+      typescript) test_typescript "$directory" ;;
+    esac
+  done 3<<<"$listed"
+  printf '\n-- packages\n'
+  "$python" apps/examples/check-packages.py "$report" "$scratch/$example/packages"
+done
+
+if [[ " $* " == *" showcase "* ]]; then
+  printf '\n== apps/examples/showcase on the Node.js backend\n'
+  check_showcase_on_node
+fi
+
+printf '\n== bimetal new\n'
+check_scaffold
+
+if $check; then
+  # Nothing above may have changed a committed file, such as a lockfile.
+  git diff --exit-code -- apps/examples
+fi

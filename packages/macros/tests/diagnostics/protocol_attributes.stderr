@@ -1,0 +1,17 @@
+error: a method implements one protocol at most
+ --> tests/diagnostics/protocol_attributes.rs:8:15
+  |
+8 |     #[bimetal(hash)]
+  |               ^^^^
+
+error: a resource constructor cannot implement a protocol
+  --> tests/diagnostics/protocol_attributes.rs:22:9
+   |
+22 |     pub fn new() -> Self {
+   |         ^^
+
+error: function attributes are returns(arrow|buffer|bytes|resource)
+  --> tests/diagnostics/protocol_attributes.rs:28:11
+   |
+28 | #[bimetal(next)]
+   |           ^^^^

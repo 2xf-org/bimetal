@@ -1,0 +1,21 @@
+[package]
+name = "showcase"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
+# Stream combinators, such as `map`, for streams of record batches.
+futures = { version = "0.3", default-features = false }
+# The `arrow` feature adds `bimetal::arrow` and Arrow boundaries.
+bimetal = { path = "../../../packages/runtime", features = ["arrow"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+showcase-geometry = { path = "geometry" }
+thiserror = "2.0"
+
+# The example is its own workspace. `bimetal.toml` links `showcase-geometry`
+# into the same application.
+[workspace]
+members = ["geometry"]

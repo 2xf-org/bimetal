@@ -1,0 +1,12 @@
+target/
+node_modules/
+.venv/
+__pycache__/
+
+# Each platform builds its own native artifacts: the Python extension and the
+# Node.js addon.
+*.abi3.so
+*.pyd
+*.node
+
+.claude/worktrees/

@@ -1,0 +1,17 @@
+[package]
+name = "trading"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Seeds the simulated prices when the configuration has no seed.
+getrandom = "0.3"
+# The `arrow` feature adds `bimetal::arrow`, for the fills table.
+bimetal = { workspace = true, features = ["arrow"] }
+serde.workspace = true
+thiserror.workspace = true
+# Tokio's multi-threaded runtime cannot build for WebAssembly, so the
+# TypeScript package uses the Node.js backend.
+tokio = { version = "1.54", features = ["macros", "rt-multi-thread", "sync", "time"] }
+trading-core.workspace = true

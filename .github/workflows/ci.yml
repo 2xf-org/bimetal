@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push supersedes a pull request's run; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# No job writes to the repository or reads a secret, so a pull request from a
+# fork runs with a token that can only read this repository.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
+jobs:
+  check:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pull requests rebuild the committed files on Linux x86_64 and on
+        # macOS arm64, so a change cannot break their reproducibility unseen.
+        # Runs on main add Linux arm64.
+        platform: ${{ github.event_name == 'pull_request' && fromJSON('["Linux x86_64", "macOS arm64"]') || fromJSON('["Linux x86_64", "Linux arm64", "macOS arm64"]') }}
+    runs-on: ${{ fromJSON('{"Linux x86_64":"ubuntu-latest","Linux arm64":"ubuntu-24.04-arm","macOS arm64":"macos-latest"}')[matrix.platform] }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Lint
+        if: matrix.platform == 'Linux x86_64'
+        run: mise run lint
+      - name: Test
+        run: mise run test
+      # docs/internals/testing.md#ci describes this step and the byte check.
+      - name: Verify and test the examples
+        run: mise run check-examples
+      # The Wasm loader is what needs Node.js 20.16, so the showcase's
+      # package loads here beside greeter's Node.js addon.
+      - name: Load the packages on a newer Python and the oldest supported Node.js
+        run: |
+          uv run --locked --python 3.13 --project apps/examples/greeter/python python -c \
+            'from greeter import GreetingRequest, greet; print(greet(GreetingRequest(name="Ada", tone="formal")).message)'
+          mise exec node@20.16.0 -- node --input-type=module -e \
+            'const { greet } = await import("./apps/examples/greeter/typescript/greeter/index.js"); console.log(greet({ name: "Ada", tone: "formal" }).message);'
+          mise exec node@20.16.0 -- node --input-type=module -e \
+            'const { repeat } = await import("./apps/examples/showcase/typescript/showcase/index.js"); console.log(repeat("ab", 2));'
+
+  windows:
+    # The Windows paths of the CLI and the examples' script (`.pyd`, an addon from a
+    # `.dll`, and drive letters) run only here. Pull requests run the tests;
+    # runs on main also check, build, and test the examples.
+    name: Windows x86_64
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Test
+        run: mise run test
+      # Before anything builds, whether the committed fingerprints hold in a
+      # Windows clone.
+      - name: Check the examples in the fresh clone
+        if: github.event_name != 'pull_request'
+        run: |
+          cargo build --locked --release -p bimetal-cli
+          status=0
+          for config in $(git ls-files -- 'apps/examples/*/bimetal.toml'); do
+            target/release/bimetal check --config "$config" || status=1
+          done
+          exit "$status"
+      # The Wasm module can differ here, as
+      # docs/internals/reproducible.md#windows says, so this step
+      # reports without failing the job.
+      - name: Rebuild the examples and compare them with the committed files
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: |
+          status=0
+          for config in $(git ls-files -- 'apps/examples/*/bimetal.toml'); do
+            target/release/bimetal check --rebuild --config "$config" || status=1
+          done
+          exit "$status"
+      # Without --check, this step builds and tests the examples and does not
+      # compare them with the committed files. mise runs a task's command
+      # through cmd.exe on Windows, which cannot run the bash script, so Git
+      # Bash runs it, in the environment that mise sets up.
+      - name: Build and test the examples
+        if: github.event_name != 'pull_request'
+        run: mise exec -- "$(cygpath -w "$BASH")" apps/examples/run

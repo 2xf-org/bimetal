@@ -1,0 +1,14 @@
+target/
+.venv/
+node_modules/
+__pycache__/
+
+# Packages that `uv build` and `npm pack` write.
+dist/
+*.tgz
+
+# Each platform builds its own native artifacts: the Python extension, the
+# Node.js addon, and the C libraries.
+*.abi3.so
+*.pyd
+*.node

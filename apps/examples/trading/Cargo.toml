@@ -1,0 +1,17 @@
+# The example is its own workspace, laid out as a larger application is: Rust
+# packages under crates/, and the host projects, which crates/engine/bimetal.toml
+# names, beside them in python/ and node/.
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/engine"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+bimetal = { path = "../../../packages/runtime" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+trading-core = { path = "crates/core" }

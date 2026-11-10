@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Usage: apps/trials/run [--node] [<trial>...]
+#
+# Build each trial, or the named ones, with this checkout's CLI, then run its
+# Python tests, its Node.js tests on the Wasm module, and, when Chrome is
+# installed, its page in a headless browser. With --node, build a copy of each
+# on the Node.js addon instead, and run the Node.js tests there. Each trial
+# compiles hundreds of crates, so this is not part of CI.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+node=false
+if [[ "${1:-}" == "--node" ]]; then
+  node=true
+  shift
+fi
+trials=("$@")
+if [[ ${#trials[@]} -eq 0 ]]; then
+  trials=(typst tantivy datafusion oxc polars)
+fi
+cargo build --locked --release -p bimetal-cli
+bimetal="$PWD/target/release/bimetal"
+
+# Each trial's rust-toolchain.toml, or this checkout's, chooses its toolchain. A
+# version manager's RUSTUP_TOOLCHAIN would override it.
+unset RUSTUP_TOOLCHAIN
+
+# Run a trial's own setup, if it has any.
+prepare() {
+  if [[ -x "$1/prepare" ]]; then
+    "$1/prepare"
+  fi
+}
+
+if $node; then
+  for trial in "${trials[@]}"; do
+    echo "== $trial on the Node.js addon"
+    copy="apps/trials/$trial-node"
+    mkdir -p "$copy"
+    rsync -a --delete --exclude target --exclude .venv --exclude .bimetal --exclude /python \
+      --exclude bimetal.toml "apps/trials/$trial/" "$copy/"
+    find "$copy/typescript" -maxdepth 2 -name index.js -not -path '*/node_modules/*' -exec dirname {} + | xargs rm -rf
+    printf '[application]\n\n[typescript]\nbackend = "node"\n' >"$copy/bimetal.toml"
+    prepare "$copy"
+    (cd "$copy" && "$bimetal" build)
+    (cd "$copy/typescript" && node --test $(ls test/*.test.mjs test-node/*.test.mjs 2>/dev/null) 2>&1 | grep -E '^ℹ (pass|fail) |^✖')
+  done
+  exit 0
+fi
+
+for trial in "${trials[@]}"; do
+  echo "== $trial"
+  prepare "apps/trials/$trial"
+  (cd "apps/trials/$trial" && "$bimetal" build)
+  (cd "apps/trials/$trial/python" && uv run --quiet python -m unittest discover -s tests 2>&1 | tail -3)
+  (cd "apps/trials/$trial/typescript" && { [[ ! -f package-lock.json ]] && grep -q devDependencies package.json && npm install --silent; true; } && node --test test/*.test.mjs 2>&1 | grep -E '^ℹ (pass|fail) ')
+  python3 apps/trials/browser.py "$trial"
+done

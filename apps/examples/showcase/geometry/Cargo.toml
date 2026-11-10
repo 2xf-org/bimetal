@@ -1,0 +1,10 @@
+[package]
+name = "showcase-geometry"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bimetal = { path = "../../../../packages/runtime" }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"

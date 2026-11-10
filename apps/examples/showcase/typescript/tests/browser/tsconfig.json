@@ -1,0 +1,13 @@
+{
+  "//": "Type-checks the generated declarations as a browser project would: without Node.js types or the ESNext.Disposable library.",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": []
+  },
+  "files": ["declarations.ts"]
+}

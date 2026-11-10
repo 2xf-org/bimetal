@@ -1,0 +1,4 @@
+# Polars 0.55 needs Rust 1.95, which is newer than Bimetal's own toolchain.
+[toolchain]
+channel = "1.99.1"
+targets = ["wasm32-unknown-unknown"]

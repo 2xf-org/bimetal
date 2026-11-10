@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Polars through Bimetal</title>
+<script type="importmap">
+  {
+    "imports": {
+      "apache-arrow": "../node_modules/apache-arrow/Arrow.dom.mjs",
+      "flatbuffers": "../node_modules/flatbuffers/mjs/flatbuffers.js",
+      "tslib": "../node_modules/tslib/tslib.es6.mjs",
+      "json-with-bigint": "../node_modules/json-with-bigint/json-with-bigint.js"
+    }
+  }
+</script>
+<pre id="status">loading</pre>
+<pre id="table"></pre>
+<script type="module">
+  import { tableFromArrays } from "apache-arrow";
+  import { nativeReady, Frame, FrameError, Session } from "../frames/index.js";
+
+  const status = document.getElementById("status");
+  const results = {};
+  try {
+    await nativeReady;
+    const trades = new Frame(
+      tableFromArrays({
+        symbol: ["AAPL", "MSFT", "AAPL", "NVDA", "AAPL"],
+        price: new Float64Array([190.5, 410.25, 191.0, 880.0, 189.75]),
+        size: new Int32Array([100, 50, 200, 10, 300]),
+      }),
+    );
+    results.polars = String(trades).split("\n")[0];
+    const grouped = trades.lazy().groupBy(["symbol"], ["sum(size) AS volume", "max(price) AS high"]).sort("volume", true).collect();
+    document.getElementById("table").textContent = String(grouped);
+    results.symbols = grouped.column("symbol");
+    results.sql = trades.sql("select count(*) as n from self where size > 50").column("n");
+    const session = new Session();
+    session.register("trades", trades);
+    results.session = session.sql("select max(price) as high from trades").column("high");
+    results.mapped = trades.mapColumn("size", "doubled", (value) => value * 2).column("doubled").slice(0, 2);
+    results.csv = Frame.readCsv(new TextEncoder().encode("a,b\n1,2\n")).toRows();
+    results.arrowRows = trades.toArrow().numRows;
+    results.batches = [...trades.batches(2)].map((batch) => batch.numRows);
+    const count = 1_000_000;
+    const k = new Int32Array(count);
+    const v = new Float64Array(count);
+    for (let i = 0; i < count; i++) {
+      k[i] = i % 100;
+      v[i] = i;
+    }
+    const big = new Frame(tableFromArrays({ k, v }));
+    const started = performance.now();
+    const summed = big.lazy().groupBy(["k"], ["sum(v) AS total"]).sort("k").collect();
+    results.millionRowGroupByMs = Math.round(performance.now() - started);
+    results.groups = summed.length;
+    try {
+      trades.lazy().select(["nope"]).collect();
+    } catch (error) {
+      results.typedError = error instanceof FrameError && error.code;
+    }
+    results.ok = true;
+  } catch (error) {
+    results.ok = false;
+    results.error = String(error);
+  }
+  window.results = results;
+  status.textContent = JSON.stringify(results, null, 2);
+  // `apps/trials/browser.py` waits for this. A plain static server refuses it.
+  fetch("/results", { method: "POST", body: JSON.stringify(results) }).catch(() => {});
+</script>

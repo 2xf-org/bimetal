@@ -1,0 +1,71 @@
+[tools]
+node = "24.18.0"
+python = "3.11.14"
+uv = "0.10.9"
+
+[env]
+# The interpreter pyo3 compiles against. Pinning it keeps shells, editors, and
+# tasks from rebuilding the pyo3 crates when their PATHs differ.
+PYO3_PYTHON = { value = "{% if tools.python is defined %}{{ tools.python.path }}{% if os_family() == 'windows' %}\\python.exe{% else %}/bin/python3{% endif %}{% endif %}", tools = true }
+UV_PYTHON = "3.11.14"
+
+[tasks]
+example = { description = "Build every example with the local CLI, test each host package, and install the packages into new projects; docs/internals/testing.md lists every step", run = "apps/examples/run" }
+check-examples = { description = "Rebuild every example and verify that it and its lockfiles match what is committed, without rewriting them, as CI does", run = "apps/examples/run --check" }
+bench = { description = "Measure build times, per-call time, peak memory, and artifact sizes on this machine, and write them to target/bench/report.md", run = "python3 apps/benchmark/run.py" }
+
+[tasks.test]
+description = "Run the Rust tests, including the embedded-Python tests"
+# The runtime's Python tests embed CPython, so their binary needs an rpath to
+# that interpreter's libpython.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+cargo test --locked -p bimetal-ir -p bimetal-macros -p bimetal-cli
+library_dir="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$library_dir"
+cargo test --locked -p bimetal --features python,arrow,alloy
+cargo test --locked -p bimetal --features python,arrow-59
+'''
+# Windows finds the interpreter's DLL on PATH, and its linker takes no rpath.
+run_windows = [
+    "cargo test --locked -p bimetal-ir -p bimetal-macros -p bimetal-cli",
+    "cargo test --locked -p bimetal --features python,arrow,alloy",
+    "cargo test --locked -p bimetal --features python,arrow-59",
+]
+
+[tasks.lint]
+description = "Check formatting and run Clippy with combinations of the Python and Node.js boundaries and Arrow, and for Wasm"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+cargo fmt --all --check
+# Each combination compiles a different set of the runtime's cfgs.
+feature_sets=(
+  ""
+  bimetal/python
+  bimetal/arrow
+  bimetal/python,bimetal/arrow
+  bimetal/node
+  bimetal/node,bimetal/arrow
+  bimetal/python,bimetal/node,bimetal/arrow
+  bimetal/arrow-59
+  bimetal/python,bimetal/node,bimetal/arrow-59
+  bimetal/python,bimetal/alloy
+)
+for features in "${feature_sets[@]}"; do
+  cargo clippy --locked --workspace --all-targets --features "$features" -- -D warnings
+done
+for features in "" arrow arrow-59; do
+  cargo clippy --locked -p bimetal --target wasm32-unknown-unknown --features "$features" -- -D warnings
+done
+
+# The examples are separate workspaces, so check them one by one.
+for example in apps/examples/*/; do
+  cargo fmt --manifest-path "$example/Cargo.toml" --all --check
+  cargo clippy --locked --manifest-path "$example/Cargo.toml" --workspace --all-targets -- -D warnings
+done
+# trading's models build for Wasm, though its engine does not.
+cargo clippy --locked --manifest-path apps/examples/trading/Cargo.toml -p trading-core \
+  --target wasm32-unknown-unknown -- -D warnings
+'''

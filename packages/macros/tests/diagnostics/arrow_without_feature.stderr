@@ -1,0 +1,27 @@
+warning: use of deprecated enum `bimetal::arrow::RecordBatch`: enable the `arrow` feature of `bimetal`: add `features = ["arrow"]` to the `bimetal` dependency
+ --> tests/diagnostics/arrow_without_feature.rs:3:21
+  |
+3 | use bimetal::arrow::RecordBatch;
+  |                     ^^^^^^^^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated enum `bimetal::arrow::RecordBatch`: enable the `arrow` feature of `bimetal`: add `features = ["arrow"]` to the `bimetal` dependency
+ --> tests/diagnostics/arrow_without_feature.rs:7:39
+  |
+7 | pub fn rows(#[bimetal(arrow)] batch: &RecordBatch) -> u64 {
+  |                                       ^^^^^^^^^^^
+
+error[E0599]: no method named `num_rows` found for reference `&bimetal::arrow::RecordBatch` in the current scope
+ --> tests/diagnostics/arrow_without_feature.rs:8:11
+  |
+8 |     batch.num_rows() as u64
+  |           ^^^^^^^^ method not found in `&bimetal::arrow::RecordBatch`
+
+error[E0277]: `#[bimetal(arrow)]` needs the `arrow` feature of `bimetal`
+ --> tests/diagnostics/arrow_without_feature.rs:7:39
+  |
+7 | pub fn rows(#[bimetal(arrow)] batch: &RecordBatch) -> u64 {
+  |                                       ^^^^^^^^^^^ the trait `ArrowValue` is not implemented for `bimetal::arrow::RecordBatch`
+  |
+  = note: add `features = ["arrow"]` to the `bimetal` dependency

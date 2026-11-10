@@ -1,0 +1,27 @@
+{
+  "name": "greeter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "scripts": {
+    "test": "tsc --noEmit && node --test tests/*.test.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./greeter/index.d.ts",
+      "default": "./greeter/index.js"
+    },
+    "./*": {
+      "types": "./greeter/*/index.d.ts",
+      "default": "./greeter/*/index.js"
+    }
+  },
+  "files": [
+    "greeter"
+  ],
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

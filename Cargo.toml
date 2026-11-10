@@ -1,0 +1,100 @@
+[workspace]
+resolver = "3"
+members = ["apps/cli", "packages/ir", "packages/macros", "packages/runtime"]
+# Each example is its own Cargo workspace, like an application that uses Bimetal.
+exclude = ["apps/examples"]
+
+[workspace.package]
+version = "202611.10.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/2xf-org/bimetal"
+readme = "README.md"
+keywords = ["python", "typescript", "wasm", "bindings", "ffi"]
+categories = ["api-bindings", "development-tools::ffi", "wasm"]
+
+[workspace.dependencies]
+# The four crates release together, so each names the others at exactly the
+# workspace's version.
+bimetal = { path = "packages/runtime", version = "=202611.10.0" }
+bimetal-ir = { path = "packages/ir", version = "=202611.10.0" }
+bimetal-macros = { path = "packages/macros", version = "=202611.10.0" }
+
+anyhow = "1.0"
+# The arrow-rs crates share one version, which applications reach through
+# `bimetal::arrow` so that their Arrow types are the runtime's.
+arrow-array = { version = "60.1", default-features = false }
+arrow-buffer = { version = "60.1", default-features = false }
+arrow-ipc = { version = "60.1", default-features = false }
+arrow-schema = { version = "60.1", default-features = false }
+arrow-select = { version = "60.1", default-features = false }
+# The same crates in the older version that the `arrow-59` feature chooses, for
+# applications whose other dependencies, such as DataFusion 55, use it.
+arrow-array-59 = { package = "arrow-array", version = "59.2", default-features = false }
+arrow-buffer-59 = { package = "arrow-buffer", version = "59.2", default-features = false }
+arrow-ipc-59 = { package = "arrow-ipc", version = "59.2", default-features = false }
+arrow-schema-59 = { package = "arrow-schema", version = "59.2", default-features = false }
+arrow-select-59 = { package = "arrow-select", version = "59.2", default-features = false }
+alloy-primitives = { version = "1", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+# The `Stream` trait that `bimetal::arrow::RecordBatchStream` implements and accepts.
+futures-core = { version = "0.3", default-features = false }
+# Crates that need random numbers reach them through getrandom, which on
+# `wasm32-unknown-unknown` compiles only with these features and the cfg that the
+# CLI's Wasm build sets. The ecosystem uses all three versions.
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom-02 = { package = "getrandom", version = "0.2", features = ["js"] }
+getrandom-04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+heck = "0.5"
+ignore = "0.4"
+inventory = "0.3.24"
+libloading = "0.9"
+# The Node.js addon uses Node-API 8, and its default `dyn-symbols` feature
+# finds the functions in the running process. The exact version keeps every
+# application's Cargo.lock on the release that Bimetal tests, as for pyo3.
+napi-sys = { version = "=3.4.0", features = ["napi8"] }
+proc-macro2 = "1.0"
+# pythonize follows pyo3's minor version, so both change together. Each
+# application's Cargo.lock pins them, and the exact versions keep
+# `cargo update` from moving it to a release that Bimetal has not tested.
+pyo3 = { version = "=0.29.3", features = ["abi3-py311"] }
+pythonize = "=0.29.0"
+quote = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6.5"
+syn = { version = "3.0", features = ["full", "visit-mut"] }
+tempfile = "3.27"
+thiserror = "2.0"
+tokio = { version = "1.54", default-features = false, features = ["sync"] }
+toml = "1.1"
+toml_edit = { version = "0.25", features = ["serde"] }
+# The compile-fail tests compare compiler output, which another trybuild
+# release may format differently.
+trybuild = "=1.0.122"
+# The CLI post-processes the Wasm module with the same wasm-bindgen version the
+# runtime links, and each wasm-bindgen-futures release pins one wasm-bindgen
+# release, so all three pins must change together.
+wasm-bindgen = "=0.2.126"
+wasm-bindgen-cli-support = "=0.2.126"
+wasm-bindgen-futures = "=0.4.76"
+
+# Google's Rust style guide, where Clippy can check it. The
+# `google-rust-style` skill in `.claude/skills` covers the rest.
+[workspace.lints.clippy]
+# Document panics that malformed input can cause.
+missing_panics_doc = "warn"
+# Mark results that callers must not drop.
+must_use_candidate = "warn"
+# Use `for` loops rather than `for_each`.
+needless_for_each = "warn"
+# Take `Option<&T>` rather than `&Option<T>`.
+ref_option = "warn"
+# Justify every `unsafe` block with a `// SAFETY:` comment.
+undocumented_unsafe_blocks = "warn"
+# Use `expect` with a reason rather than `unwrap`, outside tests.
+unwrap_used = "warn"
+# No glob imports, except preludes and `use super::*` in tests.
+wildcard_imports = "warn"

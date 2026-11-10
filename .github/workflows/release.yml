@@ -1,0 +1,155 @@
+name: Release
+
+# docs/internals/releases.md describes the steps before and after the tag.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# Each job reads the repository and nothing more, except where it says so.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Every crate takes the workspace's version, and each names the others
+      # at exactly that version.
+      - name: Compare the tag with the manifests
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          manifest="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [ "$manifest" != "$version" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME, but Cargo.toml says $manifest"
+            exit 1
+          fi
+          if [ "$(grep -c "^bimetal.* version = \"=$version\" }$" Cargo.toml)" != 3 ]; then
+            echo "::error::a workspace dependency on a Bimetal crate is not at =$version"
+            exit 1
+          fi
+
+  binaries:
+    name: ${{ matrix.target }}
+    needs: version
+    strategy:
+      matrix:
+        include:
+          # The older Ubuntu links against the older glibc, which newer
+          # systems also run.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add "$TARGET"
+      - name: Build the command
+        run: cargo build --locked --release -p bimetal-cli --target "$TARGET"
+      # An archive holds the command and the licences, in a folder of the
+      # archive's own name.
+      - name: Pack the archive
+        run: |
+          name="bimetal-$GITHUB_REF_NAME-$TARGET"
+          mkdir "$name"
+          cp LICENSE-MIT LICENSE-APACHE README.md "$name"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "target/$TARGET/release/bimetal.exe" "$name"
+            7z a "$name.zip" "$name"
+          else
+            cp "target/$TARGET/release/bimetal" "$name"
+            tar -czf "$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            bimetal-*.tar.gz
+            bimetal-*.zip
+          if-no-files-found: error
+
+  publish:
+    # crates.io keeps a version for ever, so it comes after every build.
+    name: Publish
+    needs: binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The crates.io token is a secret of this environment, so no other job or
+    # workflow can read it, and the environment's rules decide who may run it.
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: archives
+          merge-multiple: true
+      - name: Write the checksums
+        working-directory: archives
+        run: sha256sum bimetal-* > SHA256SUMS
+      # Cargo publishes the four crates in the order they depend on each other.
+      - name: Publish the crates to crates.io
+        run: cargo publish --workspace --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # The release is named after its tag. Its notes say how to install it,
+      # and GitHub adds what changed since the release before.
+      - name: Create the GitHub release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<EOF
+          ## Install
+
+          Build the command from crates.io:
+
+          \`\`\`bash
+          cargo install --locked bimetal-cli@$version
+          \`\`\`
+
+          Or download the archive for your platform below, and check it against \`SHA256SUMS\`.
+
+          An application depends on the runtime of the same version, which \`bimetal new\` writes:
+
+          \`\`\`toml
+          bimetal = "=$version"
+          \`\`\`
+
+          The crates are [bimetal](https://crates.io/crates/bimetal/$version), [bimetal-cli](https://crates.io/crates/bimetal-cli/$version), [bimetal-macros](https://crates.io/crates/bimetal-macros/$version) and [bimetal-ir](https://crates.io/crates/bimetal-ir/$version).
+          EOF
+          gh release create "$GITHUB_REF_NAME" archives/* --title "$GITHUB_REF_NAME" --notes-file notes.md --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

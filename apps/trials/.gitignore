@@ -1,0 +1,24 @@
+# Each trial commits its Rust sources, its host projects' manifests, its tests,
+# and its Cargo.lock. `bimetal build` regenerates the rest, and the Wasm modules
+# alone reach tens of megabytes.
+# The copies that `run --node` builds.
+/*-node/
+target/
+.venv/
+node_modules/
+__pycache__/
+uv.lock
+package-lock.json
+*.abi3.so
+*.node
+.bimetal/
+/typst/python/typeset/
+/typst/typescript/typeset/
+/tantivy/python/search/
+/tantivy/typescript/search/
+/datafusion/python/query/
+/datafusion/typescript/query/
+/oxc/python/jstools/
+/oxc/typescript/jstools/
+/polars/python/frames/
+/polars/typescript/frames/

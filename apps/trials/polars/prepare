@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Unpack five Polars crates into vendor/, and let them compile for a browser.
+
+Polars 0.55 handles `wasm32-unknown-unknown` throughout, with no threads, except
+in a few places. polars-core and polars-async ask for Tokio features that Tokio refuses
+there: polars-core never uses them, and polars-async's runtime is a small wrapper that
+can run on one thread. One function in polars-core also lacks its Wasm check, and some
+features of polars-lazy and polars force on the streaming engine, which a browser cannot
+run. polars-io also calls Tokio's file functions in two places. On native targets, `Cargo.toml` asks for that engine, so they compile what the release does.
+"""
+
+import os
+import pathlib
+import re
+import shutil
+import tarfile
+import tempfile
+import urllib.request
+
+VERSION = "0.55.2"
+TOKIO_WASM = '''
+[target.'cfg(target_family = "wasm")'.dependencies.tokio]
+version = "1.44"
+features = ["rt", "sync"]
+default-features = false
+'''
+
+
+def download(crate: str, vendor: pathlib.Path) -> pathlib.Path:
+    """Unpack a crate from crates.io into vendor/."""
+    url = f"https://static.crates.io/crates/{crate}/{crate}-{VERSION}.crate"
+    with tempfile.TemporaryDirectory() as scratch:
+        archive = pathlib.Path(scratch) / "crate.tar.gz"
+        urllib.request.urlretrieve(url, archive)
+        with tarfile.open(archive) as contents:
+            contents.extractall(scratch, filter="data")
+        shutil.move(pathlib.Path(scratch) / f"{crate}-{VERSION}", vendor / crate)
+    return vendor / crate
+
+
+def native_only_tokio(crate: pathlib.Path) -> None:
+    """Move the crate's Tokio dependency to native targets, and add Wasm's own."""
+    manifest = crate / "Cargo.toml"
+    text = manifest.read_text()
+    section = re.search(r"\[dependencies\.tokio\]\n(.*?)(?=\n\[)", text, re.S)
+    native = f"[target.'cfg(not(target_family = \"wasm\"))'.dependencies.tokio]\n{section.group(1)}\n"
+    text = text.replace(section.group(0), "") + "\n" + native + TOKIO_WASM
+    manifest.write_text(text)
+
+
+def one_thread_runtime(crate: pathlib.Path) -> None:
+    """Run polars-async's runtime on the calling thread in a browser."""
+    source = crate / "src/lib.rs"
+    text = source.read_text()
+    text = text.replace(
+        "    fn new() -> Self {\n",
+        '    #[cfg(target_family = "wasm")]\n'
+        "    fn new() -> Self {\n"
+        "        let rt = Builder::new_current_thread().build().unwrap();\n"
+        "        Self { rt }\n"
+        "    }\n\n"
+        '    #[cfg(not(target_family = "wasm"))]\n'
+        "    fn new() -> Self {\n",
+        1,
+    )
+    text = text.replace(
+        "    pub fn block_in_place<R, F: FnOnce() -> R>(&self, f: F) -> R {\n",
+        "    pub fn block_in_place<R, F: FnOnce() -> R>(&self, f: F) -> R {\n"
+        '        #[cfg(target_family = "wasm")]\n'
+        "        return f();\n"
+        '        #[cfg(not(target_family = "wasm"))]\n',
+        1,
+    )
+    text = text.replace(
+        "    pub fn block_in_place_on<F>(&self, future: F) -> F::Output\n"
+        "    where\n"
+        "        F: Future,\n"
+        "    {\n",
+        "    pub fn block_in_place_on<F>(&self, future: F) -> F::Output\n"
+        "    where\n"
+        "        F: Future,\n"
+        "    {\n"
+        '        #[cfg(target_family = "wasm")]\n'
+        "        return self.rt.block_on(future);\n"
+        '        #[cfg(not(target_family = "wasm"))]\n',
+        1,
+    )
+    source.write_text(text)
+
+
+def no_thread_pool(crate: pathlib.Path) -> None:
+    """Guard polars-core's one use of its thread pool that lacks the Wasm check."""
+    source = crate / "src/runtime.rs"
+    text = source.read_text()
+    signature = "    pub fn block_on<R: Send, F: FnOnce() -> R + Send>(&self, f: F) -> R {\n"
+    text = text.replace(
+        signature,
+        '    #[cfg(not(any(target_os = "emscripten", not(target_family = "wasm"))))]\n'
+        + signature
+        + "        f()\n"
+        "    }\n\n"
+        '    #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]\n'
+        + signature,
+        1,
+    )
+    source.write_text(text)
+
+
+def optional_streaming(crate: pathlib.Path) -> None:
+    """Let polars-lazy's joins work without the streaming engine, which needs threads.
+
+    Without the `?`, these features turn the engine on, and it turns on cloud storage.
+    """
+    manifest = crate / "Cargo.toml"
+    text = manifest.read_text()
+    for feature in ("asof_join", "bigidx", "iejoin"):
+        text = text.replace(f'"polars-stream/{feature}"', f'"polars-stream?/{feature}"')
+    manifest.write_text(text)
+
+
+def no_forced_streaming(crate: pathlib.Path) -> None:
+    """Stop the polars crate's file formats from turning the streaming engine on."""
+    manifest = crate / "Cargo.toml"
+    text = manifest.read_text()
+    start = text.index("[features]")
+    end = text.index("\n[", start + 10)
+    features = text[start:end].replace('    "streaming",\n', "")
+    manifest.write_text(text[:start] + features + text[end:])
+
+
+def no_tokio_files(crate: pathlib.Path) -> None:
+    """Use std's file calls in polars-io in a browser, where Tokio has none."""
+    source = crate / "src/utils/byte_source.rs"
+    text = source.read_text()
+    opened = (
+        "        let file = Arc::new(\n"
+        "            tokio::fs::File::open(path)\n"
+        "                .await\n"
+        "                .map_err(|err| _limit_path_len_io_err(path, err))?\n"
+        "                .into_std()\n"
+        "                .await,\n"
+        "        );\n"
+    )
+    assert opened in text
+    text = text.replace(
+        opened,
+        '        #[cfg(target_family = "wasm")]\n'
+        "        let file = Arc::new(\n"
+        "            std::fs::File::open(path).map_err(|err| _limit_path_len_io_err(path, err))?,\n"
+        "        );\n"
+        '        #[cfg(not(target_family = "wasm"))]\n' + opened,
+    )
+    source.write_text(text)
+
+    source = crate / "src/utils/mkdir.rs"
+    text = source.read_text()
+    signature = "pub async fn tokio_mkdir_recursive(path: &PlRefPath) -> io::Result<()> {\n"
+    assert signature in text
+    text = text.replace(
+        signature,
+        '#[cfg(target_family = "wasm")]\n'
+        + signature
+        + "    mkdir_recursive(path)\n}\n\n"
+        '#[cfg(not(target_family = "wasm"))]\n'
+        + signature,
+    )
+    source.write_text(text)
+
+
+def main() -> None:
+    vendor = pathlib.Path(__file__).parent / "vendor"
+    shutil.rmtree(vendor, ignore_errors=True)
+    vendor.mkdir()
+    core_crate = download("polars-core", vendor)
+    native_only_tokio(core_crate)
+    no_thread_pool(core_crate)
+    async_crate = download("polars-async", vendor)
+    native_only_tokio(async_crate)
+    one_thread_runtime(async_crate)
+    optional_streaming(download("polars-lazy", vendor))
+    no_forced_streaming(download("polars", vendor))
+    no_tokio_files(download("polars-io", vendor))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,11 @@
+target/
+.venv/
+node_modules/
+__pycache__/
+dist/
+*.tgz
+*.abi3.so
+*.pyd
+*.node
+# `prepare` copies these from Cargo's registry and patches them.
+/vendor/

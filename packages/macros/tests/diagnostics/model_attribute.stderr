@@ -1,0 +1,5 @@
+error: a model type takes no `#[bimetal(...)]` attribute; field rules go on its fields, and a `#[serde(transparent)]` struct is already its field's type to the hosts
+ --> tests/diagnostics/model_attribute.rs:8:1
+  |
+8 | #[bimetal(host = String)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^

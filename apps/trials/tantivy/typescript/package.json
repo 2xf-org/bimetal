@@ -1,0 +1,23 @@
+{
+  "name": "search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./search/index.d.ts",
+      "default": "./search/index.js"
+    },
+    "./*": {
+      "types": "./search/*/index.d.ts",
+      "default": "./search/*/index.js"
+    }
+  },
+  "files": [
+    "search"
+  ],
+  "engines": {
+    "node": ">=20.16"
+  }
+}

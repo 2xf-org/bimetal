@@ -1,0 +1,29 @@
+{
+  "name": "query",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./query/index.d.ts",
+      "default": "./query/index.js"
+    },
+    "./*": {
+      "types": "./query/*/index.d.ts",
+      "default": "./query/*/index.js"
+    }
+  },
+  "files": [
+    "query"
+  ],
+  "peerDependencies": {
+    "apache-arrow": ">=21"
+  },
+  "devDependencies": {
+    "apache-arrow": "^21"
+  },
+  "engines": {
+    "node": ">=20.16"
+  }
+}
