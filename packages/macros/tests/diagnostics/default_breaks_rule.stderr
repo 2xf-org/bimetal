@@ -3,3 +3,9 @@ error: the field's default, the Rust `Default` that `#[serde(default)]` fills in
   |
 9 |     #[serde(default)]
   |             ^^^^^^^
+
+error: the field's default, the Rust `Default` that `#[serde(default)]` fills in, is shorter than its `min_length` constraint
+  --> tests/diagnostics/default_breaks_rule.rs:16:13
+   |
+16 |     #[serde(default)]
+   |             ^^^^^^^

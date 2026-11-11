@@ -116,11 +116,11 @@ pub(super) fn python_api(
             context.import("Final"),
             render::python_ref(&constant.ty, context)?
         );
-        if render::is_plain_python_constant(&constant.ty) {
+        if render::is_python_literal(&constant.ty) {
             let _ = writeln!(source, "{}: {annotation} = {value}", constant.host_name);
         } else {
             let _ = write!(source, "{}: {annotation} = ", constant.host_name);
-            let restored = python_restored(&value, &constant.ty, context)?;
+            let restored = render::python_restored(&value, &constant.ty, context)?;
             emit_python_validation(&mut source, &constant.ty, context, &restored, "")?;
         }
     }
@@ -285,7 +285,7 @@ fn emit_python_callable(
         );
     } else {
         let _ = write!(source, "{indent}    {RESULT}: {return_type} = ");
-        let restored = python_restored(NATIVE_RESULT, returns, context)?;
+        let restored = render::python_restored(NATIVE_RESULT, returns, context)?;
         emit_python_validation(
             source,
             returns,
@@ -477,19 +477,10 @@ fn emit_python_validation(
     value: &str,
     indent: &str,
 ) -> Result<()> {
-    let adapter = context.runtime("type_adapter");
-    let annotation = render::python_adapter_type(reference, context)?;
-    let buffers = context
-        .contract
-        .reaches(reference, |item| matches!(item, TypeRef::Buffer { .. }))?;
-    let options = if buffers {
-        ", arbitrary_types=True"
-    } else {
-        ""
-    };
+    let adapter = render::python_adapter(reference, context)?;
     let _ = writeln!(
         source,
-        "{adapter}({annotation}{options}).validate_python(\n{indent}    {value},\n{indent}    strict=False,\n{indent})"
+        "{adapter}.validate_python(\n{indent}    {value},\n{indent}    strict=False,\n{indent})"
     );
     Ok(())
 }
@@ -993,32 +984,6 @@ fn python_object_argument(
             ))
         }
         _ => None,
-    })
-}
-
-/// Render a native value, restored when its type needs it.
-///
-/// Only bytes and buffers change shape. Pydantic validates everything else as
-/// the extension returns it.
-fn python_restored(
-    value: &str,
-    reference: &TypeRef,
-    context: &PythonContext<'_>,
-) -> Result<String> {
-    let restores = context.contract.reaches(reference, |item| {
-        matches!(
-            item,
-            TypeRef::Bytes | TypeRef::FixedBytes { .. } | TypeRef::Buffer { .. }
-        )
-    })?;
-    Ok(if restores {
-        format!(
-            "{}({value}, {})",
-            context.runtime("restore_host"),
-            render::python_json(&contract::spec(reference))
-        )
-    } else {
-        value.to_owned()
     })
 }
 

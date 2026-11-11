@@ -369,6 +369,49 @@ pub(super) fn validate_constant_values(
     Ok(())
 }
 
+/// Report the defaults of fields that hold a NaN or an infinity, which Serde
+/// writes as `null`, as it does in a constant.
+pub(super) fn validate_default_values(
+    items: &NamespaceItems<'_>,
+    contract: &Contract<'_>,
+    problems: &mut Vec<String>,
+) -> Result<()> {
+    for model in &items.types {
+        let name = format!("{}::{}", model.rust_module, model.name);
+        let mut owners: Vec<(String, &[FieldDef])> = Vec::new();
+        match &model.shape {
+            TypeShape::Struct { fields } => owners.push((name, fields)),
+            TypeShape::TaggedEnum { variants, .. } => {
+                for variant in variants {
+                    let owner = format!("{name}::{}", variant.rust_name);
+                    owners.push((owner, &variant.fields));
+                }
+            }
+            TypeShape::ExternalEnum { variants } => {
+                for variant in variants {
+                    if let VariantPayload::Fields { fields } = &variant.payload {
+                        owners.push((format!("{name}::{}", variant.rust_name), fields));
+                    }
+                }
+            }
+            TypeShape::StringEnum { .. } | TypeShape::Alias { .. } => {}
+        }
+        for (owner, fields) in owners {
+            for field in fields {
+                if let Some(default) = &field.default
+                    && has_non_finite_float(&field.ty, default, contract)?
+                {
+                    problems.push(format!(
+                        "the default of field `{}` of `{owner}` holds a NaN or an infinity, which the generated packages cannot represent; use a finite value",
+                        field.rust_name
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Return whether `value`, the JSON of a value of `reference`, holds a float
 /// that Serde wrote as `null` because it was NaN or infinite. Inside an
 /// `Option`, such a float is indistinguishable from `None`.

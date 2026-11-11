@@ -103,6 +103,26 @@ pub struct Settings {
     pub verbose: bool,
     #[serde(default)]
     pub prefix: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub retry: Retry,
+}
+
+/// How often to try again, and how fast the wait grows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+pub struct Retry {
+    pub attempts: u32,
+    pub factor: f64,
+}
+
+impl Default for Retry {
+    fn default() -> Self {
+        Self {
+            attempts: 3,
+            factor: 2.0,
+        }
+    }
 }
 
 /// Something that happened to a record.

@@ -938,6 +938,118 @@ pub static DEFAULT_LABEL: &str = "integration";
 
 bimetal::application!();
 
+/// Models whose fields hold defaults that only the compiled library knows.
+#[allow(
+    dead_code,
+    reason = "the suites read the models' contract and build no value of them"
+)]
+pub mod defaults {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use bimetal::Model;
+    use serde::{Deserialize, Serialize};
+
+    /// How the delay between two attempts grows.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+    pub struct Backoff {
+        /// What each delay is multiplied by.
+        pub factor: f64,
+        /// The longest delay, in seconds.
+        #[bimetal(ge = 1)]
+        pub cap: u32,
+    }
+
+    impl Default for Backoff {
+        fn default() -> Self {
+            Self {
+                factor: 2.0,
+                cap: 60,
+            }
+        }
+    }
+
+    /// What happens after the last attempt.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Model)]
+    #[serde(rename_all = "snake_case")]
+    pub enum Then {
+        /// Report the failure.
+        #[default]
+        GiveUp,
+        /// Ask a person.
+        Escalate,
+    }
+
+    /// The exit codes that are tried again, with what each one means.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Model)]
+    #[serde(transparent)]
+    pub struct Codes(pub HashMap<String, u32>);
+
+    impl Default for Codes {
+        fn default() -> Self {
+            let codes = [("timeout", 124), ("killed", 137), ("busy", 75)];
+            Self(
+                codes
+                    .into_iter()
+                    .map(|(name, code)| (name.to_owned(), code))
+                    .collect(),
+            )
+        }
+    }
+
+    /// When a job is tried again.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+    pub struct RetryPolicy {
+        /// The delays that the first attempts wait, in seconds.
+        #[serde(default)]
+        pub delays: Vec<u32>,
+        /// How the delay between two attempts grows.
+        #[serde(default)]
+        pub backoff: Backoff,
+        /// How much of the queue the job may take.
+        #[serde(default)]
+        pub share: f64,
+        /// What happens after the last attempt.
+        #[serde(default)]
+        pub then: Then,
+        /// The exit codes that are tried again.
+        #[serde(default)]
+        pub codes: Codes,
+        /// How long one attempt may run.
+        #[serde(default)]
+        pub limit: Duration,
+    }
+
+    /// One step of a retry, whose variant holds a field with a default.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    pub enum Step {
+        /// Wait, then try again.
+        Wait {
+            /// How the wait grows.
+            #[serde(default)]
+            backoff: Backoff,
+        },
+        /// Stop trying.
+        Stop,
+    }
+
+    /// Declare a model through a macro, as an application may.
+    macro_rules! model {
+        ($name:ident { $($body:tt)* }) => {
+            /// A model that a macro declares.
+            #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+            pub struct $name { $($body)* }
+        };
+    }
+
+    model!(Declared {
+        /// A field whose attribute the macro forwards.
+        #[serde(default)]
+        pub backoff: Backoff,
+    });
+}
+
 /// Find the fixture's declarations in its manifest.
 #[allow(
     dead_code,

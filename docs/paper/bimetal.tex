@@ -164,7 +164,7 @@ Under A3, if \ttt{bimetal build} succeeds, each generated call names a function 
 For the native hosts, C1 gives the same sources and target as the discovery build, and the hash comparison rejects an artifact whose contract differs. For the module, C2 gives the same names. The types behind one name come from one Rust source, and by A3, no target changes those types.
 \end{proof}
 
-The argument depends on A3 because the command cannot detect a difference inside an export between targets. For example, a constant whose value depends on the target takes the current machine's value in every package.
+The argument depends on A3 because the command cannot detect a difference inside an export between targets. For example, a constant whose value depends on the target takes the current machine's value in every package. The default of a field is read from the compiled library in the same way, and a package builds its contract again when it loads and refuses to load if that contract differs from the one that the build read. A \ttt{Default} must therefore give the same value on every call, and the build fails when two calls differ.
 
 \subsection{Names}
 
@@ -217,7 +217,7 @@ Arrow stream & No copy, one batch at a time & An IPC stream and one copy each wa
 
 Models, strings, numbers, lists and maps are converted field by field. Serde reads and writes these values through \ttt{pythonize} on the extension, through \ttt{serde-\allowbreak wasm-\allowbreak bindgen} on the module, and through a serializer and a deserializer of our own on the addon. Our deserializer follows \ttt{serde-\allowbreak wasm-\allowbreak bindgen}'s checks, order and error messages, apart from a limit on nesting. In Python, a scalar or a container of scalars passes unchanged. Pydantic writes every other argument in one pass, in its JSON mode, where a model is a dictionary and a date is ISO 8601 text. When a value returns, Pydantic validates it.
 
-Rust checks an author's field rules on every host. It checks every argument and result of an export, and what a callback returns to Rust, but not the arguments that Rust passes to a callback. The check may look redundant in Python, where Pydantic enforces the same rules. However, \ttt{model\_copy(update=...)} skips Pydantic, and TypeScript has no equivalent of Pydantic at all. A returned value that breaks a rule indicates a bug in the Rust code, and the caller then receives an untyped error.
+Rust checks an author's field rules on every host. It checks every argument and result of an export, and what a callback returns to Rust, but not the arguments that Rust passes to a callback. The check may look redundant in Python, where Pydantic enforces the same rules. However, \ttt{model\_copy(update=...)} skips Pydantic, and TypeScript has no equivalent of Pydantic at all. A returned value that breaks a rule indicates a bug in the Rust code, and the caller then receives an untyped error. A field that is absent holds the Rust \ttt{Default} of its type, which no caller passed. The derive checks that default against the field's own rules, and the model's registration checks the rules inside it when the contract is read, so a default that breaks a rule fails the build.
 
 \subsection{Bytes and Buffers}
 

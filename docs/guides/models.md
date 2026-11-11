@@ -18,6 +18,10 @@ pub struct Settings {
     pub verbose: bool,
     #[serde(default)]
     pub prefix: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub retry: Retry,
 }
 ```
 
@@ -31,7 +35,30 @@ self.assertFalse(echo_settings(Settings(version="v1")).verbose)
 assert.equal(echoSettings({ version: "v1" }).verbose, false);
 ```
 
-`#[serde(default)]` on a `bool`, integer or `String` field makes it optional. The host fills in its Rust `Default`, which must keep the field's rules. An `Option` field is `None` when absent, with or without `#[serde(default)]`.
+`#[serde(default)]` makes a field optional when its type has a Rust `Default`: a `bool`, a number, a `String`, a list, a map, an enum or another model. An absent field holds that `Default`:
+
+```rust
+impl Default for Retry {
+    fn default() -> Self {
+        Self {
+            attempts: 3,
+            factor: 2.0,
+        }
+    }
+}
+```
+
+A Python model holds the default as soon as it is built, and no two models share a list or a nested model. A TypeScript object is plain, so it gains the default when it crosses into Rust:
+
+```python
+self.assertEqual(Settings(version="v1").retry, Retry(attempts=3, factor=2.0))
+```
+
+```ts
+assert.deepEqual(echoSettings({ version: "v1" }).retry, { attempts: 3, factor: 2 });
+```
+
+Bimetal reads each default from the compiled library, when it builds the packages and again when a package loads. A `Default` must therefore give the same value on every call, and the field's type must be `Serialize`. `bimetal build` fails when a default differs between two calls, holds a NaN or an infinity, or breaks a field rule. An `Option` field is `None` when absent, with or without `#[serde(default)]`.
 
 ## Field rules
 

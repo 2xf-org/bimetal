@@ -12,6 +12,7 @@ from showcase import (
     Mailbox,
     ParseError,
     Priority,
+    Retry,
     Settings,
     StrokeLift,
     StrokeMoveTo,
@@ -40,6 +41,9 @@ class FunctionsTest(unittest.TestCase):
 class ModelsTest(unittest.TestCase):
     def test_structs(self) -> None:
         self.assertFalse(echo_settings(Settings(version="v1")).verbose)
+
+    def test_defaults(self) -> None:
+        self.assertEqual(Settings(version="v1").retry, Retry(attempts=3, factor=2.0))
 
     def test_enums(self) -> None:
         self.assertEqual(Priority.High, "high")
