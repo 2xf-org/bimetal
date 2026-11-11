@@ -1689,7 +1689,7 @@ function __wbg_get_imports() {
             const ret = arg0.length;
             return ret;
         },
-        __wbg_new_2d980b0046771985: function(arg0, arg1) {
+        __wbg_new_25c54e4e2aadb09a: function(arg0, arg1) {
             const ret = new RangeError(getStringFromWasm0(arg0, arg1));
             return ret;
         },
@@ -1701,7 +1701,7 @@ function __wbg_get_imports() {
             const ret = new Map();
             return ret;
         },
-        __wbg_new_88e3c148b684c282: function(arg0, arg1) {
+        __wbg_new_8858450492ea94b6: function(arg0, arg1) {
             const ret = new TypeError(getStringFromWasm0(arg0, arg1));
             return ret;
         },

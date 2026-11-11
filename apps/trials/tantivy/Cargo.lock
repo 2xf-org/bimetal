@@ -44,6 +44,48 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
+name = "bimetal"
+version = "202611.11.0"
+dependencies = [
+ "bimetal-ir",
+ "bimetal-macros",
+ "chrono",
+ "getrandom 0.2.17",
+ "getrandom 0.3.4",
+ "getrandom 0.4.3",
+ "inventory",
+ "napi-sys",
+ "pyo3",
+ "pythonize",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "bimetal-ir"
+version = "202611.11.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bimetal-macros"
+version = "202611.11.0"
+dependencies = [
+ "bimetal-ir",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -497,48 +539,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "bimetal"
-version = "202611.10.0"
-dependencies = [
- "chrono",
- "getrandom 0.2.17",
- "getrandom 0.3.4",
- "getrandom 0.4.3",
- "inventory",
- "bimetal-ir",
- "bimetal-macros",
- "napi-sys",
- "pyo3",
- "pythonize",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror",
- "tokio",
- "wasm-bindgen",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "bimetal-ir"
-version = "202611.10.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bimetal-macros"
-version = "202611.10.0"
-dependencies = [
- "heck",
- "bimetal-ir",
- "proc-macro2",
- "quote",
- "syn 3.0.9",
 ]
 
 [[package]]

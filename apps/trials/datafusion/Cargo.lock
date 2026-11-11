@@ -310,6 +310,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "bimetal"
+version = "202611.11.0"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-ipc",
+ "arrow-schema",
+ "arrow-select",
+ "bimetal-ir",
+ "bimetal-macros",
+ "chrono",
+ "futures-core",
+ "getrandom 0.2.17",
+ "getrandom 0.3.4",
+ "getrandom 0.4.3",
+ "inventory",
+ "napi-sys",
+ "pyo3",
+ "pythonize",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "bimetal-ir"
+version = "202611.11.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bimetal-macros"
+version = "202611.11.0"
+dependencies = [
+ "bimetal-ir",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1664,53 +1712,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "bimetal"
-version = "202611.10.0"
-dependencies = [
- "arrow-array",
- "arrow-buffer",
- "arrow-ipc",
- "arrow-schema",
- "arrow-select",
- "chrono",
- "getrandom 0.2.17",
- "getrandom 0.3.4",
- "getrandom 0.4.3",
- "inventory",
- "bimetal-ir",
- "bimetal-macros",
- "napi-sys",
- "pyo3",
- "pythonize",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror",
- "tokio",
- "wasm-bindgen",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "bimetal-ir"
-version = "202611.10.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "bimetal-macros"
-version = "202611.10.0"
-dependencies = [
- "heck",
- "bimetal-ir",
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "napi-sys"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1994,9 +1995,9 @@ dependencies = [
 name = "query"
 version = "0.1.0"
 dependencies = [
+ "bimetal",
  "datafusion",
  "futures",
- "bimetal",
  "serde",
  "thiserror",
  "tokio",
