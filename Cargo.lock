@@ -298,7 +298,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bimetal"
-version = "202611.10.0"
+version = "202611.11.0"
 dependencies = [
  "alloy-primitives",
  "arrow-array 59.3.2",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-cli"
-version = "202611.10.0"
+version = "202611.11.0"
 dependencies = [
  "anyhow",
  "bimetal-ir",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-ir"
-version = "202611.10.0"
+version = "202611.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-macros"
-version = "202611.10.0"
+version = "202611.11.0"
 dependencies = [
  "bimetal",
  "bimetal-ir",
