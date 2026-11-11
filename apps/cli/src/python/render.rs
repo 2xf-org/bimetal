@@ -409,18 +409,81 @@ pub(super) fn python_json(value: &Value) -> String {
     }
 }
 
-/// Return whether a constant can be assigned without runtime restoration.
+/// Return whether Python's literal of a value that Serde wrote is already
+/// the host value, which needs no restoration or validation: a scalar, or a
+/// list, a map or an `Option` of such.
 #[must_use]
-pub(super) fn is_plain_python_constant(reference: &TypeRef) -> bool {
-    matches!(
-        reference,
+pub(super) fn is_python_literal(reference: &TypeRef) -> bool {
+    match reference {
+        TypeRef::Option { item } | TypeRef::List { item } => is_python_literal(item),
+        TypeRef::Map { value } => is_python_literal(value),
         TypeRef::Unit
-            | TypeRef::Bool
-            | TypeRef::Int { .. }
-            | TypeRef::Float { .. }
-            | TypeRef::String
-            | TypeRef::Json
-    )
+        | TypeRef::Bool
+        | TypeRef::Int { .. }
+        | TypeRef::Float { .. }
+        | TypeRef::String
+        | TypeRef::Json => true,
+        _ => false,
+    }
+}
+
+/// Render the adapter that validates a value of `reference`.
+pub(super) fn python_adapter(reference: &TypeRef, context: &PythonContext<'_>) -> Result<String> {
+    let adapter = context.runtime("type_adapter");
+    let annotation = python_adapter_type(reference, context)?;
+    let buffers = context
+        .contract
+        .reaches(reference, |item| matches!(item, TypeRef::Buffer { .. }))?;
+    let options = if buffers {
+        ", arbitrary_types=True"
+    } else {
+        ""
+    };
+    Ok(format!("{adapter}({annotation}{options})"))
+}
+
+/// Render the expression that gives `value`, which Serde wrote, as the host
+/// value of `reference`.
+pub(super) fn python_value(
+    value: &Value,
+    reference: &TypeRef,
+    context: &PythonContext<'_>,
+) -> Result<String> {
+    let value = python_json(value);
+    if is_python_literal(reference) {
+        return Ok(value);
+    }
+    let restored = python_restored(&value, reference, context)?;
+    Ok(format!(
+        "{}.validate_python({restored}, strict=False)",
+        python_adapter(reference, context)?
+    ))
+}
+
+/// Render a native value, restored when its type needs it.
+///
+/// Only bytes and buffers change shape. Pydantic validates everything else as
+/// the extension returns it.
+pub(super) fn python_restored(
+    value: &str,
+    reference: &TypeRef,
+    context: &PythonContext<'_>,
+) -> Result<String> {
+    let restores = context.contract.reaches(reference, |item| {
+        matches!(
+            item,
+            TypeRef::Bytes | TypeRef::FixedBytes { .. } | TypeRef::Buffer { .. }
+        )
+    })?;
+    Ok(if restores {
+        format!(
+            "{}({value}, {})",
+            context.runtime("restore_host"),
+            python_json(&contract::spec(reference))
+        )
+    } else {
+        value.to_owned()
+    })
 }
 
 /// Emit a multiline Python docstring with stable wrapping and indentation,

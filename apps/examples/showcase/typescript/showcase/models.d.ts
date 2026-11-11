@@ -122,6 +122,13 @@ export interface Record {
  */
 export type RecordId = string;
 /**
+ * How often to try again, and how fast the wait grows.
+ */
+export interface Retry {
+  readonly attempts: number;
+  readonly factor: number;
+}
+/**
  * A score, shown to hosts as its number.
  */
 export type Score = number;
@@ -135,6 +142,8 @@ export interface Settings {
   readonly version: "v1";
   readonly verbose?: boolean;
   readonly prefix?: string;
+  readonly tags?: ReadonlyArray<string>;
+  readonly retry?: Retry;
 }
 /**
  * Lift the pen.

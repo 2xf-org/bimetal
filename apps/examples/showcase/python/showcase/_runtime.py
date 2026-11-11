@@ -350,7 +350,7 @@ class ArrowSchemaExportable(Protocol):
     def __arrow_c_schema__(self) -> object: ...
 
 
-require_contract("7d34322a10f3bee0")
+require_contract("826eb4fbb1fbe633")
 
 native_schemas = {
     "showcase::showcase::Entry": ["struct", {"amount": None, "balance": None}],
@@ -360,8 +360,9 @@ native_schemas = {
     "showcase::showcase::Priority": None,
     "showcase::showcase::Record": ["struct", {"checksum": ["list", None], "counters": ["map", None], "createdAt": None, "id": ["named", "showcase::showcase::RecordId"], "label": None, "localTime": None, "location": ["named", "showcase-geometry::showcase_geometry::Point"], "metadata": ["json"], "note": None, "priority": ["named", "showcase::showcase::Priority"], "ranges": ["map", ["tuple", [None, None]]], "revision": None, "score": ["named", "showcase::showcase::Score"], "stars": None, "tags": ["list", None]}],
     "showcase::showcase::RecordId": ["alias", None],
+    "showcase::showcase::Retry": ["struct", {"attempts": None, "factor": None}],
     "showcase::showcase::Score": ["alias", None],
-    "showcase::showcase::Settings": ["struct", {"prefix": None, "verbose": None, "version": None}],
+    "showcase::showcase::Settings": ["struct", {"prefix": None, "retry": ["named", "showcase::showcase::Retry"], "tags": ["list", None], "verbose": None, "version": None}],
     "showcase::showcase::Stroke": ["external", {"again": ["named", "showcase::showcase::Stroke"], "lift": None, "line_to": ["struct", {"to": ["named", "showcase-geometry::showcase_geometry::Point"], "width": None}], "move_to": ["named", "showcase-geometry::showcase_geometry::Point"], "pause": None}],
     "showcase::showcase::shelf::ShelfErrorFull": ["struct", {"limit": None, "title": None}],
     "showcase::showcase::shelf::ShelfErrorVisitor": ["struct", {"reason": None}],

@@ -2,7 +2,9 @@
 //!
 //! The expansion produces a `ContractType` implementation, which checks the
 //! model's field rules, and an inventory registration of the model's shape.
-//! All structural validation is completed before token emission.
+//! All structural validation is completed before token emission. Only the
+//! compiled library knows the default of a field, so the registration reads
+//! it there.
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -82,20 +84,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     });
 
-    let origin = registration::origin();
-    let registration = registration::submit(
-        "TypeRegistration",
-        &quote!(::bimetal::ir::TypeDef),
-        &quote! {
-            ::bimetal::ir::TypeDef {
-                #origin
-                id: #id,
-                name: #type_name.to_owned(),
-                docs: #docs,
-                shape: #shape,
-            }
-        },
-    );
+    let registration = registration::submit_type(&type_name, &id, &id, &docs, &shape);
     Ok(quote! {
         impl ::bimetal::ContractType for #ident {
             fn type_ref() -> ::bimetal::ir::TypeRef {
@@ -152,7 +141,7 @@ fn struct_shape(attrs: &[Attribute], ident: &Ident, data: &DataStruct) -> syn::R
                     "a transparent struct must have exactly one tuple field",
                 ));
             }
-            let fields = model_fields(fields, serde.rename_all)?;
+            let fields = model_fields(fields, serde.rename_all, None)?;
             let definitions = fields.iter().map(|field| &field.definition);
             let checks = fields.iter().map(|field| {
                 let ident = &field.ident;
@@ -264,7 +253,7 @@ fn variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Result<Mode
     let (fields, check_arm) = match &variant.fields {
         Fields::Unit => (Vec::new(), quote!(Self::#ident => {})),
         Fields::Named(fields) if serde.tag.is_some() => {
-            let fields = model_fields(fields, serde.rename_all_fields)?;
+            let fields = model_fields(fields, serde.rename_all_fields, Some(&rust_name))?;
             let (bindings, pattern) = types::field_bindings(&fields);
             let checks = fields
                 .iter()
@@ -364,7 +353,7 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
             ));
         }
         Fields::Named(fields) => {
-            let fields = model_fields(fields, serde.rename_all_fields)?;
+            let fields = model_fields(fields, serde.rename_all_fields, Some(&rust_name))?;
             let (bindings, pattern) = types::field_bindings(&fields);
             let checks = fields
                 .iter()
@@ -414,15 +403,17 @@ fn reject_variant_rules(variant: &Variant) -> syn::Result<()> {
     }
 }
 
-/// Render the contract fields of a struct or variant, in declaration order,
-/// leaving out the runtime-only fields that both Serde and Bimetal skip.
+/// Render the contract fields of a struct, or of the variant `variant`, in
+/// declaration order, leaving out the runtime-only fields that both Serde
+/// and Bimetal skip.
 fn model_fields(
     fields: &FieldsNamed,
     rename_all: Option<SerdeRenameRule>,
+    variant: Option<&str>,
 ) -> syn::Result<Vec<ModelField>> {
     let mut model_fields = Vec::new();
     for field in &fields.named {
-        model_fields.extend(types::field_tokens(field, rename_all)?);
+        model_fields.extend(types::field_tokens(field, rename_all, variant)?);
     }
     Ok(model_fields)
 }

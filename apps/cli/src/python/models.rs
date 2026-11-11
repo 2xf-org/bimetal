@@ -387,6 +387,25 @@ pub(crate) fn python_field_name(rust_name: &str) -> String {
     name
 }
 
+/// Render what an absent field holds: nothing when callers must supply it,
+/// its Rust `Default` when it has one, and `None` otherwise. Pydantic copies
+/// a list or a map for each model, and a value that it must validate is
+/// built for each.
+fn python_field_default(field: &FieldDef, context: &PythonContext<'_>) -> Result<String> {
+    if field.required {
+        return Ok("default=...".to_owned());
+    }
+    let Some(value) = &field.default else {
+        return Ok("default=None".to_owned());
+    };
+    let rendered = render::python_value(value, &field.ty, context)?;
+    Ok(if render::is_python_literal(&field.ty) {
+        format!("default={rendered}")
+    } else {
+        format!("default_factory=lambda: {rendered}")
+    })
+}
+
 /// Render one Pydantic field with its wire name, default, and constraints.
 fn emit_python_field(
     source: &mut String,
@@ -404,15 +423,8 @@ fn emit_python_field(
     } else {
         render::python_ref(&field.ty, context)?
     };
-    let default = if field.required {
-        "...".to_owned()
-    } else if let Some(value) = &field.default {
-        render::python_scalar(value)
-    } else {
-        "None".to_owned()
-    };
     let name = python_field_name(&field.rust_name);
-    let mut options = vec![format!("default={default}")];
+    let mut options = vec![python_field_default(field, context)?];
     if let Some(docs) = field.docs.as_deref() {
         options.push(format!("description={}", literal::quoted(docs)));
     }
@@ -461,6 +473,7 @@ mod tests {
     use std::cell::RefCell;
 
     use bimetal_ir::{Manifest, Namespace};
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::fixtures;
@@ -470,6 +483,56 @@ mod tests {
             shape,
             ..fixtures::model(name, Vec::new())
         }
+    }
+
+    #[test]
+    fn an_absent_field_holds_the_default_of_its_type() {
+        let absent = |name: &str, ty: TypeRef, default: Value| FieldDef {
+            required: false,
+            default: Some(default),
+            ..fixtures::typed_field(name, ty)
+        };
+        let retry = fixtures::model(
+            "Retry",
+            vec![fixtures::typed_field(
+                "attempts",
+                TypeRef::Int {
+                    signed: false,
+                    bits: 32,
+                },
+            )],
+        );
+        let settings = fixtures::model(
+            "Settings",
+            vec![
+                absent("share", TypeRef::Float { bits: 64 }, json!(0.5)),
+                absent(
+                    "tags",
+                    TypeRef::List {
+                        item: Box::new(TypeRef::String),
+                    },
+                    json!([]),
+                ),
+                absent("retry", fixtures::named("Retry"), json!({"attempts": 3})),
+            ],
+        );
+        let manifest = Manifest {
+            types: vec![retry, settings],
+            ..fixtures::manifest()
+        };
+        let namespace = Namespace::root();
+        let contract = fixtures::contract(&manifest);
+        let imports = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let source =
+            python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
+
+        // Pydantic copies a literal; a model is validated for each model.
+        assert!(source.contains("    share: float = Field(default=0.5)\n"));
+        assert!(source.contains("    tags: list[str] = Field(default=[])\n"));
+        assert!(source.contains(
+            "    retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({\"attempts\": 3}, strict=False))\n"
+        ));
     }
 
     #[test]

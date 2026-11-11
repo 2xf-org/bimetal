@@ -10,9 +10,13 @@
 //! the Node.js addon read the contract, and the Wasm module, which nothing
 //! asks for it, does not carry it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::ContractType;
 #[cfg(any(feature = "python", feature = "node"))]
 use crate::ir::discovery;
 use crate::ir::{
@@ -21,8 +25,9 @@ use crate::ir::{
 
 /// A linked type contract produced by [`crate::Model`].
 pub struct TypeRegistration(
-    /// Construct the type definition at discovery time.
-    pub fn() -> TypeDef,
+    /// Construct the type definition at discovery time, and add a problem
+    /// for each default of a field that cannot enter the contract.
+    pub fn(&mut Vec<String>) -> TypeDef,
 );
 /// A linked error contract produced by [`crate::Error`].
 pub struct ErrorRegistration(
@@ -89,6 +94,9 @@ pub enum RegistryError {
     /// An exported constant could not be serialized into the contract.
     #[error("{0}")]
     InvalidConstant(String),
+    /// The default of a field could not enter the contract.
+    #[error("{0}")]
+    InvalidDefault(String),
 }
 
 /// Every problem with the exports linked into an application, each once, so
@@ -156,8 +164,8 @@ pub(crate) fn contract_hash(
 /// # Errors
 ///
 /// Returns every [`RegistryError`] found: exports that share a native name,
-/// that use an unlinked type or error, or that contain a constant that cannot
-/// be serialized.
+/// that use an unlinked type or error, or that contain a constant or a field
+/// default that cannot enter the contract.
 pub fn manifest(package_name: &str, package_version: &str) -> Result<Manifest, RegistryErrors> {
     let mut problems = Vec::new();
     let mut manifest = collect(package_name, package_version, &mut problems);
@@ -173,7 +181,7 @@ pub fn manifest(package_name: &str, package_version: &str) -> Result<Manifest, R
 }
 
 /// Build the manifest of every linked registration, and add a problem for
-/// each constant that cannot be serialized.
+/// each constant and each field default that cannot enter the contract.
 fn collect(
     package_name: &str,
     package_version: &str,
@@ -186,13 +194,18 @@ fn collect(
             Err(message) => problems.push(RegistryError::InvalidConstant(message)),
         }
     }
+    let mut defaults = Vec::new();
+    let types = inventory::iter::<TypeRegistration>
+        .into_iter()
+        .map(|item| (item.0)(&mut defaults))
+        .collect();
+    // The registrations come in link order, which differs between builds.
+    defaults.sort();
+    problems.extend(defaults.into_iter().map(RegistryError::InvalidDefault));
     Manifest {
         package_name: package_name.to_owned(),
         package_version: package_version.to_owned(),
-        types: inventory::iter::<TypeRegistration>
-            .into_iter()
-            .map(|item| (item.0)())
-            .collect(),
+        types,
         errors: inventory::iter::<ErrorRegistration>
             .into_iter()
             .map(|item| (item.0)())
@@ -206,6 +219,57 @@ fn collect(
             .map(|item| (item.0)())
             .collect(),
         constants,
+    }
+}
+
+/// Return what an absent `field` of the declaration `owner` holds: the Rust
+/// `Default` of its type, as Serde writes it. A default that cannot enter
+/// the contract gives `None` and adds to `problems`.
+///
+/// A package rebuilds its contract when it loads and compares it with the
+/// one that the build read, so the default must be the same on every call.
+#[doc(hidden)]
+pub fn field_default<T>(owner: &str, field: &str, problems: &mut Vec<String>) -> Option<Value>
+where
+    T: ContractType + Default + Serialize,
+{
+    let default = T::default();
+    let problem = match default.check_rules() {
+        Err(violation) => format!("breaks a field rule: {violation}"),
+        Ok(()) => match (
+            serde_json::to_value(default),
+            serde_json::to_value(T::default()),
+        ) {
+            (Ok(first), Ok(second)) => {
+                let first = sorted(first);
+                if first == sorted(second) {
+                    return Some(first);
+                }
+                "changes from one call of `Default::default` to the next".to_owned()
+            }
+            (Err(error), _) | (_, Err(error)) => format!("could not serialize as JSON: {error}"),
+        },
+    };
+    problems.push(format!(
+        "the default of field `{field}` of `{owner}` {problem}"
+    ));
+    None
+}
+
+/// Return `value` with the keys of every object in order. Serde writes a
+/// `HashMap` in an order that changes from one process to the next, which
+/// `serde_json` keeps when a crate turns on its `preserve_order`.
+fn sorted(value: Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        Value::Object(entries) => {
+            let entries: BTreeMap<String, Value> = entries
+                .into_iter()
+                .map(|(key, value)| (key, sorted(value)))
+                .collect();
+            Value::Object(entries.into_iter().collect())
+        }
+        scalar => scalar,
     }
 }
 

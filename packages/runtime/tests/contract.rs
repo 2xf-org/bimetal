@@ -11,10 +11,9 @@ mod fixtures;
 use std::collections::BTreeSet;
 use std::ffi::CStr;
 
-use bimetal::ir::{
-    BufferElement, FieldDef, Manifest, ScalarValue, TypeRef, TypeShape, VariantPayload,
-};
+use bimetal::ir::{BufferElement, FieldDef, Manifest, TypeRef, TypeShape, VariantPayload};
 use bimetal::runtime::ContractError;
+use serde_json::json;
 
 use crate::fixtures::lookup;
 
@@ -54,6 +53,7 @@ fn discovery_returns_the_complete_application_contract() {
     let optional_modules = [
         "contract::fixtures::chain",
         "contract::fixtures::columns",
+        "contract::fixtures::defaults",
         "contract::fixtures::extra",
         "contract::fixtures::streams",
     ];
@@ -176,6 +176,38 @@ fn discovery_returns_the_complete_application_contract() {
 }
 
 #[test]
+fn a_field_default_is_the_rust_default_of_its_type() {
+    let manifest = discovered_manifest();
+    let policy = lookup::model(&manifest, "RetryPolicy");
+    let backoff = json!({"cap": 60, "factor": 2.0});
+
+    let defaults = [
+        ("delays", json!([])),
+        ("backoff", backoff.clone()),
+        ("share", json!(0.0)),
+        ("then", json!("give_up")),
+        ("codes", json!({"busy": 75, "killed": 137, "timeout": 124})),
+        ("limit", json!({"nanos": 0, "secs": 0})),
+    ];
+    for (name, default) in defaults {
+        let field = field_named(&policy.shape, name);
+        assert!(!field.required, "`{name}` may be absent");
+        assert_eq!(field.default, Some(default), "the default of `{name}`");
+    }
+
+    let TypeShape::TaggedEnum { variants, .. } = &lookup::model(&manifest, "Step").shape else {
+        panic!("expected a tagged enum");
+    };
+    assert_eq!(variants[0].fields[0].default, Some(backoff.clone()));
+    // The derive reads the attribute where a macro forwards it.
+    let declared = lookup::model(&manifest, "Declared");
+    assert_eq!(
+        field_named(&declared.shape, "backoff").default,
+        Some(backoff)
+    );
+}
+
+#[test]
 fn request_fields_preserve_names_constraints_defaults_and_boundaries() {
     let manifest = discovered_manifest();
     let request = lookup::model(&manifest, "JobRequest");
@@ -190,7 +222,7 @@ fn request_fields_preserve_names_constraints_defaults_and_boundaries() {
     assert_eq!(count.constraints.le, Some(100));
     let dry_run = field_named(&request.shape, "dryRun");
     assert!(!dry_run.required);
-    assert_eq!(dry_run.default, Some(ScalarValue::Bool(false)));
+    assert_eq!(dry_run.default, Some(json!(false)));
 
     let context = field_named(&request.shape, "context");
     assert!(!context.required);

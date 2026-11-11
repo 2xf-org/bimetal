@@ -17,7 +17,7 @@ backend = "node"
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "b284ff21fefaf71ca21eb8db0e3c0c4d"
+source_fingerprint = "34cf729cbbe2d8debad83b128f4496a8"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "cea084fc3f910148373ce6727c743b5d"

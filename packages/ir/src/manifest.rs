@@ -442,13 +442,14 @@ pub struct FieldDef {
     pub ty: TypeRef,
     /// Whether callers must supply the field.
     pub required: bool,
-    /// Host-side default for an omitted field.
-    pub default: Option<ScalarValue>,
+    /// What an omitted field holds: the Rust `Default` of its type, as Serde
+    /// writes it.
+    pub default: Option<Value>,
     /// Host-side validation constraints.
     pub constraints: FieldConstraints,
 }
 
-/// A scalar value supported by field defaults and constraints.
+/// A scalar value supported by field constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ScalarValue {

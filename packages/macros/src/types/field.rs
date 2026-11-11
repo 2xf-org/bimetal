@@ -51,8 +51,30 @@ impl ModelField {
     }
 }
 
+/// Render what an absent field holds in the contract: for a field with
+/// `#[serde(default)]`, the Rust `Default` of its type, which the
+/// registration asks the runtime for. `variant` names the field's variant
+/// in an enum. Serde reads an absent `Option` as `None` either way.
+fn default_tokens(
+    field: &Field,
+    declared: bool,
+    variant: Option<&str>,
+    rust_name: &str,
+) -> TokenStream2 {
+    if !declared || type_ref::option_item(&field.ty).is_some() {
+        return quote!(::core::option::Option::None);
+    }
+    let ty = &field.ty;
+    let owner = match variant {
+        Some(variant) => quote!(&::std::format!("{}::{}", __bimetal_owner, #variant)),
+        None => quote!(&__bimetal_owner),
+    };
+    quote!(::bimetal::registry::field_default::<#ty>(#owner, #rust_name, __bimetal_problems))
+}
+
 /// Render one named model field and its validated constraints, or `None` for
-/// a runtime-only field that both Serde and Bimetal skip.
+/// a runtime-only field that both Serde and Bimetal skip. `variant` names
+/// the field's variant in an enum.
 ///
 /// # Panics
 ///
@@ -60,6 +82,7 @@ impl ModelField {
 pub(crate) fn field_tokens(
     field: &Field,
     rename_all: Option<SerdeRenameRule>,
+    variant: Option<&str>,
 ) -> syn::Result<Option<ModelField>> {
     use syn::ext::IdentExt;
     use syn::spanned::Spanned;
@@ -101,13 +124,13 @@ pub(crate) fn field_tokens(
             ),
         ));
     }
-    let default = options.validate(field, &serde)?;
+    options.validate(field, &serde)?;
     let required = options.is_required(field, &serde);
     let wire_name = serde
         .rename
         .unwrap_or_else(|| attributes::apply_serde_field_case(&rust_name, rename_all));
     let ty = type_ref::type_ref_tokens(&field.ty, None)?;
-    let default = field_options::scalar_option_tokens(default.as_ref());
+    let default = default_tokens(field, serde.default.is_some(), variant, &rust_name);
     let literal = field_options::scalar_option_tokens(options.literal.as_ref());
     let min_length = field_options::option_tokens(options.min_length);
     let max_length = field_options::option_tokens(options.max_length);
@@ -169,7 +192,7 @@ mod tests {
             #[bimetal(bytes)]
             payload: Vec<u8>
         ));
-        let error = field_tokens(&field, None).expect_err("nested bytes must be rejected");
+        let error = field_tokens(&field, None, None).expect_err("nested bytes must be rejected");
 
         assert!(error.to_string().contains("top-level exported parameters"));
     }
@@ -180,7 +203,8 @@ mod tests {
             #[bimetal(ge = 1)]
             timestamp: chrono::DateTime<chrono::Utc>
         ));
-        let error = field_tokens(&field, None).expect_err("unknown constraint must be rejected");
+        let error =
+            field_tokens(&field, None, None).expect_err("unknown constraint must be rejected");
 
         assert!(error.to_string().contains("apply only to integer fields"));
     }
@@ -193,7 +217,7 @@ mod tests {
             post_process: Option<fn(f64) -> f64>
         ));
 
-        assert!(field_tokens(&field, None).unwrap().is_none());
+        assert!(field_tokens(&field, None, None).unwrap().is_none());
     }
 
     #[test]
@@ -202,7 +226,7 @@ mod tests {
             #[bimetal(skip)]
             post_process: Option<fn(f64) -> f64>
         ));
-        let error = field_tokens(&field, None).expect_err("Serde must also skip the field");
+        let error = field_tokens(&field, None, None).expect_err("Serde must also skip the field");
 
         assert!(error.to_string().contains("must declare both"));
     }

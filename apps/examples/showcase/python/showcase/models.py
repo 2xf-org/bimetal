@@ -17,6 +17,7 @@ from showcase._runtime import (
     ExternalVariant as _bimetal_ExternalVariant,
     JsonValue as _bimetal_JsonValue,
     external_discriminator as _bimetal_external_discriminator,
+    type_adapter as _bimetal_type_adapter,
     variant_tag as _bimetal_variant_tag,
 )
 
@@ -192,6 +193,22 @@ class Record(BaseModel):
     revision: int = Field(default=0)
 
 
+class Retry(BaseModel):
+    """
+    How often to try again, and how fast the wait grows.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+        protected_namespaces=(),
+    )
+    attempts: int = Field(default=...)
+    factor: float = Field(default=...)
+
+
 class Settings(BaseModel):
     """
     Settings with defaults and a fixed value.
@@ -208,6 +225,8 @@ class Settings(BaseModel):
     version: Literal["v1"] = Field(default=..., description="Always `\"v1\"`.")
     verbose: bool = Field(default=False)
     prefix: str = Field(default="")
+    tags: list[str] = Field(default=[])
+    retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({"attempts": 3, "factor": 2.0}, strict=False))
 
 
 class StrokeLift(_bimetal_ExternalVariant):
@@ -321,6 +340,7 @@ EventDeleted.model_rebuild()
 Holiday.model_rebuild()
 Numbers.model_rebuild()
 Record.model_rebuild()
+Retry.model_rebuild()
 Settings.model_rebuild()
 StrokeLift.model_rebuild()
 StrokeMoveTo.model_rebuild()
@@ -341,6 +361,7 @@ __all__ = [
     "Priority",
     "Record",
     "RecordId",
+    "Retry",
     "Score",
     "Settings",
     "Stroke",

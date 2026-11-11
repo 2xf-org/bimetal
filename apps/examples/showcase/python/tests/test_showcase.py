@@ -51,6 +51,7 @@ from showcase import (
     ParseError,
     Priority,
     Record,
+    Retry,
     Settings,
     StrokeAgain,
     StrokeLift,
@@ -203,6 +204,9 @@ class ModelTest(unittest.TestCase):
         settings = Settings(version="v1")
 
         self.assertEqual(echo_settings(settings), Settings(version="v1", verbose=False, prefix=""))
+        self.assertEqual(settings.tags, [])
+        self.assertIsNot(settings.tags, Settings(version="v1").tags)
+        self.assertEqual(settings.retry, Retry(attempts=3, factor=2.0))
         self.assertEqual(record().revision, 0)
         with self.assertRaises(ValidationError):
             Settings(version="v2")  # type: ignore[arg-type]

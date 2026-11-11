@@ -90,15 +90,10 @@ impl FieldOptions {
         Ok(())
     }
 
-    /// Validate the field's rules against its type and its Serde attributes,
-    /// and return the value that the hosts fill in for an absent field.
-    pub(super) fn validate(
-        &self,
-        field: &Field,
-        serde: &SerdeField,
-    ) -> syn::Result<Option<SpannedScalar>> {
-        let default = host_default(&field.ty, serde)?;
-        validate_field_presence(field, self, serde, default.as_ref())?;
+    /// Validate the field's rules against its type and its Serde attributes.
+    pub(super) fn validate(&self, field: &Field, serde: &SerdeField) -> syn::Result<()> {
+        let default = known_default(&field.ty, serde);
+        validate_field_presence(field, self, serde)?;
         if let Some(literal) = self.literal.as_ref()
             && type_ref::option_item(&field.ty).is_some()
         {
@@ -109,8 +104,19 @@ impl FieldOptions {
         }
         let kind = field_kind(&field.ty);
         validate_constraint_ranges(field, self, kind)?;
-        validate_constraint_values(self, kind, default.as_ref())?;
-        Ok(default)
+        // A `Vec` is empty by default, which the derive knows as it knows a
+        // scalar's default.
+        if let Some(span) = serde.default
+            && kind == FieldKind::List
+            && type_ref::option_item(&field.ty).is_none()
+            && self.min_length.is_some_and(|minimum| minimum > 0)
+        {
+            return Err(syn::Error::new(
+                span,
+                "the field's default, the Rust `Default` that `#[serde(default)]` fills in, is shorter than its `min_length` constraint",
+            ));
+        }
+        validate_constraint_values(self, kind, default.as_ref())
     }
 
     /// Return the calls of `bimetal::runtime::rules` that check the rules the
@@ -306,38 +312,30 @@ fn field_kind(ty: &SynType) -> FieldKind {
     }
 }
 
-/// Return the value that hosts fill in for an absent `#[serde(default)]`
-/// field, the Rust `Default` of its type. An `Option` field needs none,
-/// because Serde reads it as `None` when absent, with or without the
-/// attribute.
-fn host_default(ty: &SynType, serde: &SerdeField) -> syn::Result<Option<SpannedScalar>> {
-    let Some(span) = serde.default else {
-        return Ok(None);
-    };
+/// Return the Rust `Default` of an absent `#[serde(default)]` scalar field,
+/// which the derive checks against the field's rules. Only a scalar, a
+/// string or a list takes rules, so the derive checks every one of them.
+fn known_default(ty: &SynType, serde: &SerdeField) -> Option<SpannedScalar> {
+    let span = serde.default?;
     if type_ref::option_item(ty).is_some() {
-        return Ok(None);
+        return None;
     }
     let value = match field_kind(ty) {
         FieldKind::Bool => ScalarValue::Bool(false),
         FieldKind::Integer => ScalarValue::I64(0),
         FieldKind::String => ScalarValue::String(String::new()),
-        FieldKind::List | FieldKind::Unknown => {
-            return Err(syn::Error::new(
-                span,
-                "`#[serde(default)]` is supported only on bool, integer, String, and Option fields, whose Rust `Default` the hosts can fill in",
-            ));
-        }
+        FieldKind::List | FieldKind::Unknown => return None,
     };
-    Ok(Some(SpannedScalar { value, span }))
+    Some(SpannedScalar { value, span })
 }
 
-/// Validate `required`, the host default, and Serde's `skip_serializing_if`
-/// together, since each changes when a field may be absent.
+/// Validate `required`, `#[serde(default)]`, and Serde's
+/// `skip_serializing_if` together, since each changes when a field may be
+/// absent.
 fn validate_field_presence(
     field: &Field,
     options: &FieldOptions,
     serde: &SerdeField,
-    default: Option<&SpannedScalar>,
 ) -> syn::Result<()> {
     if let Some(skip) = serde.skip_serializing_if.as_ref() {
         if options.is_required(field, serde) {
@@ -366,9 +364,11 @@ fn validate_field_presence(
             ));
         }
     }
-    if let (true, Some(default)) = (options.required, default) {
+    if let (true, Some(span)) = (options.required, serde.default)
+        && type_ref::option_item(&field.ty).is_none()
+    {
         return Err(syn::Error::new(
-            default.span,
+            span,
             "a `required` field cannot have `#[serde(default)]`, which the hosts would fill in when it is absent",
         ));
     }
@@ -511,23 +511,23 @@ mod tests {
 
     use super::*;
 
-    /// Validate a named field, and return its host default and whether it
-    /// is required.
+    /// Validate a named field, and return the default that its type alone
+    /// gives and whether it is required.
     fn presence(tokens: TokenStream2) -> syn::Result<(Option<ScalarValue>, bool)> {
         let field = Field::parse_named
             .parse2(tokens)
             .expect("parse named field");
         let options = FieldOptions::parse(&field.attrs)?;
         let serde = attributes::serde_field(&field.attrs)?;
-        let default = options.validate(&field, &serde)?;
+        options.validate(&field, &serde)?;
         Ok((
-            default.map(|default| default.value),
+            known_default(&field.ty, &serde).map(|default| default.value),
             options.is_required(&field, &serde),
         ))
     }
 
     #[test]
-    fn serde_defaults_give_the_hosts_the_rust_default() {
+    fn the_derive_knows_the_default_of_a_scalar_field() {
         let cases = [
             (
                 quote!(#[serde(default)] verbose: bool),
@@ -543,6 +543,9 @@ mod tests {
             ),
             // Serde reads an absent `Option` as `None` either way.
             (quote!(#[serde(default)] note: Option<String>), None),
+            // The derive reads no value for another type's default.
+            (quote!(#[serde(default)] tags: Vec<String>), None),
+            (quote!(#[serde(default)] limits: Limits), None),
         ];
         for (tokens, default) in cases {
             assert_eq!(presence(tokens).expect("a valid field"), (default, false));
@@ -570,7 +573,12 @@ mod tests {
                 .contains("differs from its `literal`")
         );
         assert!(
-            error(quote!(#[serde(default)] tags: Vec<String>)).contains("supported only on bool")
+            error(quote!(#[serde(default)] #[bimetal(min_length = 1)] tags: Vec<String>))
+                .contains("shorter than its `min_length`")
+        );
+        assert!(
+            error(quote!(#[serde(default)] #[bimetal(required)] tags: Vec<String>))
+                .contains("a `required` field cannot have `#[serde(default)]`")
         );
     }
 }

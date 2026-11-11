@@ -78,6 +78,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     &variant.attrs,
                     &variant.fields,
                     &format!("{error_name}{rust_name}"),
+                    &format!("{error_name}::{rust_name}"),
                     &variant_docs,
                     &quote!(Self::#variant_ident),
                 )?;
@@ -103,6 +104,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 &input.attrs,
                 &data.fields,
                 &format!("{error_name}Details"),
+                &error_name,
                 &quote!(None),
                 &quote!(Self),
             )?;
@@ -191,11 +193,13 @@ fn option_tokens(identity: Option<&TokenStream2>) -> TokenStream2 {
 /// Return what `#[bimetal(details)]` adds to the variant or struct with these
 /// attributes and fields, which `path` names, or `None` when it does not
 /// declare them. `model`, the name of the model that describes them, is also
-/// its host type's name.
+/// its host type's name, and `owner` is how the author wrote the variant or
+/// struct.
 fn declared_details(
     attrs: &[Attribute],
     fields: &Fields,
     model: &str,
+    owner: &str,
     docs: &TokenStream2,
     path: &TokenStream2,
 ) -> syn::Result<Option<Details>> {
@@ -224,7 +228,7 @@ fn declared_details(
     let mut bindings = Vec::new();
     let mut entries = Vec::new();
     for field in &named.named {
-        let Some(field) = types::field_tokens(field, None)? else {
+        let Some(field) = types::field_tokens(field, None, None)? else {
             continue;
         };
         definitions.push(field.definition.clone());
@@ -234,21 +238,14 @@ fn declared_details(
         entries.push(quote!(#wire_name: #binding));
     }
     let id = quote!(concat!(module_path!(), "::", #model));
-    let origin = registration::origin();
-    let registration = registration::submit(
-        "TypeRegistration",
-        &quote!(::bimetal::ir::TypeDef),
-        &quote! {
-            ::bimetal::ir::TypeDef {
-                #origin
-                id: #id.to_owned(),
-                name: #model.to_owned(),
-                docs: #docs,
-                shape: ::bimetal::ir::TypeShape::Struct {
-                    fields: vec![#(#definitions),*],
-                },
-            }
-        },
+    let registration = registration::submit_type(
+        model,
+        &quote!(#id.to_owned()),
+        &quote!(concat!(module_path!(), "::", #owner).to_owned()),
+        docs,
+        &quote!(::bimetal::ir::TypeShape::Struct {
+            fields: vec![#(#definitions),*],
+        }),
     );
     Ok(Some(Details {
         arm: quote! {

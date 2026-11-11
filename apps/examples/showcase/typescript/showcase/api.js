@@ -23,7 +23,7 @@ export function bounds(values) {
   $checkNative();
   $checkArgument(values, "array", "bounds(): argument `values`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_09d4d45e00c0c6e4"]($prepareHost(values, ["list", null])), ["tuple", [null, null]]);
+    return $restoreHost($native["__bimetal_function_showcase_66e214c954b688ae"]($prepareHost(values, ["list", null])), ["tuple", [null, null]]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -33,7 +33,7 @@ export function corners(size) {
   $checkNative();
   $checkArgument(size, "array", "corners(): argument `size`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_632feb9b64febc6d"]($prepareHost(size, ["tuple", [null, null]])), ["tuple", [["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"]]]);
+    return $restoreHost($native["__bimetal_function_showcase_bb5e18907c5c5bb7"]($prepareHost(size, ["tuple", [null, null]])), ["tuple", [["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"]]]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -43,7 +43,7 @@ export function countTags(records) {
   $checkNative();
   $checkArgument(records, "array", "countTags(): argument `records`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_147c35f4017bc555"]($prepareHost(records, ["list", ["named", "showcase::showcase::Record"]])), ["map", null]);
+    return $restoreHost($native["__bimetal_function_showcase_ca1b5659c7fd3e33"]($prepareHost(records, ["list", ["named", "showcase::showcase::Record"]])), ["map", null]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -53,7 +53,7 @@ export async function countWords(text) {
   $checkNative();
   $checkArgument(text, "string", "countWords(): argument `text`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_627d0795271daf36"]($prepareHost(text, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_e5997a239e875dd4"]($prepareHost(text, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -63,7 +63,7 @@ export function describe(event) {
   $checkNative();
   $checkArgument(event, "object", "describe(): argument `event`");
   try {
-    return $native["__bimetal_function_showcase_70bea6ea1dae061e"]($prepareHost(event, ["named", "showcase::showcase::Event"]));
+    return $native["__bimetal_function_showcase_75bd9776e65ca2cc"]($prepareHost(event, ["named", "showcase::showcase::Event"]));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -73,7 +73,7 @@ export function echoNumbers(numbers) {
   $checkNative();
   $checkArgument(numbers, "object", "echoNumbers(): argument `numbers`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_95e4ce9038bd3e62"]($prepareHost(numbers, ["named", "showcase::showcase::Numbers"])), ["named", "showcase::showcase::Numbers"]);
+    return $restoreHost($native["__bimetal_function_showcase_0da83a9e16d86fb8"]($prepareHost(numbers, ["named", "showcase::showcase::Numbers"])), ["named", "showcase::showcase::Numbers"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -83,7 +83,7 @@ export function echoRecord(record) {
   $checkNative();
   $checkArgument(record, "object", "echoRecord(): argument `record`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_e352310a6be2cd04"]($prepareHost(record, ["named", "showcase::showcase::Record"])), ["named", "showcase::showcase::Record"]);
+    return $restoreHost($native["__bimetal_function_showcase_ec6126851876c5d2"]($prepareHost(record, ["named", "showcase::showcase::Record"])), ["named", "showcase::showcase::Record"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -93,7 +93,7 @@ export function echoSettings(settings) {
   $checkNative();
   $checkArgument(settings, "object", "echoSettings(): argument `settings`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_0b05c9e186c7f13a"]($prepareHost(settings, ["named", "showcase::showcase::Settings"])), ["named", "showcase::showcase::Settings"]);
+    return $restoreHost($native["__bimetal_function_showcase_c3516dc05bed75ef"]($prepareHost(settings, ["named", "showcase::showcase::Settings"])), ["named", "showcase::showcase::Settings"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -104,7 +104,7 @@ export async function findItem(items, index) {
   $checkArgument(items, "array", "findItem(): argument `items`");
   $checkArgument(index, "number", "findItem(): argument `index`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_e654decabd386195"]($prepareHost(items, ["list", null]), $prepareHost(index, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_0a85463814ba241a"]($prepareHost(items, ["list", null]), $prepareHost(index, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -114,7 +114,7 @@ export function fingerprint(data) {
   $checkNative();
   $checkArgument(data, "uint8", "fingerprint(): argument `data`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_e274866088bb3276"]($prepareHost(data, ["bytes"])), ["bytes"]);
+    return $restoreHost($native["__bimetal_function_showcase_1a377f9e844f4841"]($prepareHost(data, ["bytes"])), ["bytes"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -124,7 +124,7 @@ export function finish(strokes, last = "lift") {
   $checkNative();
   $checkArgument(strokes, "array", "finish(): argument `strokes`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_c67092d30f3ca482"]($prepareHost(strokes, ["list", ["named", "showcase::showcase::Stroke"]]), $prepareHost(last, ["named", "showcase::showcase::Stroke"])), ["list", ["named", "showcase::showcase::Stroke"]]);
+    return $restoreHost($native["__bimetal_function_showcase_7bfb6389204bc09c"]($prepareHost(strokes, ["list", ["named", "showcase::showcase::Stroke"]]), $prepareHost(last, ["named", "showcase::showcase::Stroke"])), ["list", ["named", "showcase::showcase::Stroke"]]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -135,7 +135,7 @@ export function itemAt(items, index) {
   $checkArgument(items, "array", "itemAt(): argument `items`");
   $checkArgument(index, "number", "itemAt(): argument `index`");
   try {
-    return $native["__bimetal_function_showcase_1df2e73ae6d99111"]($prepareHost(items, ["list", null]), $prepareHost(index, null));
+    return $native["__bimetal_function_showcase_01c581c95eb7359f"]($prepareHost(items, ["list", null]), $prepareHost(index, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -146,7 +146,7 @@ export function longer(first, second = 1000000000n) {
   $checkArgument(first, "bigint", "longer(): argument `first`");
   $checkArgument(second, "bigint", "longer(): argument `second`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_e5508b7a50743219"]($prepareHost(first, ["duration"]), $prepareHost(second, ["duration"])), ["duration"]);
+    return $restoreHost($native["__bimetal_function_showcase_693401cab6ff8b5f"]($prepareHost(first, ["duration"]), $prepareHost(second, ["duration"])), ["duration"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -156,7 +156,7 @@ export function nest(depth) {
   $checkNative();
   $checkArgument(depth, "number", "nest(): argument `depth`");
   try {
-    return $native["__bimetal_function_showcase_09b858d10ceb0bd8"]($prepareHost(depth, null));
+    return $native["__bimetal_function_showcase_45064a7cc305f911"]($prepareHost(depth, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -166,7 +166,7 @@ export async function nestLater(depth) {
   $checkNative();
   $checkArgument(depth, "number", "nestLater(): argument `depth`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_393a3775b7afe841"]($prepareHost(depth, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_b6e84cff9da68ed3"]($prepareHost(depth, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -176,7 +176,7 @@ export function nextDay(date = "2028-02-28") {
   $checkNative();
   $checkArgument(date, "string", "nextDay(): argument `date`");
   try {
-    return $native["__bimetal_function_showcase_7342b60075df3b6d"]($prepareHost(date, null));
+    return $native["__bimetal_function_showcase_2e5443aebc44da4f"]($prepareHost(date, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -186,7 +186,7 @@ export function observe(holiday) {
   $checkNative();
   $checkArgument(holiday, "object", "observe(): argument `holiday`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_6a0b58982380f728"]($prepareHost(holiday, ["named", "showcase::showcase::Holiday"])), ["named", "showcase::showcase::Holiday"]);
+    return $restoreHost($native["__bimetal_function_showcase_af81f705a6406c26"]($prepareHost(holiday, ["named", "showcase::showcase::Holiday"])), ["named", "showcase::showcase::Holiday"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -196,7 +196,7 @@ export function parsePriority(text) {
   $checkNative();
   $checkArgument(text, "string", "parsePriority(): argument `text`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_030bea5dde827563"]($prepareHost(text, null)), ["named", "showcase::showcase::Priority"]);
+    return $restoreHost($native["__bimetal_function_showcase_a3759d39845c40e5"]($prepareHost(text, null)), ["named", "showcase::showcase::Priority"]);
   } catch ($error) {
     throw $nativeError($error, ParseError);
   }
@@ -205,7 +205,7 @@ export function parsePriority(text) {
 export function ping() {
   $checkNative();
   try {
-    $native["__bimetal_function_showcase_dc1abc43d9b61800"]();
+    $native["__bimetal_function_showcase_be5d9bbc283de542"]();
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -216,7 +216,7 @@ export function qualify(package_, class_) {
   $checkArgument(package_, "string", "qualify(): argument `package_`");
   $checkArgument(class_, "string", "qualify(): argument `class_`");
   try {
-    return $native["__bimetal_function_showcase_9a350b46027f1a58"]($prepareHost(package_, null), $prepareHost(class_, null));
+    return $native["__bimetal_function_showcase_e7401124ae40f7e6"]($prepareHost(package_, null), $prepareHost(class_, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -227,7 +227,7 @@ export function repeat(str, int) {
   $checkArgument(str, "string", "repeat(): argument `str`");
   $checkArgument(int, "number", "repeat(): argument `int`");
   try {
-    return $native["__bimetal_function_showcase_832cdfb78b3290dc"]($prepareHost(str, null), $prepareHost(int, null));
+    return $native["__bimetal_function_showcase_06e179cc1232b3de"]($prepareHost(str, null), $prepareHost(int, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -237,7 +237,7 @@ export function retrace(strokes) {
   $checkNative();
   $checkArgument(strokes, "array", "retrace(): argument `strokes`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_daa2cc57fec5ddeb"]($prepareHost(strokes, ["list", ["named", "showcase::showcase::Stroke"]])), ["list", ["named", "showcase::showcase::Stroke"]]);
+    return $restoreHost($native["__bimetal_function_showcase_bf35c120bdc134a1"]($prepareHost(strokes, ["list", ["named", "showcase::showcase::Stroke"]])), ["list", ["named", "showcase::showcase::Stroke"]]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -247,7 +247,7 @@ export function reverse(bytes) {
   $checkNative();
   $checkArgument(bytes, "uint8", "reverse(): argument `bytes`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_9d109300093d8043"]($prepareHost(bytes, ["bytes"])), ["bytes"]);
+    return $restoreHost($native["__bimetal_function_showcase_86ab5208ad1bb9c1"]($prepareHost(bytes, ["bytes"])), ["bytes"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -257,7 +257,7 @@ export function routeLength(route) {
   $checkNative();
   $checkArgument(route, "array", "routeLength(): argument `route`");
   try {
-    return $native["__bimetal_function_showcase_2a56938ef4df0f49"]($prepareHost(route, ["list", ["named", "showcase-geometry::showcase_geometry::Point"]]));
+    return $native["__bimetal_function_showcase_8e7eeca2a4db34ab"]($prepareHost(route, ["list", ["named", "showcase-geometry::showcase_geometry::Point"]]));
   } catch ($error) {
     throw $nativeError($error, api_geometry.GeometryError);
   }
@@ -267,7 +267,7 @@ export function runningTotal(values) {
   $checkNative();
   $checkArgument(values, "int64", "runningTotal(): argument `values`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_e8d5716b54aa5d62"]($prepareHost(values, ["buffer", "int64"])), ["buffer", "int64"]);
+    return $restoreHost($native["__bimetal_function_showcase_79dfeeea64958b4b"]($prepareHost(values, ["buffer", "int64"])), ["buffer", "int64"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -278,7 +278,7 @@ export function scale(samples, factor) {
   $checkArgument(samples, "float32", "scale(): argument `samples`");
   $checkArgument(factor, "number", "scale(): argument `factor`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_703d38134dd36900"]($prepareHost(samples, ["buffer", "float32"]), $prepareHost(factor, null)), ["buffer", "float32"]);
+    return $restoreHost($native["__bimetal_function_showcase_e0ad1fc2ba6d4e3e"]($prepareHost(samples, ["buffer", "float32"]), $prepareHost(factor, null)), ["buffer", "float32"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -287,7 +287,7 @@ export function scale(samples, factor) {
 export function showcase() {
   $checkNative();
   try {
-    return $native["__bimetal_function_showcase_107f9cd49f4b7b8e"]();
+    return $native["__bimetal_function_showcase_2b4c62dfb358b874"]();
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -297,7 +297,7 @@ export function total(waits) {
   $checkNative();
   $checkArgument(waits, "array", "total(): argument `waits`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_6b63302b7fff309a"]($prepareHost(waits, ["list", ["duration"]])), ["duration"]);
+    return $restoreHost($native["__bimetal_function_showcase_837007bcfb0ec17c"]($prepareHost(waits, ["list", ["duration"]])), ["duration"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -307,7 +307,7 @@ export function totals(entries) {
   $checkNative();
   $checkArgument(entries, "array", "totals(): argument `entries`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_828f4c6c25469848"]($prepareHost(entries, ["list", ["tuple", [null, null]]])), ["map", null]);
+    return $restoreHost($native["__bimetal_function_showcase_00e370f5ed24410e"]($prepareHost(entries, ["list", ["tuple", [null, null]]])), ["map", null]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -318,7 +318,7 @@ export function touch(record, at) {
   $checkArgument(record, "object", "touch(): argument `record`");
   $checkArgument(at, "date", "touch(): argument `at`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_764474f950c4f4a7"]($prepareHost(record, ["named", "showcase::showcase::Record"]), $prepareHost(at, null)), ["named", "showcase::showcase::Record"]);
+    return $restoreHost($native["__bimetal_function_showcase_5f74ec5f289bd174"]($prepareHost(record, ["named", "showcase::showcase::Record"]), $prepareHost(at, null)), ["named", "showcase::showcase::Record"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -327,7 +327,7 @@ export function touch(record, at) {
 export function wrap(value) {
   $checkNative();
   try {
-    return $restoreHost($native["__bimetal_function_showcase_bc8d649ae9e67e43"]($prepareHost(value, ["json"])), ["json"]);
+    return $restoreHost($native["__bimetal_function_showcase_8d07126ec8c10ae5"]($prepareHost(value, ["json"])), ["json"]);
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -338,7 +338,7 @@ export class Ledger {
     $checkNative();
     $checkArgument(owner, "string", "new Ledger(): argument `owner`");
     try {
-      this.nativeResource = new $native["__bimetal_resource_showcase_f40c2f88134c9845"]($prepareHost(owner, null));
+      this.nativeResource = new $native["__bimetal_resource_showcase_5099bc0ccd4e96af"]($prepareHost(owner, null));
     } catch ($error) {
       throw $nativeError($error, ParseError);
     }
@@ -356,7 +356,7 @@ export class Ledger {
     $checkArgument(owner, "string", "Ledger.withBalance(): argument `owner`");
     $checkArgument(balance, "bigint", "Ledger.withBalance(): argument `balance`");
     try {
-      $resource.nativeResource = $native["__bimetal_resource_showcase_f40c2f88134c9845"].withBalance($prepareHost(owner, null), $prepareHost(balance, null));
+      $resource.nativeResource = $native["__bimetal_resource_showcase_5099bc0ccd4e96af"].withBalance($prepareHost(owner, null), $prepareHost(balance, null));
     } catch ($error) {
       throw $nativeError($error);
     }
@@ -440,7 +440,7 @@ export class Mailbox {
     $checkNative();
     $checkArgument(recipient, "string", "Mailbox.open(): argument `recipient`");
     try {
-      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_showcase_ab4d334354fe9275"].open($prepareHost(recipient, null)));
+      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_showcase_b9200de371e9a767"].open($prepareHost(recipient, null)));
     } catch ($error) {
       throw $nativeError($error, ParseError);
     }

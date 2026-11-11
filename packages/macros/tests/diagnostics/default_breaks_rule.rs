@@ -11,4 +11,11 @@ pub struct Settings {
     pub prefix: String,
 }
 
+#[derive(Serialize, Deserialize, Model)]
+pub struct Listing {
+    #[serde(default)]
+    #[bimetal(min_length = 1)]
+    pub names: Vec<String>,
+}
+
 fn main() {}

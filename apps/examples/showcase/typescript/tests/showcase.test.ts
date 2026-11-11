@@ -168,7 +168,13 @@ suite("models", () => {
   });
 
   it("fill defaults that the caller leaves out", () => {
-    assert.deepEqual(echoSettings({ version: "v1" }), { version: "v1", verbose: false, prefix: "" });
+    assert.deepEqual(echoSettings({ version: "v1" }), {
+      version: "v1",
+      verbose: false,
+      prefix: "",
+      tags: [],
+      retry: { attempts: 3, factor: 2 },
+    });
   });
 
   it("keep the field rules, which Rust checks as RangeErrors that name the field", () => {
