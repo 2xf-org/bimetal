@@ -13,7 +13,7 @@ use crate::arrow::{ArrowValue, Parts, RecordBatchStream};
 use crate::convert::arrow_ipc::{self, Encoded, Feed, NEXT, Outgoing};
 use crate::ir::ArrowKind;
 use crate::runtime::Resource;
-use crate::runtime::executor;
+use crate::runtime::executor::{self, Start};
 use crate::runtime::node::{
     self, CallInfo, Class, ClassDescriptor, Env, Error, Method, Registration, Value,
 };
@@ -98,14 +98,15 @@ impl Class for ReaderObject {
 inventory::submit! { Registration::Class(&READER) }
 
 /// Resolve with the next batch, or `null` at the end. A panic ends the
-/// stream, as a failure does.
+/// stream, as a failure does. A worker makes each batch, which may take long
+/// work.
 fn read_next(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
     let held = call
         .this::<ReaderObject>()?
         .0
         .write_owned(NEXT)
         .map_err(|error| runtime_error(&error))?;
-    node::awaitable(call.env(), async move {
+    node::awaitable(call.env(), Start::Runtime, async move {
         let mut outgoing = held.await;
         let batch = executor::catch_panic(outgoing.next(), |panic| format!("panic: {panic}")).await;
         if let Err(message) = &batch {
@@ -172,7 +173,7 @@ const BATCH: Parameter = Parameter {
 /// stream has dropped.
 fn feed_asked(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
     let asked = call.this::<FeedObject>()?.0.asked();
-    node::unref_awaitable(call.env(), async move {
+    node::unref_awaitable(call.env(), Start::Caller, async move {
         let asked = asked.await;
         Ok(node::deferred(move |env| env.boolean(asked)))
     })

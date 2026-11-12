@@ -6,7 +6,6 @@ from typing import Literal, TypeAlias
 
 from trading._runtime import (
     native as _bimetal_native,
-    type_adapter as _bimetal_type_adapter,
 )
 
 
@@ -48,10 +47,7 @@ def notional(price: int, quantity: int) -> int:
         price,
         quantity,
     )
-    __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
 __all__ = [

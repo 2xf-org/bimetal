@@ -335,6 +335,55 @@ assert count_stops({"stops": [4, 8, 15]}) == 3
     )
 }
 
+/// A feature gate decides which members Python has, and a gated async call
+/// makes the same first-poll choice as an ungated one.
+#[test]
+fn a_feature_gate_decides_whether_python_has_a_member() -> PyResult<()> {
+    let scenario = if cfg!(feature = "alloy") {
+        cr#"
+till = Till.holding(5)
+assert till.take(2) == 7
+assert till.receipt() == {"total": 7}
+assert not hasattr(till, "plainTotal")
+
+
+# A gated async call starts where an ungated one does: on this thread, unless
+# it takes a function.
+import asyncio
+import threading
+
+
+async def main():
+    settled = till.settle()
+    assert settled.done(), "a call that does not wait is done when it returns"
+    assert settled.result() == 7
+
+    callers = []
+
+    def doubled(total):
+        callers.append(threading.get_ident())
+        return total * 2
+
+    called = till.settleWith(doubled)
+    assert not called.done(), "a call that takes a function starts on a worker"
+    assert await asyncio.wait_for(called, 5) == 14
+    assert callers != [threading.get_ident()], callers
+
+
+asyncio.run(main())
+"#
+    } else {
+        cr#"
+till = Till()
+assert till.take(2) == 2
+assert till.plainTotal() == 2
+assert not hasattr(till, "receipt")
+assert not hasattr(Till, "holding")
+"#
+    };
+    python::run_scenario(scenario, &[], &["Till"])
+}
+
 #[cfg(feature = "alloy")]
 #[test]
 fn alloy_types_cross_as_hex_strings() -> PyResult<()> {
@@ -691,6 +740,100 @@ fn async_calls_resolve_asyncio_awaitables() -> PyResult<()> {
     )
 }
 
+/// A call that finishes before its first wait returns a future that is done:
+/// no worker runs it and nothing is scheduled on the event loop. Its body
+/// runs on the caller's thread without the interpreter lock, and a call that
+/// waits goes on from there on a worker. A call that takes a Python function
+/// starts on a worker, so a function that waits for the event loop does not
+/// wait for its own thread.
+const READY_SCENARIO: &CStr = cr#"
+import asyncio
+import threading
+
+
+async def main():
+    future = double_at_once(4)
+    assert future.done()
+    assert future.result() == 8
+    assert await double_at_once(5) == 10
+
+    failed = check_count_at_once(0)
+    assert failed.done()
+    error = failed.exception()
+    assert isinstance(error, RuntimeError), error
+    assert error.args[0] == "invalid_count", error.args
+
+    panicked = panic_at_once("async panic at once")
+    assert panicked.done()
+    try:
+        panicked.result()
+    except PanicException as error:
+        assert str(error) == "async panic at once", str(error)
+    else:
+        raise AssertionError("a panic before the first wait must raise")
+
+    assert not await holds_interpreter_lock_at_once()
+
+    waiting = threads_of_a_call()
+    assert not waiting.done()
+    before, after = await asyncio.wait_for(waiting, 5)
+    assert before != after, (before, after)
+    # Each call ran its first part on this thread.
+    again, _ = await asyncio.wait_for(threads_of_a_call(), 5)
+    assert again == before, (again, before)
+
+    callers = []
+
+    def tripled(value):
+        callers.append(threading.get_ident())
+        return value * 3
+
+    called = call_at_once(tripled, 4)
+    assert not called.done(), "a call that takes a function starts on a worker"
+    assert await asyncio.wait_for(called, 5) == 12
+    assert callers != [threading.get_ident()], callers
+
+    loop = asyncio.get_running_loop()
+
+    async def doubled(value):
+        return value * 2
+
+    def through_the_loop(value):
+        return asyncio.run_coroutine_threadsafe(doubled(value), loop).result(timeout=5)
+
+    assert await asyncio.wait_for(call_at_once(through_the_loop, 4), 10) == 8
+
+    # A call that is done has no task to abort.
+    cancelled = double_at_once(1)
+    assert not cancelled.cancel()
+
+
+asyncio.run(main())
+
+try:
+    double_at_once(1)
+except RuntimeError as error:
+    assert str(error) == "no running event loop", error
+else:
+    raise AssertionError("a call that is ready needs a running event loop too")
+"#;
+
+#[test]
+fn a_call_that_does_not_wait_is_done_when_it_returns() -> PyResult<()> {
+    python::run_scenario(
+        READY_SCENARIO,
+        &[
+            "doubleAtOnce",
+            "checkCountAtOnce",
+            "callAtOnce",
+            "panicAtOnce",
+            "holdsInterpreterLockAtOnce",
+            "threadsOfACall",
+        ],
+        &[],
+    )
+}
+
 /// An async call needs a running event loop, a loop that closes while a call
 /// runs drops its result quietly, and a result that arrives after the caller
 /// cancelled the call is dropped too.
@@ -861,7 +1004,9 @@ fn arrow_values_cross_through_the_pycapsule_interface() -> PyResult<()> {
 /// Streams cross lazily both ways, and Bimetal's own importer reads Bimetal's own
 /// exports, which needs no pyarrow. A Python function feeds some streams,
 /// which a blocking thread calls: a pull that kept the interpreter lock while
-/// it waited would deadlock, as the table import's pulls would.
+/// it waited would deadlock, as the table import's pulls would. An async call
+/// that takes a stream starts on a worker, even one that reads the stream
+/// before its first wait, so its reads never block the event loop's thread.
 #[cfg(feature = "arrow-api")]
 const STREAM_SCENARIO: &CStr = cr#"
 import asyncio
@@ -870,6 +1015,14 @@ import asyncio
 def run(call):
     async def main():
         return await asyncio.wait_for(call(), 5)
+    return asyncio.run(main())
+
+
+def run_on_worker(call):
+    async def main():
+        pending = call()
+        assert not pending.done(), "a call that takes a stream starts on a worker"
+        return await asyncio.wait_for(pending, 5)
     return asyncio.run(main())
 
 
@@ -898,6 +1051,7 @@ for source in (generate, generate_blocking):
     assert sum(source(tens)) == 30, source
     assert run(lambda: sum_later(source(tens))) == 30, source
     assert run(lambda: sum_on_worker(source(tens))) == 30, source
+    assert run_on_worker(lambda: sum_at_once(source(tens))) == 30, source
     assert summarize_table(source(tens))["rows"] == 3, source
     try:
         sum(source(fails))
@@ -951,6 +1105,7 @@ fn streams_cross_one_batch_at_a_time() -> PyResult<()> {
             "sum",
             "sumLater",
             "sumOnWorker",
+            "sumAtOnce",
             "first",
             "outcomes",
             "summarizeTable",

@@ -5,7 +5,7 @@ use quote::{ToTokens, quote};
 use syn::spanned::Spanned;
 use syn::{Attribute, Expr, Field, Lit, LitInt, Type as SynType, UnOp};
 
-use crate::attributes::{self, Boundary, SerdeField};
+use crate::attributes::{self, Boundary, SerdeDefault, SerdeField};
 use crate::types::type_ref;
 
 /// Scalar values accepted in field rules and defaults.
@@ -106,7 +106,10 @@ impl FieldOptions {
         validate_constraint_ranges(field, self, kind)?;
         // A `Vec` is empty by default, which the derive knows as it knows a
         // scalar's default.
-        if let Some(span) = serde.default
+        if let Some(SerdeDefault {
+            span,
+            function: None,
+        }) = serde.default
             && kind == FieldKind::List
             && type_ref::option_item(&field.ty).is_none()
             && self.min_length.is_some_and(|minimum| minimum > 0)
@@ -195,7 +198,7 @@ impl FieldOptions {
                 self.skip = true;
             } else if meta.path.is_ident("default") {
                 return Err(meta.error(
-                    "remove `#[bimetal(default = ...)]`: `#[serde(default)]` alone is enough, and the hosts fill in the field's Rust `Default`",
+                    "remove `#[bimetal(default = ...)]`: `#[serde(default)]` gives an absent field the Rust `Default` of its type, and `#[serde(default = \"path\")]` what that function returns",
                 ));
             } else {
                 return Err(meta.error(
@@ -315,8 +318,16 @@ fn field_kind(ty: &SynType) -> FieldKind {
 /// Return the Rust `Default` of an absent `#[serde(default)]` scalar field,
 /// which the derive checks against the field's rules. Only a scalar, a
 /// string or a list takes rules, so the derive checks every one of them.
+/// The derive cannot know what a `default = "path"` function returns.
 fn known_default(ty: &SynType, serde: &SerdeField) -> Option<SpannedScalar> {
-    let span = serde.default?;
+    let SerdeDefault {
+        span,
+        function: None,
+    } = serde.default.as_ref()?
+    else {
+        return None;
+    };
+    let span = *span;
     if type_ref::option_item(ty).is_some() {
         return None;
     }
@@ -363,13 +374,37 @@ fn validate_field_presence(
                 "bimetal supports only `Option::is_none` for `skip_serializing_if`",
             ));
         }
+        // Serde would read the `None` that it left out as what the function
+        // returns, and TypeScript would read it as absent.
+        if let Some(SerdeDefault {
+            function: Some(function),
+            ..
+        }) = serde.default.as_ref()
+        {
+            return Err(syn::Error::new(
+                skip.span(),
+                format!(
+                    "remove `#[serde(skip_serializing_if = ...)]` or `#[serde(default = \"{}\")]`: Serde leaves out a `None`, then reads it back as what the function returns",
+                    function.value()
+                ),
+            ));
+        }
     }
-    if let (true, Some(span)) = (options.required, serde.default)
-        && type_ref::option_item(&field.ty).is_none()
+    // Serde reads an absent `Option` as `None` under `#[serde(default)]`, so
+    // only a function can give a `required` field a value that its caller
+    // left out.
+    if let (true, Some(default)) = (options.required, serde.default.as_ref())
+        && (default.function.is_some() || type_ref::option_item(&field.ty).is_none())
     {
+        let written = match &default.function {
+            Some(function) => format!("#[serde(default = \"{}\")]", function.value()),
+            None => "#[serde(default)]".to_owned(),
+        };
         return Err(syn::Error::new(
-            span,
-            "a `required` field cannot have `#[serde(default)]`, which the hosts would fill in when it is absent",
+            default.span,
+            format!(
+                "a `required` field cannot have `{written}`, which the hosts would fill in when it is absent"
+            ),
         ));
     }
     Ok(())
@@ -546,6 +581,12 @@ mod tests {
             // The derive reads no value for another type's default.
             (quote!(#[serde(default)] tags: Vec<String>), None),
             (quote!(#[serde(default)] limits: Limits), None),
+            // Only the compiled library can call a default function.
+            (quote!(#[serde(default = "yes")] verbose: bool), None),
+            (
+                quote!(#[serde(default = "self::label")] note: Option<String>),
+                None,
+            ),
         ];
         for (tokens, default) in cases {
             assert_eq!(presence(tokens).expect("a valid field"), (default, false));
@@ -580,5 +621,48 @@ mod tests {
             error(quote!(#[serde(default)] #[bimetal(required)] tags: Vec<String>))
                 .contains("a `required` field cannot have `#[serde(default)]`")
         );
+        // Serde calls the function for an absent `Option` too.
+        assert!(
+            error(quote!(#[serde(default = "label")] #[bimetal(required)] note: Option<String>))
+                .contains("a `required` field cannot have `#[serde(default = \"label\")]`")
+        );
+    }
+
+    #[test]
+    fn a_default_function_takes_no_skip_serializing_if() {
+        let error = presence(quote!(
+            #[serde(default = "label", skip_serializing_if = "Option::is_none")]
+            note: Option<String>
+        ))
+        .expect_err("an invalid field")
+        .to_string();
+        assert!(
+            error.contains(
+                "remove `#[serde(skip_serializing_if = ...)]` or `#[serde(default = \"label\")]`"
+            ),
+            "{error}"
+        );
+        // Serde reads the `None` it left out as `None`, the `Default` of an
+        // `Option`.
+        assert_eq!(
+            presence(quote!(
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                note: Option<String>
+            ))
+            .expect("a valid field"),
+            (None, false)
+        );
+    }
+
+    #[test]
+    fn the_rules_of_a_default_function_wait_for_the_compiled_library() {
+        let cases = [
+            quote!(#[serde(default = "empty")] #[bimetal(min_length = 1)] prefix: String),
+            quote!(#[serde(default = "empty")] #[bimetal(min_length = 1)] tags: Vec<String>),
+            quote!(#[serde(default = "zero")] #[bimetal(ge = 1)] count: u32),
+        ];
+        for tokens in cases {
+            assert_eq!(presence(tokens).expect("a valid field"), (None, false));
+        }
     }
 }

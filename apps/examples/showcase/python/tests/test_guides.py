@@ -45,6 +45,9 @@ class ModelsTest(unittest.TestCase):
     def test_defaults(self) -> None:
         self.assertEqual(Settings(version="v1").retry, Retry(attempts=3, factor=2.0))
 
+    def test_default_functions(self) -> None:
+        self.assertEqual(Settings(version="v1").icon, "brackets-curly")
+
     def test_enums(self) -> None:
         self.assertEqual(Priority.High, "high")
 

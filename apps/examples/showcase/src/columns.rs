@@ -1,7 +1,7 @@
 //! Arrow values: columns, batches, tables, schemas, and streams that cross
 //! without Serde. Hosts see this module as the `columns` namespace.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bimetal::arrow::array::cast::AsArray;
 use bimetal::arrow::array::types::{Float64Type, Int64Type};
@@ -151,13 +151,88 @@ pub async fn sum_column(
 ) -> Result<f64, ColumnError> {
     let mut sum = 0.0;
     while let Some(batch) = rows.next().await {
-        let batch = batch?;
-        let values = batch
-            .column_by_name(&name)
-            .ok_or(ColumnError::MissingColumn)?
-            .as_primitive_opt::<Float64Type>()
-            .ok_or(ColumnError::WrongType)?;
-        sum += values.iter().flatten().sum::<f64>();
+        sum += column_sum(&batch?, &name)?;
     }
     Ok(sum)
+}
+
+/// Add up a float column across a stream with blocking reads, before any
+/// wait. A call that takes a stream starts on a worker on the native hosts,
+/// so the reads block that worker. Wasm has no thread to block, so a read
+/// there that waits for JavaScript fails.
+#[bimetal::export]
+pub async fn sum_column_at_once(
+    #[bimetal(arrow)] rows: RecordBatchStream,
+    name: String,
+) -> Result<f64, ColumnError> {
+    let mut sum = 0.0;
+    for batch in rows {
+        sum += column_sum(&batch?, &name)?;
+    }
+    Ok(sum)
+}
+
+/// A stream that later calls read.
+pub struct Rows {
+    /// A stream is `Send`, but not `Sync`, which a resource must be. A `Mutex`
+    /// makes it `Sync`, and `&mut self` reaches it without locking.
+    rows: Mutex<RecordBatchStream>,
+}
+
+#[bimetal::export]
+impl Rows {
+    /// Keep a stream, which no batch is read from yet.
+    #[bimetal(constructor)]
+    pub async fn open(#[bimetal(arrow)] rows: RecordBatchStream) -> Self {
+        Self {
+            rows: Mutex::new(rows),
+        }
+    }
+
+    /// Add up a float column over the rest of the stream, awaiting each
+    /// batch.
+    pub async fn sum(&mut self, name: String) -> Result<f64, ColumnError> {
+        let rows = self
+            .rows
+            .get_mut()
+            .expect("nothing panics holding the rows");
+        let mut sum = 0.0;
+        while let Some(batch) = rows.next().await {
+            sum += column_sum(&batch?, &name)?;
+        }
+        Ok(sum)
+    }
+
+    /// Add up a float column over the rest of the stream with blocking
+    /// reads, and drop the stream. JavaScript writes its streams on the
+    /// thread that such a read would block, so the read fails there instead.
+    pub fn sum_now(self, name: &str) -> Result<f64, ColumnError> {
+        let rows = self
+            .rows
+            .into_inner()
+            .expect("nothing panics holding the rows");
+        let mut sum = 0.0;
+        for batch in rows {
+            sum += column_sum(&batch?, name)?;
+        }
+        Ok(sum)
+    }
+
+    /// Add up a float column over the rest of the stream with blocking
+    /// reads, before any wait. This call takes no stream, so its first poll
+    /// runs on the caller's thread, where a read of a stream that JavaScript
+    /// writes fails as it does in [`Rows::sum_now`].
+    pub async fn sum_at_once(self, name: String) -> Result<f64, ColumnError> {
+        self.sum_now(&name)
+    }
+}
+
+/// Add up a float column of one batch. Nulls count as nothing.
+fn column_sum(batch: &RecordBatch, name: &str) -> Result<f64, ColumnError> {
+    let values = batch
+        .column_by_name(name)
+        .ok_or(ColumnError::MissingColumn)?
+        .as_primitive_opt::<Float64Type>()
+        .ok_or(ColumnError::WrongType)?;
+    Ok(values.iter().flatten().sum())
 }

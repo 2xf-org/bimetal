@@ -146,10 +146,7 @@ class Engine:
             __bimetal_native = await self.native_resource.withdraw(amount)
         except RuntimeError as __bimetal_error:
             raise _bimetal_native_error(__bimetal_error, _bimetal_api_1.OrderError) from None
-        __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: int = __bimetal_native
         return __bimetal_result
 
     def close(self) -> None:

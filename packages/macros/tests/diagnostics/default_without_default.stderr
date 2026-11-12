@@ -4,14 +4,6 @@ error[E0277]: the trait bound `Retry: Default` is not satisfied
 14 |     pub retry: Retry,
    |                ^^^^^ the trait `Default` is not implemented for `Retry`
    |
-note: required by a bound in `field_default`
-  --> $WORKSPACE/packages/runtime/src/registry.rs
-   |
-   | pub fn field_default<T>(owner: &str, field: &str, problems: &mut Vec<String>) -> Option<Value>
-   |        ------------- required by a bound in this function
-   | where
-   |     T: ContractType + Default + Serialize,
-   |                       ^^^^^^^ required by this bound in `field_default`
 help: consider annotating `Retry` with `#[derive(Default)]`
    |
  7 + #[derive(Default)]

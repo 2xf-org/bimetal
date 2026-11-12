@@ -99,7 +99,9 @@ pub(super) fn resource(
             Role::Constructor | Role::Factory => quote!(Self::#ident),
             Role::Method(_) => quote!(__bimetal_call.this::<Self>()?.#ident),
         };
+        let gates = &member.gates;
         members.push(quote! {
+            #(#gates)*
             #[allow(
                 clippy::too_many_arguments,
                 reason = "the generated Node.js method adds one host-context argument"
@@ -112,6 +114,7 @@ pub(super) fn resource(
                 #body
             }
 
+            #(#gates)*
             fn #callback_ident<'env>(
                 __bimetal_call: ::bimetal::runtime::node::CallInfo<'env>,
             ) -> ::std::result::Result<
@@ -124,6 +127,7 @@ pub(super) fn resource(
         });
         let host_name = &member.signature.host_name;
         let method = quote! {
+            #(#gates)*
             ::bimetal::runtime::node::Method {
                 name: #host_name,
                 call: #wrapper_ident::#callback_ident,

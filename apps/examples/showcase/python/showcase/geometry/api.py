@@ -62,10 +62,7 @@ def distance(from_value: Point, to: Point) -> float:
         _bimetal_dump_host(Point, from_value),
         _bimetal_dump_host(Point, to),
     )
-    __bimetal_result: float = _bimetal_type_adapter(float).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
 __all__ = [

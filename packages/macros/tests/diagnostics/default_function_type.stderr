@@ -1,0 +1,22 @@
+error[E0308]: `match` arms have incompatible types
+  --> tests/diagnostics/default_function_type.rs:13:23
+   |
+11 | #[derive(Serialize, Deserialize, Model)]
+   |                     -----------
+   |                     |
+   |                     this is found to be of type `std::string::String`
+   |                     `match` arms have incompatible types
+12 | pub struct Mistyped {
+13 |     #[serde(default = "count")]
+   |                       ^^^^^^^ expected `String`, found `u32`
+   |
+help: try using a conversion method
+   |
+13 |     #[serde(default = "count".to_string())]
+   |                              ++++++++++++
+
+error[E0425]: cannot find function `nowhere` in this scope
+  --> tests/diagnostics/default_function_type.rs:19:23
+   |
+19 |     #[serde(default = "nowhere")]
+   |                       ^^^^^^^^^ not found in this scope

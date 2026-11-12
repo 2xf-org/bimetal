@@ -1,8 +1,8 @@
 //! Strict parsing and normalization of supported Serde and Bimetal attributes.
 //!
 //! A generated API has one public name and one wire representation. Serde
-//! features that imply asymmetric serialization, aliases, or executable
-//! default functions are rejected here rather than approximated by a host.
+//! features that imply asymmetric serialization or aliases are rejected here
+//! rather than approximated by a host.
 //! Doc comments are attributes too, so their normalized text comes from here.
 
 use bimetal_ir::Protocol;
@@ -276,11 +276,21 @@ pub(super) struct SerdeField {
     pub(super) rename: Option<String>,
     /// Whether this runtime-only field is excluded from the wire model.
     pub(super) skip: bool,
-    /// Where `#[serde(default)]` asks deserialization to supply
-    /// `Default::default()` for an absent field, if it does.
-    pub(super) default: Option<Span>,
+    /// What `#[serde(default)]` or `#[serde(default = "path")]` asks
+    /// deserialization to supply for an absent field, if either is declared.
+    pub(super) default: Option<SerdeDefault>,
     /// Optional predicate accepted only when it preserves round trips.
     pub(super) skip_serializing_if: Option<LitStr>,
+}
+
+/// A field's `#[serde(default)]` or `#[serde(default = "path")]`.
+pub(super) struct SerdeDefault {
+    /// Where the attribute names `default`.
+    pub(super) span: Span,
+    /// The path that `default = "path"` names, as written, to the function
+    /// that gives the value of an absent field; `None` asks for the Rust
+    /// `Default` of its type.
+    pub(super) function: Option<LitStr>,
 }
 
 /// Parse supported Serde field attributes and reject lossy features.
@@ -299,12 +309,15 @@ pub(super) fn serde_field(attrs: &[Attribute]) -> syn::Result<SerdeField> {
                 result.skip = true;
             } else if meta.path.is_ident("default") {
                 declare_once(&meta, result.default.is_some())?;
-                if meta.input.peek(Token![=]) {
-                    return Err(meta.error(
-                        "`#[serde(default = \"path\")]` is not supported because function-provided defaults cannot be represented by bimetal",
-                    ));
-                }
-                result.default = Some(meta.path.span());
+                let function = if meta.input.peek(Token![=]) {
+                    Some(meta.value()?.parse::<LitStr>()?)
+                } else {
+                    None
+                };
+                result.default = Some(SerdeDefault {
+                    span: meta.path.span(),
+                    function,
+                });
             } else if meta.path.is_ident("skip_serializing_if") {
                 declare_once(&meta, result.skip_serializing_if.is_some())?;
                 result.skip_serializing_if = Some(meta.value()?.parse::<LitStr>()?);
@@ -329,6 +342,82 @@ pub(super) fn reject_type_attributes(attrs: &[Attribute]) -> syn::Result<()> {
             "a model type takes no `#[bimetal(...)]` attribute; field rules go on its fields, and a `#[serde(transparent)]` struct is already its field's type to the hosts",
         )),
         None => Ok(()),
+    }
+}
+
+/// Return the `#[cfg(...)]` attributes of an exported method, each of which
+/// tests only features. Every host of one build compiles with the same
+/// features, so the method is in all of their contracts or in none; the
+/// hosts differ by target, so a target cannot gate a method.
+pub(super) fn feature_gates(attrs: &[Attribute]) -> syn::Result<Vec<Attribute>> {
+    let mut gates = Vec::new();
+    for attr in attrs {
+        if attr.path().is_ident("cfg") {
+            reject_target_predicate(&attr.parse_args::<Meta>()?)?;
+            gates.push(attr.clone());
+        } else if attr.path().is_ident("cfg_attr") {
+            reject_conditional_gate(&attr.meta)?;
+        }
+    }
+    Ok(gates)
+}
+
+/// Reject a `cfg` among the attributes that a `cfg_attr` adds, also inside a
+/// nested `cfg_attr`. Rustc strips such a method after Bimetal reads it, so
+/// the contract would list a method that no host has.
+fn reject_conditional_gate(cfg_attr: &Meta) -> syn::Result<()> {
+    let Meta::List(list) = cfg_attr else {
+        return Ok(());
+    };
+    let nested = list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)?;
+    for added in nested.iter().skip(1) {
+        if added.path().is_ident("cfg") {
+            return Err(syn::Error::new_spanned(
+                added,
+                "write the gate of an exported method as `#[cfg(feature = \"...\")]`, not inside `#[cfg_attr(...)]`, so that Bimetal sees which builds keep the method",
+            ));
+        }
+        if added.path().is_ident("cfg_attr") {
+            reject_conditional_gate(added)?;
+        }
+    }
+    Ok(())
+}
+
+/// Reject a `cfg` predicate unless each of its leaves is `feature = "..."`,
+/// joined by `all`, `any` and `not`.
+fn reject_target_predicate(predicate: &Meta) -> syn::Result<()> {
+    match predicate {
+        Meta::NameValue(pair)
+            if pair.path.is_ident("feature")
+                && matches!(
+                    &pair.value,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(_),
+                        ..
+                    })
+                ) =>
+        {
+            Ok(())
+        }
+        Meta::List(list)
+            if ["all", "any", "not"]
+                .iter()
+                .any(|name| list.path.is_ident(name)) =>
+        {
+            let nested = list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)?;
+            if nested.is_empty() && list.path.is_ident("any") {
+                return Err(syn::Error::new_spanned(
+                    list,
+                    "`any()` holds in no build, so it tests no feature; name the features it tests, or remove it",
+                ));
+            }
+            nested.iter().try_for_each(reject_target_predicate)
+        }
+        other => Err(syn::Error::new_spanned(
+            other,
+            "an exported method may be gated only on features: each leaf of its `#[cfg]` must be `feature = \"...\"`, joined by `all`, `any` or `not`, because every host of one build has the same features but not the same target; put a target's `#[cfg]` inside its body and return an error where it cannot run, or mark it `#[bimetal(skip)]`",
+        )),
     }
 }
 

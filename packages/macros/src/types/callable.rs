@@ -240,6 +240,19 @@ impl<'syntax> Param<'syntax> {
             _ => quote!(#ident),
         }
     }
+
+    /// Return whether the argument can make Rust wait for the host's event
+    /// loop: a host function, or a stream whose batches the host makes as
+    /// Rust reads them.
+    pub(crate) fn waits_for_host(&self) -> bool {
+        match &self.value {
+            ParamValue::Callback(_) => true,
+            ParamValue::Direct(DirectType::Arrow { value }) => {
+                type_ref::type_last_ident(value).is_ok_and(|ident| ident == "RecordBatchStream")
+            }
+            ParamValue::Serde(_) | ParamValue::Direct(_) => false,
+        }
+    }
 }
 
 impl ReturnValue {

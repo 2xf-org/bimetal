@@ -129,6 +129,7 @@ if (mode === "time") {
   await measure("arrow-1m", () => splitBatch(batch));
   await measure("stream-out-1m", () => readStream(table), { awaited: true });
   await measure("async", () => showcase.countWords("a b c"), { awaited: true });
+  await measure("async-ready", () => showcase.countWordsAtOnce("a b c"), { awaited: true });
   await measure("stream-through-1m", () => columns.sumColumn(columns.batches(table), "price"), {
     awaited: true,
   });

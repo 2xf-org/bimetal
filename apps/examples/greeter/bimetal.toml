@@ -19,10 +19,10 @@ backend = "node"                  # a native Node.js addon; "wasm" by default
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "5492b50465eeefc4bceacdde9bf68b08"
+source_fingerprint = "431b02f6844dd5f9a25924afd1e3f42f"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "cfa4b3b68e8b028dc8a6dbf6426f9546"
+output_fingerprint = "3a37b32024e89d78d590c656ad7f273d"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -66,6 +66,7 @@ inputs = [
     "../../../packages/runtime/src/lib.rs",
     "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
+    "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",
     "../../../packages/runtime/src/runtime/callback.rs",
     "../../../packages/runtime/src/runtime/contract_error.rs",

@@ -1,7 +1,9 @@
 //! Registration and async support for the generated Python extension module.
 //!
-//! Async exports run on the shared runtime of [`executor`](super::executor),
-//! and [`awaitable`] settles an asyncio future with their result, which their
+//! An async export runs to its first wait on the caller's thread, and from
+//! there on the shared runtime of [`executor`](super::executor). One that
+//! takes a `Callback` or a stream starts on the runtime.
+//! [`awaitable`] settles an asyncio future with its result, which its
 //! [`deferred`] conversion makes once the interpreter lock is held.
 //!
 //! A panic becomes pyo3's `PanicException` in every call. pyo3 catches the
@@ -18,12 +20,12 @@ use pyo3::exceptions::PyImportError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::PyCFunction;
+use pyo3::types::{PyCFunction, PyString};
 use pyo3::{intern, wrap_pyfunction};
 
 use crate::ir::{discovery, python_names};
 use crate::registry;
-use crate::runtime::executor::{self, Abort};
+use crate::runtime::executor::{self, Abort, Start, Started};
 
 /// A function that adds one generated export to a Python module.
 pub struct Registration(
@@ -60,8 +62,14 @@ pub fn register(
     Ok(())
 }
 
-/// Run an async call on the shared Tokio runtime and return an asyncio
-/// future for its result, which the call's [`deferred`] conversion makes.
+/// Start an async call and return an asyncio future for its result, which
+/// the call's [`deferred`] conversion makes.
+///
+/// When `start` is [`Start::Caller`], the call runs to its first wait on the
+/// caller's thread, without the interpreter lock. A call that finishes there
+/// returns a future that is done, so `await` does not suspend the caller. A
+/// call that waits, or that `start` gives to a worker, goes on the shared
+/// Tokio runtime.
 ///
 /// Apart from a `Callback` argument, whose last clone PyO3 releases through
 /// its reference pool, the Tokio task owns no Python object. The event loop
@@ -81,7 +89,7 @@ pub fn register(
 ///
 /// Returns a Python exception when no asyncio event loop is running.
 #[doc(hidden)]
-pub fn awaitable<F, D, T>(py: Python<'_>, future: F) -> PyResult<Py<PyAny>>
+pub fn awaitable<F, D, T>(py: Python<'_>, start: Start, future: F) -> PyResult<Py<PyAny>>
 where
     F: Future<Output = PyResult<Deferred<D>>> + Send + 'static,
     D: for<'py> FnOnce(Python<'py>) -> PyResult<T> + Send + 'static,
@@ -92,13 +100,22 @@ where
         .import(py, "asyncio", "get_running_loop")?
         .call0()?;
     let result = event_loop.call_method0(intern!(py, "create_future"))?;
+    let call = executor::catch_panic(future, panic_exception);
+    let call = match py.detach(|| executor::first_poll(call, start)) {
+        Started::Ready(outcome) => {
+            let (setter, value) = settlement(py, outcome);
+            result.call_method1(setter, (value,))?;
+            return Ok(result.unbind());
+        }
+        Started::Pending(call) => call,
+    };
     let target = Arc::new(Target(Mutex::new(Some(Waiting {
         event_loop: event_loop.unbind(),
         future: result.clone().unbind(),
     }))));
     let delivery = Arc::clone(&target);
     let task = executor::spawn(async move {
-        let outcome = executor::catch_panic(future, panic_exception).await;
+        let outcome = call.await;
         drop(executor::spawn_blocking(move || {
             // An interpreter that is shutting down resumes no one, and the
             // target's Python objects cannot drop without it.
@@ -116,6 +133,29 @@ where
         return Err(error);
     }
     Ok(result.unbind())
+}
+
+/// Convert a call's outcome, and return the method of an asyncio future that
+/// settles it with the result, and that result. A panic in the conversion is
+/// an outcome too.
+fn settlement<'py, D, T>(
+    py: Python<'py>,
+    outcome: PyResult<Deferred<D>>,
+) -> (&'py Bound<'py, PyString>, Bound<'py, PyAny>)
+where
+    D: FnOnce(Python<'py>) -> PyResult<T>,
+    T: IntoPyObject<'py>,
+{
+    let converted = outcome.and_then(|Deferred(convert)| {
+        executor::catch_error(|| convert(py)?.into_bound_py_any(py), panic_exception)
+    });
+    match converted {
+        Ok(value) => (intern!(py, "set_result"), value),
+        Err(error) => (
+            intern!(py, "set_exception"),
+            error.into_value(py).into_bound(py).into_any(),
+        ),
+    }
 }
 
 /// The event loop and the asyncio future of an async call that has not
@@ -154,16 +194,7 @@ impl Target {
         let future = waiting.future.bind(py);
         // The conversion runs on a blocking thread, which a panic would end
         // without settling the future.
-        let converted = outcome.and_then(|Deferred(convert)| {
-            executor::catch_error(|| convert(py)?.into_bound_py_any(py), panic_exception)
-        });
-        let (setter, value) = match converted {
-            Ok(value) => (intern!(py, "set_result"), value),
-            Err(error) => (
-                intern!(py, "set_exception"),
-                error.into_value(py).into_bound(py).into_any(),
-            ),
-        };
+        let (setter, value) = settlement(py, outcome);
         // Scheduling fails when the event loop is closed, which leaves no one
         // to resume, or when Python is out of memory; either way the result
         // drops with the error.

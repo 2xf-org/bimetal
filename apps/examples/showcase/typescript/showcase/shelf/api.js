@@ -23,7 +23,7 @@ export class Shortage extends globalThis.Error {
 export function countBoth(first, second) {
   $checkNative();
   try {
-    return $native["__bimetal_function_showcase_28fbed703191e3e6"]($nativeResource(first, Shelf, "countBoth(): argument `first`"), $nativeResource(second, Shelf, "countBoth(): argument `second`"));
+    return $native["__bimetal_function_showcase_8946f1f0e3e7192c"]($nativeResource(first, Shelf, "countBoth(): argument `first`"), $nativeResource(second, Shelf, "countBoth(): argument `second`"));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -33,7 +33,7 @@ export function doubleSize(size) {
   $checkNative();
   $checkArgument(size, "bigint", "doubleSize(): argument `size`");
   try {
-    return $native["__bimetal_function_showcase_6d9a168d8d28b9cb"]($prepareHost(size, null));
+    return $native["__bimetal_function_showcase_e0c13e567662d4a3"]($prepareHost(size, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -45,7 +45,7 @@ export function offset(value, by = -1, scale = 0.5) {
   $checkArgument(by, "number", "offset(): argument `by`");
   $checkArgument(scale, "number", "offset(): argument `scale`");
   try {
-    return $native["__bimetal_function_showcase_d71376100464b4c2"]($prepareHost(value, null), $prepareHost(by, null), $prepareHost(scale, null));
+    return $native["__bimetal_function_showcase_89ea7bf7ee267f8e"]($prepareHost(value, null), $prepareHost(by, null), $prepareHost(scale, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -526,6 +526,15 @@ export class Shelf {
     $checkNative();
     try {
       return await $nativePromise(this.nativeResource.labelLater($callbackFromHost(label, [null], null, "Shelf.labelLater(): argument `label`")));
+    } catch ($error) {
+      throw $nativeError($error, ShelfError);
+    }
+  }
+
+  async labelAtOnce(label) {
+    $checkNative();
+    try {
+      return await $nativePromise(this.nativeResource.labelAtOnce($callbackFromHost(label, [null], null, "Shelf.labelAtOnce(): argument `label`")));
     } catch ($error) {
       throw $nativeError($error, ShelfError);
     }

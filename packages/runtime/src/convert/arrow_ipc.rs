@@ -24,6 +24,8 @@ use futures_core::Stream;
 use tokio::sync::{Mutex, mpsc};
 
 use crate::arrow::{self, ArrowValue, Parts, RecordBatchStream};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::runtime::executor;
 
 /// Decode an Arrow value from an IPC stream. Aligned buffers keep the
 /// stream's memory rather than copying it. A stream's parts cross on their
@@ -273,10 +275,14 @@ impl Stream for Fed {
             self.asked = true;
         }
         let written = self.written.poll_recv(context);
-        // Blocking code on the JavaScript thread would wait for what only that
-        // thread can write. Wasm's blocking reads stop on their own.
+        // Code that waits on the JavaScript thread would wait for what only
+        // that thread can write. An async call's first poll returns instead,
+        // which lets it write. Wasm's blocking reads stop on their own.
         #[cfg(not(target_arch = "wasm32"))]
-        if written.is_pending() && thread::current().id() == self.javascript {
+        if written.is_pending()
+            && thread::current().id() == self.javascript
+            && !executor::in_first_poll()
+        {
             self.ask = None;
             return Poll::Ready(Some(Err(arrow::failure(arrow::READ_WITH_AWAIT.to_owned()))));
         }

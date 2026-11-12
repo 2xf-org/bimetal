@@ -55,6 +55,7 @@ fn discovery_returns_the_complete_application_contract() {
         "contract::fixtures::columns",
         "contract::fixtures::defaults",
         "contract::fixtures::extra",
+        "contract::fixtures::gates",
         "contract::fixtures::streams",
     ];
     manifest
@@ -65,6 +66,9 @@ fn discovery_returns_the_complete_application_contract() {
         .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
     manifest
         .errors
+        .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
+    manifest
+        .resources
         .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
 
     assert_eq!(manifest.package_name, env!("CARGO_PKG_NAME"));
@@ -120,7 +124,9 @@ fn discovery_returns_the_complete_application_contract() {
             .map(|item| item.callable.host_name.as_str())
             .collect::<Vec<_>>(),
         [
+            "checkCountAtOnce",
             "checkCountLater",
+            "doubleAtOnce",
             "doubleLater",
             "echoStep",
             "echoU64",
@@ -129,10 +135,12 @@ fn discovery_returns_the_complete_application_contract() {
             "executeJob",
             "fileName",
             "holdsInterpreterLock",
+            "holdsInterpreterLockAtOnce",
             "label",
             "renameJob",
             "reverseBytes",
             "scaleSamples",
+            "threadsOfACall",
         ]
     );
     assert_eq!(
@@ -205,6 +213,68 @@ fn a_field_default_is_the_rust_default_of_its_type() {
         field_named(&declared.shape, "backoff").default,
         Some(backoff)
     );
+}
+
+#[test]
+fn a_field_default_is_what_its_default_function_returns() {
+    let manifest = discovered_manifest();
+    let policy = lookup::model(&manifest, "RetryPolicy");
+    let defaults = [
+        ("notify", json!(true)),
+        ("icon", json!("brackets-curly")),
+        ("fallback", json!("dead-letter")),
+        ("overflow", json!({"cap": 10, "factor": 1.5})),
+    ];
+    for (name, default) in &defaults {
+        let field = field_named(&policy.shape, name);
+        assert!(!field.required, "`{name}` may be absent");
+        assert_eq!(
+            field.default.as_ref(),
+            Some(default),
+            "the default of `{name}`"
+        );
+    }
+
+    // Serde fills in an absent field with what the contract says it holds.
+    let decoded: fixtures::defaults::RetryPolicy =
+        serde_json::from_value(json!({})).expect("every field has a default");
+    let decoded = serde_json::to_value(decoded).expect("the policy serializes");
+    for (name, default) in defaults {
+        assert_eq!(decoded[name], default, "what Serde fills in for `{name}`");
+    }
+}
+
+#[test]
+fn a_feature_gate_decides_whether_a_member_is_in_the_contract() {
+    let manifest = discovered_manifest();
+    let till = lookup::resource(&manifest, "Till");
+    let methods: Vec<&str> = till
+        .methods
+        .iter()
+        .map(|method| method.callable.rust_name.as_str())
+        .collect();
+    let factories: Vec<&str> = till
+        .factories
+        .iter()
+        .map(|factory| factory.rust_name.as_str())
+        .collect();
+    let receipt = manifest.types.iter().find(|item| item.name == "Receipt");
+
+    if cfg!(feature = "alloy") {
+        assert_eq!(methods, ["take", "receipt", "settle", "settle_with"]);
+        assert_eq!(factories, ["holding"]);
+        assert!(
+            receipt.is_some(),
+            "the gated method's type is in the contract"
+        );
+    } else {
+        assert_eq!(methods, ["take", "plain_total"]);
+        assert!(factories.is_empty());
+        assert!(receipt.is_none());
+    }
+    // A gated constructor never becomes the class constructor.
+    let constructor = till.constructor.as_ref().expect("an ungated constructor");
+    assert_eq!(constructor.rust_name, "new");
 }
 
 #[test]

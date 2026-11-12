@@ -231,22 +231,22 @@ pub(super) fn sync_lock(
     } else {
         (quote!(try_read), quote!(blocking_read))
     };
-    let attempt = quote! {
-        #shared.#attempt().map_err(|_| {
-            #convert::runtime_error(&::bimetal::runtime::ResourceError::Busy(#callable))
-        })?
+    let busy = quote! {
+        #convert::runtime_error(&::bimetal::runtime::ResourceError::Busy(#callable))
     };
     match backend.sync_locks() {
-        SyncLocks::Try => attempt,
+        SyncLocks::Try => quote!(#shared.#attempt().map_err(|_| #busy)?),
+        // A free resource is taken with the host's lock held. Only a busy
+        // one makes the call release that lock to wait.
         SyncLocks::Detach => {
             let context = backend.context();
             quote! {
-                if ::bimetal::runtime::inside_callback() {
-                    #attempt
-                } else {
-                    #context.detach(|| {
+                match #shared.#attempt() {
+                    Ok(__bimetal_guard) => __bimetal_guard,
+                    Err(_) if ::bimetal::runtime::inside_callback() => return Err(#busy),
+                    Err(_) => #context.detach(|| {
                         ::bimetal::runtime::executor::allow_blocking(|| #shared.#wait())
-                    })
+                    }),
                 }
             }
         }

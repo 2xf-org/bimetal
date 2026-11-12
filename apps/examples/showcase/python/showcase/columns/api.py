@@ -73,10 +73,7 @@ async def count_rows(table: ArrowStreamExportable) -> int:
     __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_700f5e6376beea9e")(
         table,
     )
-    __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
 
@@ -138,10 +135,28 @@ async def sum_column(rows: ArrowStreamExportable, name: str) -> float:
         )
     except RuntimeError as __bimetal_error:
         raise _bimetal_native_error(__bimetal_error, ColumnError) from None
-    __bimetal_result: float = _bimetal_type_adapter(float).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: float = __bimetal_native
+    return __bimetal_result
+
+
+async def sum_column_at_once(rows: ArrowStreamExportable, name: str) -> float:
+    """
+    Add up a float column across a stream with blocking reads, before any wait. A
+    call that takes a stream starts on a worker on the native hosts, so the reads
+    block that worker. Wasm has no thread to block, so a read there that waits for
+    JavaScript fails.
+
+    Raises:
+        ColumnError
+    """
+    try:
+        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_6e743049e47a9120")(
+            rows,
+            name,
+        )
+    except RuntimeError as __bimetal_error:
+        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+    __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
 
@@ -174,9 +189,111 @@ def with_note(schema: ArrowSchemaExportable, note: str) -> pa.Schema:
     __bimetal_result: pa.Schema = getattr(pa, "schema")(__bimetal_native)
     return __bimetal_result
 
+
+class Rows:
+    native_resource: Any
+
+    def __init__(self) -> None:
+        raise TypeError("Rows has no synchronous constructor; use Rows.open()")
+
+    @classmethod
+    def __bimetal_wrap__(cls, native: Any) -> Rows:
+        __bimetal_instance = cls.__new__(cls)
+        __bimetal_instance.native_resource = native
+        return __bimetal_instance
+
+    @classmethod
+    async def open(cls, rows: ArrowStreamExportable) -> Rows:
+        """
+        Keep a stream, which no batch is read from yet.
+        """
+        __bimetal_instance = cls.__new__(cls)
+        __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_showcase_9d1d12f09cfc33f6").open(
+            rows,
+        )
+        return __bimetal_instance
+
+    async def sum(self, name: str) -> float:
+        """
+        Add up a float column over the rest of the stream, awaiting each batch.
+
+        Raises:
+            ColumnError
+        """
+        try:
+            __bimetal_native = await self.native_resource.sum(name)
+        except RuntimeError as __bimetal_error:
+            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_result: float = __bimetal_native
+        return __bimetal_result
+
+    def sum_now(self, name: str) -> float:
+        """
+        Add up a float column over the rest of the stream with blocking reads, and
+        drop the stream. JavaScript writes its streams on the thread that such a
+        read would block, so the read fails there instead.
+
+        Raises:
+            ColumnError
+        """
+        try:
+            __bimetal_native = self.native_resource.sumNow(name)
+        except RuntimeError as __bimetal_error:
+            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_result: float = __bimetal_native
+        return __bimetal_result
+
+    async def sum_at_once(self, name: str) -> float:
+        """
+        Add up a float column over the rest of the stream with blocking reads,
+        before any wait. This call takes no stream, so its first poll runs on the
+        caller's thread, where a read of a stream that JavaScript writes fails as it
+        does in `Rows::sum_now`.
+
+        Raises:
+            ColumnError
+        """
+        try:
+            __bimetal_native = await self.native_resource.sumAtOnce(name)
+        except RuntimeError as __bimetal_error:
+            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_result: float = __bimetal_native
+        return __bimetal_result
+
+    def close(self) -> None:
+        """
+        Release the native resources owned by this instance.
+        """
+        self.native_resource.close()
+
+    @property
+    def closed(self) -> bool:
+        """
+        Whether the native resources were released.
+        """
+        __bimetal_result: bool = self.native_resource.closed()
+        return __bimetal_result
+
+    def __enter__(self) -> Rows:
+        return self
+
+    def __exit__(
+        self, exception_type: object, *_: object
+    ) -> None:
+        self.close()
+
+    async def __aenter__(self) -> Rows:
+        return self
+
+    async def __aexit__(
+        self, exception_type: object, *_: object
+    ) -> None:
+        self.close()
+
 __all__ = [
     "ColumnError",
     "ColumnErrorCode",
+    "Rows",
     "add_totals",
     "batches",
     "count_rows",
@@ -184,6 +301,7 @@ __all__ = [
     "scale",
     "split",
     "sum_column",
+    "sum_column_at_once",
     "totals",
     "with_note",
 ]

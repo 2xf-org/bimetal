@@ -396,6 +396,39 @@ pub async fn double_later(value: u32) -> u32 {
     value * 2
 }
 
+/// Double a value with no wait.
+#[bimetal::export]
+pub async fn double_at_once(value: u32) -> u32 {
+    value * 2
+}
+
+/// Accept a count inside the supported interval with no wait.
+#[bimetal::export]
+pub async fn check_count_at_once(count: u32) -> Result<u32, JobError> {
+    if (1..=100).contains(&count) {
+        Ok(count)
+    } else {
+        Err(JobError::InvalidCount)
+    }
+}
+
+/// Report whether an async body holds the Python interpreter lock before its
+/// first wait.
+#[bimetal::export]
+pub async fn holds_interpreter_lock_at_once() -> bool {
+    holds_interpreter_lock()
+}
+
+/// Name the thread that runs an async body before its first wait, and the
+/// thread that runs it after.
+#[bimetal::export]
+pub async fn threads_of_a_call() -> Vec<String> {
+    let name = || format!("{:?}", std::thread::current().id());
+    let before = name();
+    yield_to_executor().await;
+    vec![before, name()]
+}
+
 /// Accept a count inside the supported interval after yielding to the executor.
 #[bimetal::export]
 pub async fn check_count_later(count: u32) -> Result<u32, JobError> {
@@ -857,6 +890,13 @@ pub mod streams {
         sum(rows)
     }
 
+    /// Add up every number of a stream, iterating it before the first wait,
+    /// which a call that takes a stream makes on a worker.
+    #[bimetal::export]
+    pub async fn sum_at_once(#[bimetal(arrow)] rows: RecordBatchStream) -> Result<i64, ReadError> {
+        sum(rows)
+    }
+
     /// Read the first batch of a stream, and drop the rest.
     #[bimetal::export]
     pub fn first(#[bimetal(arrow)] rows: RecordBatchStream) -> Result<i64, ReadError> {
@@ -887,7 +927,7 @@ pub mod streams {
 /// out of its exact lists. They need the Tokio runtime that the feature links.
 #[cfg(feature = "python")]
 pub mod extra {
-    use bimetal::Model;
+    use bimetal::{Callback, Model};
     use serde::{Deserialize, Serialize};
     use tokio::runtime::Handle;
 
@@ -913,6 +953,23 @@ pub mod extra {
         panic!("{message}");
     }
 
+    /// Return what `next` returns for `value`, called before the first wait,
+    /// which a call that takes a function makes on a worker.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `next` raises.
+    #[bimetal::export]
+    pub async fn call_at_once(next: Callback<(u32,), u32>, value: u32) -> u32 {
+        next.call((value,)).expect("the function returns a number")
+    }
+
+    /// Panic with a message in an async body, before its first wait.
+    #[bimetal::export]
+    pub async fn panic_at_once(message: String) -> u32 {
+        panic!("{message}");
+    }
+
     /// Panic with a message after yielding to the executor.
     #[bimetal::export]
     pub async fn panic_later(message: String) -> u32 {
@@ -925,6 +982,81 @@ pub mod extra {
     #[must_use]
     pub fn in_runtime() -> bool {
         Handle::try_current().is_ok()
+    }
+}
+
+/// A resource with members that the `alloy` feature gates, which the suites
+/// run with the feature on and off.
+pub mod gates {
+    /// What a till took, a type that only the `alloy` feature declares.
+    #[cfg(feature = "alloy")]
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, bimetal::Model)]
+    pub struct Receipt {
+        /// The total, in cents.
+        pub total: u32,
+    }
+
+    /// A till that adds up what it takes.
+    pub struct Till {
+        total: u32,
+    }
+
+    #[bimetal::export]
+    impl Till {
+        /// Open an empty till.
+        #[bimetal(constructor)]
+        #[must_use]
+        pub fn new() -> Self {
+            Self { total: 0 }
+        }
+
+        /// Open a till that already holds `total`, a factory that the
+        /// feature gates.
+        #[bimetal(constructor)]
+        #[cfg(feature = "alloy")]
+        #[must_use]
+        pub fn holding(total: u32) -> Self {
+            Self { total }
+        }
+
+        /// Take `amount` and return the total.
+        pub fn take(&mut self, amount: u32) -> u32 {
+            self.total += amount;
+            self.total
+        }
+
+        /// Return the receipt, of a type that exists only with the feature.
+        #[cfg(feature = "alloy")]
+        #[must_use]
+        pub fn receipt(&self) -> Receipt {
+            Receipt { total: self.total }
+        }
+
+        /// Return the total later, an async call that the feature gates.
+        #[cfg(feature = "alloy")]
+        pub async fn settle(&self) -> u32 {
+            self.total
+        }
+
+        /// Call `next` with the total and return its result, standing for a
+        /// gated async call that starts on a worker because it takes a
+        /// callback.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `next` raises.
+        #[cfg(feature = "alloy")]
+        pub async fn settle_with(&self, next: bimetal::Callback<(u32,), u32>) -> u32 {
+            next.call((self.total,))
+                .expect("the function returns a number")
+        }
+
+        /// Return the total, a method that the feature removes.
+        #[cfg(not(feature = "alloy"))]
+        #[must_use]
+        pub fn plain_total(&self) -> u32 {
+            self.total
+        }
     }
 }
 
@@ -1018,6 +1150,44 @@ pub mod defaults {
         /// How long one attempt may run.
         #[serde(default)]
         pub limit: Duration,
+        /// Whether a person hears of each failure.
+        #[serde(default = "yes")]
+        pub notify: bool,
+        /// The icon that shows the job.
+        #[serde(default = "self::icon")]
+        #[bimetal(min_length = 1)]
+        pub icon: String,
+        /// The queue that takes the job after the last attempt.
+        #[serde(default = "fallback")]
+        pub fallback: Option<String>,
+        /// How the delay grows after the queue is full.
+        #[serde(default = "Backoff::gentle")]
+        pub overflow: Backoff,
+    }
+
+    /// Say yes, the default of a flag that is on.
+    fn yes() -> bool {
+        true
+    }
+
+    /// The icon of a job that names none.
+    fn icon() -> String {
+        "brackets-curly".to_owned()
+    }
+
+    /// The queue of a job that names none.
+    fn fallback() -> Option<String> {
+        Some("dead-letter".to_owned())
+    }
+
+    impl Backoff {
+        /// A backoff that grows slowly.
+        fn gentle() -> Self {
+            Self {
+                factor: 1.5,
+                cap: 10,
+            }
+        }
     }
 
     /// One step of a retry, whose variant holds a field with a default.

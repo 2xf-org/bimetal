@@ -13,7 +13,6 @@ from streams._runtime import (
     PanicException,
     native as _bimetal_native,
     native_error as _bimetal_native_error,
-    type_adapter as _bimetal_type_adapter,
 )
 
 
@@ -61,10 +60,7 @@ def open_streams() -> int:
     """
     __bimetal_native = getattr(_bimetal_native, "__bimetal_function_streams_42805d39a81c74dc")(
     )
-    __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
 
@@ -96,10 +92,7 @@ def total(rows: ArrowStreamExportable, limit: int | None = None) -> int:
         )
     except RuntimeError as __bimetal_error:
         raise _bimetal_native_error(__bimetal_error, StreamError) from None
-    __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
 
@@ -118,10 +111,7 @@ async def total_later(rows: ArrowStreamExportable) -> int:
         )
     except RuntimeError as __bimetal_error:
         raise _bimetal_native_error(__bimetal_error, StreamError) from None
-    __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
 __all__ = [

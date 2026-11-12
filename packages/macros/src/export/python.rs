@@ -84,7 +84,9 @@ pub(super) fn resource(
             return_ty,
             body,
         } = member.wrapper(resource_ty, resource_name, HostBackend::Python);
+        let gates = &member.gates;
         quote! {
+            #(#gates)*
             #host_attributes
             #[allow(
                 clippy::too_many_arguments,

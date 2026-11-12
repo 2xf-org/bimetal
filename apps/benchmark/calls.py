@@ -148,6 +148,9 @@ async def time_cases(counts: dict[str, tuple[int, int]]) -> None:
         await measure(name, counts, call)
     await measure("async", counts, lambda: showcase.count_words("a b c"), awaited=True)
     await measure(
+        "async-ready", counts, lambda: showcase.count_words_at_once("a b c"), awaited=True
+    )
+    await measure(
         "stream-through-1m",
         counts,
         lambda: sum_column(batches(table), "price"),

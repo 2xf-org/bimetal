@@ -333,6 +333,15 @@ impl Shelf {
         Ok(label.call((self.name.clone(),))?)
     }
 
+    /// Call `label` from an async call that does not wait. A call that takes
+    /// a host function starts on a worker on the native hosts all the same.
+    pub async fn label_at_once(
+        &self,
+        label: Callback<(String,), String>,
+    ) -> Result<String, ShelfError> {
+        Ok(label.call((self.name.clone(),))?)
+    }
+
     /// Keep `label` in a labeler, which calls it after this call returned.
     #[bimetal(returns(resource))]
     #[must_use]

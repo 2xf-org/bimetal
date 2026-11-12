@@ -9,11 +9,15 @@
 //! child starts a runtime of its own.
 
 use std::any::Any;
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+use std::cell::Cell;
 use std::future::Future;
 use std::panic::{self, AssertUnwindSafe};
+use std::pin::Pin;
 #[cfg(feature = "python")]
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::task::{Context, Poll, Waker};
 use std::{mem, ptr};
 
 use tokio::runtime::{Builder, EnterGuard, Runtime};
@@ -48,6 +52,86 @@ where
     F::Output: Send + 'static,
 {
     runtime().spawn(future)
+}
+
+/// Where an async call makes its first poll. The macros choose it from the
+/// call's parameters.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// On the caller's thread, so that a call that does not wait needs no
+    /// worker.
+    Caller,
+    /// On a worker, for a call that takes a `Callback` or a stream that the
+    /// host writes: before its first wait, it could wait for the host's event
+    /// loop, which runs on the caller's thread.
+    Runtime,
+}
+
+/// An async call after its first poll.
+pub(crate) enum Started<F: Future> {
+    /// It finished without a wait.
+    Ready(F::Output),
+    /// It waits, or its first poll is a worker's. A worker polls it from
+    /// here on.
+    Pending(Pin<Box<F>>),
+}
+
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+thread_local! {
+    /// Whether this thread makes an async call's first poll.
+    static FIRST_POLL: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether this thread makes an async call's first poll, where a future
+/// that waits returns `Pending` instead of blocking the thread.
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+pub(crate) fn in_first_poll() -> bool {
+    FIRST_POLL.get()
+}
+
+/// Restores the thread's [`FIRST_POLL`] mark when dropped, even in a panic.
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+pub(crate) struct Mark(bool);
+
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+impl Drop for Mark {
+    fn drop(&mut self) {
+        FIRST_POLL.set(self.0);
+    }
+}
+
+/// Clear the thread's [`FIRST_POLL`] mark until the returned [`Mark`]
+/// drops. A blocking read inside a first poll holds it, because a future
+/// that it polls must not return `Pending` to a loop that sleeps on it.
+#[cfg(all(feature = "node", feature = "arrow-api"))]
+#[must_use = "dropping the guard at once restores the mark"]
+pub(crate) fn leave_first_poll() -> Mark {
+    Mark(FIRST_POLL.replace(false))
+}
+
+/// Poll `future` once on this thread, inside the current process's runtime,
+/// unless `start` leaves the first poll to a worker.
+///
+/// A call that finishes without a wait, as a read from memory does, then
+/// costs no thread: only a call that waits goes to a worker, which polls it
+/// again and so replaces the waker of this poll, which wakes no one. A
+/// future must therefore register its waker on every poll.
+pub(crate) fn first_poll<F: Future>(future: F, start: Start) -> Started<F> {
+    let mut future = Box::pin(future);
+    if start == Start::Runtime {
+        return Started::Pending(future);
+    }
+    let _runtime = enter();
+    #[cfg(all(feature = "node", feature = "arrow-api"))]
+    let _mark = Mark(FIRST_POLL.replace(true));
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => Started::Ready(output),
+        Poll::Pending => Started::Pending(future),
+    }
 }
 
 /// The process that made a value. A forked child must not touch what the
@@ -158,7 +242,6 @@ where
 {
     use std::future;
     use std::pin::pin;
-    use std::task::Poll;
 
     let mut future = pin!(Some(future));
     future::poll_fn(|context| {
@@ -305,7 +388,6 @@ mod tests {
     #[test]
     fn a_future_whose_payload_panics_when_dropped_still_resolves() {
         use std::pin::pin;
-        use std::task::{Context, Poll, Waker};
 
         let future = catch_panic(async { fail() }, |message| message);
         let mut context = Context::from_waker(Waker::noop());
@@ -317,8 +399,7 @@ mod tests {
 
     #[test]
     fn a_future_whose_drop_panics_resolves_with_the_panic() {
-        use std::pin::{Pin, pin};
-        use std::task::{Context, Poll, Waker};
+        use std::pin::pin;
 
         /// A future that finishes at once, and whose drop panics.
         struct FinishesThenPanicsWhenDropped;
@@ -343,5 +424,53 @@ mod tests {
             pin!(future).poll(&mut context),
             Poll::Ready(Err("the future's drop panics".to_owned()))
         );
+    }
+
+    /// Guards the mark that lets a stream that JavaScript writes return
+    /// `Pending` on its thread: it holds only during a first poll, a nested
+    /// one leaves it set, and a panic does not leave it set.
+    #[cfg(all(feature = "node", feature = "arrow-api"))]
+    #[test]
+    fn a_first_poll_marks_its_thread_only_while_it_polls() {
+        let nested = first_poll(
+            async {
+                let inner = first_poll(async { in_first_poll() }, Start::Caller);
+                matches!(inner, Started::Ready(true)) && in_first_poll()
+            },
+            Start::Caller,
+        );
+        assert!(matches!(nested, Started::Ready(true)));
+        assert!(!in_first_poll());
+        assert!(matches!(
+            first_poll(async { in_first_poll() }, Start::Runtime),
+            Started::Pending(_)
+        ));
+
+        let panicked = catch(|| first_poll(async { fail() }, Start::Caller));
+        assert!(panicked.is_err(), "the poll panics");
+        assert!(!in_first_poll(), "the panic clears the mark");
+    }
+
+    /// Guards the blocking read inside a first poll: it clears the mark while
+    /// it runs, so the fed stream fails it instead of hanging, and the mark
+    /// comes back after it, also after a panic.
+    #[cfg(all(feature = "node", feature = "arrow-api"))]
+    #[test]
+    fn a_blocking_read_clears_the_mark_until_it_ends() {
+        let read = first_poll(
+            async {
+                let inside = {
+                    let _mark = leave_first_poll();
+                    in_first_poll()
+                };
+                let panicked = catch(|| {
+                    let _mark = leave_first_poll();
+                    fail()
+                });
+                (inside, panicked.is_err(), in_first_poll())
+            },
+            Start::Caller,
+        );
+        assert!(matches!(read, Started::Ready((false, true, true))));
     }
 }

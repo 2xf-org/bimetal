@@ -10,7 +10,9 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
-use syn::{Ident, ImplItem, ImplItemFn, ItemImpl, ReceiverKind, Type as SynType, Visibility};
+use syn::{
+    Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, ReceiverKind, Type as SynType, Visibility,
+};
 
 use crate::attributes::{self, CallableKind};
 use crate::export::host_backend::{HostBackend, Labels};
@@ -47,8 +49,13 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
         }
         None => quote!(None),
     };
-    let factories = plan.factories.iter().map(definition);
+    let factories = plan.factories.iter().map(|member| {
+        let gates = &member.gates;
+        let factory = definition(member);
+        quote!(#(#gates)* #factory)
+    });
     let methods = plan.methods.iter().map(|member| {
+        let gates = &member.gates;
         let callable = definition(member);
         let returns = &member.signature.returns.type_ref;
         let protocol = match member.protocol {
@@ -58,7 +65,7 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
             }
             None => quote!(::core::option::Option::None),
         };
-        quote!(::bimetal::ir::MethodDef {
+        quote!(#(#gates)* ::bimetal::ir::MethodDef {
             callable: #callable,
             returns: #returns,
             protocol: #protocol,
@@ -68,7 +75,12 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
         .members()
         .map(|member| {
             let ident = &member.method.sig.ident;
-            wrapper::send_check(&member.method.sig, &quote!(<#resource_ty>::#ident))
+            let check = wrapper::send_check(&member.method.sig, &quote!(<#resource_ty>::#ident));
+            if check.is_empty() {
+                return check;
+            }
+            let gates = &member.gates;
+            quote!(#(#gates)* #check)
         })
         .collect();
     let python_wrapper = python::resource(&plan, resource_ty, &resource_name, &native_name);
@@ -87,8 +99,8 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
                 native_name: #native_name.to_owned(),
                 docs: #docs,
                 constructor: #constructor,
-                factories: vec![#(#factories),*],
-                methods: vec![#(#methods),*],
+                factories: ::std::vec::Vec::from([#(#factories),*]),
+                methods: ::std::vec::Vec::from([#(#methods),*]),
             }
         },
     );
@@ -141,12 +153,7 @@ impl<'item> ResourcePlan<'item> {
             if options.skip {
                 continue;
             }
-            if let Some(cfg) = method.attrs.iter().find(|attr| attr.path().is_ident("cfg")) {
-                return Err(syn::Error::new_spanned(
-                    cfg,
-                    "an exported method must exist on every host, because Bimetal reads one contract for them all; put the `#[cfg]` inside its body, and return an error where it cannot run, or mark it `#[bimetal(skip)]`",
-                ));
-            }
+            let gates = attributes::feature_gates(&method.attrs)?;
             let signature = Signature::parse(&method.sig, options.returns)?;
             if options.constructor {
                 if options.returns.is_some() {
@@ -172,6 +179,7 @@ impl<'item> ResourcePlan<'item> {
                     signature,
                     role: Role::Factory,
                     protocol: None,
+                    gates,
                 });
             } else {
                 types::reject_reserved_resource_method(method)?;
@@ -180,17 +188,17 @@ impl<'item> ResourcePlan<'item> {
                     signature,
                     role: Role::Method(method_access(method)?),
                     protocol: options.protocol,
+                    gates,
                 });
             }
         }
+        // The class has one constructor in every build, so a gated
+        // constructor is a factory.
+        let primary = |member: &Member<'_>| !member.signature.is_async && member.gates.is_empty();
         let primary = constructors
             .iter()
-            .position(|member| !member.signature.is_async && member.method.sig.ident == "new")
-            .or_else(|| {
-                constructors
-                    .iter()
-                    .position(|member| !member.signature.is_async)
-            });
+            .position(|member| primary(member) && member.method.sig.ident == "new")
+            .or_else(|| constructors.iter().position(primary));
         let constructor = primary.map(|index| Member {
             role: Role::Constructor,
             ..constructors.remove(index)
@@ -262,6 +270,9 @@ pub(super) struct Member<'item> {
     pub(super) role: Role,
     /// The host language feature that a method implements.
     pub(super) protocol: Option<Protocol>,
+    /// The `#[cfg]` attributes, each on features, that the member and
+    /// everything generated for it carry.
+    pub(super) gates: Vec<Attribute>,
 }
 
 impl Member<'_> {
@@ -339,26 +350,109 @@ mod tests {
     }
 
     #[test]
-    fn exported_methods_cannot_be_conditional() {
+    fn only_features_gate_an_exported_method() {
+        let gated = |predicate: TokenStream2| -> syn::Result<usize> {
+            let implementation: ItemImpl = syn::parse_quote! {
+                impl Resource {
+                    #[cfg(#predicate)]
+                    pub fn open(&self) {}
+                }
+            };
+            ResourcePlan::new(&implementation).map(|plan| plan.methods[0].gates.len())
+        };
+
+        let accepted = [
+            quote!(feature = "icons"),
+            quote!(all(
+                feature = "icons",
+                not(any(feature = "a", feature = "b"))
+            )),
+            // `all()` holds in every build, so the method is always exported.
+            quote!(all()),
+        ];
+        for predicate in accepted {
+            assert_eq!(gated(predicate).expect("a feature gate"), 1);
+        }
+        let rejected = [
+            quote!(target_arch = "wasm32"),
+            quote!(unix),
+            quote!(windows),
+            quote!(not(target_family = "wasm")),
+            quote!(all(feature = "icons", target_os = "linux")),
+            quote!(any(feature = "icons", test)),
+            quote!(feature),
+        ];
+        for predicate in rejected {
+            let shown = predicate.to_string();
+            let error = match gated(predicate) {
+                Ok(_) => panic!("`{shown}` must be rejected"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("gated only on features"));
+        }
+        // `any()` holds in no build, which would drop the method silently.
+        for predicate in [quote!(any()), quote!(all(feature = "icons", any()))] {
+            let shown = predicate.to_string();
+            let error = match gated(predicate) {
+                Ok(_) => panic!("`{shown}` must be rejected"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("`any()` holds in no build"));
+        }
+    }
+
+    #[test]
+    fn a_gate_inside_cfg_attr_is_rejected() {
+        let plan = |attribute: TokenStream2| {
+            let implementation: ItemImpl = syn::parse_quote! {
+                impl Resource {
+                    #attribute
+                    pub fn open(&self) {}
+                }
+            };
+            ResourcePlan::new(&implementation).map(|plan| plan.methods.len())
+        };
+
+        let rejected = [
+            quote!(#[cfg_attr(feature = "icons", cfg(feature = "extras"))]),
+            quote!(#[cfg_attr(unix, must_use, cfg(feature = "extras"))]),
+            quote!(#[cfg_attr(feature = "icons", cfg_attr(unix, cfg(feature = "extras")))]),
+        ];
+        for attribute in rejected {
+            let shown = attribute.to_string();
+            let error = match plan(attribute) {
+                Ok(_) => panic!("`{shown}` must be rejected"),
+                Err(error) => error,
+            };
+            assert!(
+                error.to_string().contains(
+                    "write the gate of an exported method as `#[cfg(feature = \"...\")]`"
+                )
+            );
+        }
+        // A `cfg_attr` that adds no `cfg` leaves the method in every build.
+        assert_eq!(
+            plan(quote!(#[cfg_attr(feature = "icons", must_use)])).expect("an ungated method"),
+            1
+        );
+    }
+
+    #[test]
+    fn a_gated_constructor_is_a_factory() {
         let implementation: ItemImpl = syn::parse_quote! {
             impl Resource {
                 #[bimetal(constructor)]
+                #[cfg(feature = "icons")]
                 pub fn new() -> Self { Self }
-                #[cfg(not(target_arch = "wasm32"))]
-                pub fn open(&self) {}
+                #[bimetal(constructor)]
+                pub fn open() -> Self { Self }
             }
         };
+        let plan = ResourcePlan::new(&implementation).expect("plan resource");
 
-        let error = match ResourcePlan::new(&implementation) {
-            Ok(_) => panic!("a conditional export must be reported"),
-            Err(error) => error,
-        };
-
-        assert!(
-            error
-                .to_string()
-                .contains("put the `#[cfg]` inside its body")
-        );
+        let constructor = plan.constructor.as_ref().expect("an ungated constructor");
+        assert_eq!(constructor.method.sig.ident, "open");
+        assert_eq!(plan.factories[0].method.sig.ident, "new");
     }
 
     #[test]

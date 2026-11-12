@@ -388,7 +388,8 @@ pub(crate) fn python_field_name(rust_name: &str) -> String {
 }
 
 /// Render what an absent field holds: nothing when callers must supply it,
-/// its Rust `Default` when it has one, and `None` otherwise. Pydantic copies
+/// its Rust `Default` or what its default function returns when it has
+/// either, and `None` otherwise. Pydantic copies
 /// a list or a map for each model, and a value that it must validate is
 /// built for each.
 fn python_field_default(field: &FieldDef, context: &PythonContext<'_>) -> Result<String> {
@@ -514,6 +515,13 @@ mod tests {
                     json!([]),
                 ),
                 absent("retry", fixtures::named("Retry"), json!({"attempts": 3})),
+                absent(
+                    "fallback",
+                    TypeRef::Option {
+                        item: Box::new(TypeRef::String),
+                    },
+                    json!("dead-letter"),
+                ),
             ],
         );
         let manifest = Manifest {
@@ -533,6 +541,8 @@ mod tests {
         assert!(source.contains(
             "    retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({\"attempts\": 3}, strict=False))\n"
         ));
+        // A default function can give an `Option` a value other than `None`.
+        assert!(source.contains("    fallback: str | None = Field(default=\"dead-letter\")\n"));
     }
 
     #[test]

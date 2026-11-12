@@ -15,6 +15,12 @@ serde_json = "1.0"
 showcase-geometry = { path = "geometry" }
 thiserror = "2.0"
 
+# Every host of one build has the same features, so a feature can gate an
+# exported method. `bimetal build` compiles the default features.
+[features]
+default = ["statements"]
+statements = []
+
 # The example is its own workspace. `bimetal.toml` links `showcase-geometry`
 # into the same application.
 [workspace]

@@ -58,7 +58,32 @@ self.assertEqual(Settings(version="v1").retry, Retry(attempts=3, factor=2.0))
 assert.deepEqual(echoSettings({ version: "v1" }).retry, { attempts: 3, factor: 2 });
 ```
 
-Bimetal reads each default from the compiled library, when it builds the packages and again when a package loads. A `Default` must therefore give the same value on every call, and the field's type must be `Serialize`. `bimetal build` fails when a default differs between two calls, holds a NaN or an infinity, or breaks a field rule. An `Option` field is `None` when absent, with or without `#[serde(default)]`.
+`#[serde(default = "path")]` gives an absent field what the function `path` returns, for a default that isn't the `Default` of its type:
+
+```rust
+#[serde(default = "default_icon")]
+pub icon: String,
+```
+
+```rust
+fn default_icon() -> String {
+    "brackets-curly".to_owned()
+}
+```
+
+The hosts get the value that the function returns, so Python, TypeScript and Rust agree:
+
+```python
+self.assertEqual(Settings(version="v1").icon, "brackets-curly")
+```
+
+```ts
+assert.equal(echoSettings({ version: "v1" }).icon, "brackets-curly");
+```
+
+Bimetal reads each default from the compiled library, when it builds the packages and again when a package loads. A `Default` or a default function therefore runs each time a program imports the package, so it must be cheap, must not panic, and must give the same value on every call. The field's type must be `Serialize`. `bimetal build` fails, and names the field, when a default differs between two calls, breaks a field rule, holds a NaN or an infinity at any depth, or can't be written as JSON.
+
+An `Option` field is `None` when absent under `#[serde(default)]`, and holds what the function returns under `default = "path"`. A `required` field takes neither. A field with a default function takes no `skip_serializing_if`, because Serde would leave out a `None` and read it back as what the function returns.
 
 ## Field rules
 

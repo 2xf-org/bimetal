@@ -9,7 +9,7 @@ use quote::quote;
 
 use crate::export::boundary::{self, HostReturnPlan};
 use crate::export::host_backend::{AsyncStyle, HostBackend, SyncLocks};
-use crate::types::{DirectType, ParamValue, Signature};
+use crate::types::{DirectType, Param, ParamValue, Signature};
 
 /// How a wrapper reaches the Rust value of a resource.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,9 +92,24 @@ pub(super) fn plan(
     let error_ty = backend.error_ty();
     let (return_ty, call) = if signature.is_async {
         let awaitable = backend.host_value().result();
+        // Before its first wait, a call on the caller's thread that waited
+        // for the host's event loop would wait for that thread itself.
+        let start = if signature.params.iter().any(Param::waits_for_host) {
+            quote!(Runtime)
+        } else {
+            quote!(Caller)
+        };
         (
             quote!(::std::result::Result<#awaitable, #error_ty>),
-            async_call(backend, access, &waits, &invocation, &returns, callable),
+            async_call(
+                backend,
+                access,
+                &start,
+                &waits,
+                &invocation,
+                &returns,
+                callable,
+            ),
         )
     } else {
         let ty = &returns.ty;
@@ -212,10 +227,12 @@ fn sync_call(
 
 /// Take the resource lock, start the Rust future, and convert its result
 /// before the lock is released: inside the future for a promise, and in the
-/// deferred conversion for an awaitable.
+/// deferred conversion for an awaitable, whose first poll is where the
+/// `executor::Start` variant `start` says.
 fn async_call(
     backend: HostBackend,
     access: Access,
+    start: &TokenStream2,
     waits: &TokenStream2,
     invocation: &TokenStream2,
     returns: &HostReturnPlan,
@@ -251,7 +268,7 @@ fn async_call(
             quote! {
                 #lock
                 #take
-                #runtime::awaitable(#context, async move {
+                #runtime::awaitable(#context, ::bimetal::runtime::executor::Start::#start, async move {
                     #waits
                     #inner
                     let __bimetal_result = #invocation.await;
