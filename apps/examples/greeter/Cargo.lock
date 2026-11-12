@@ -10,7 +10,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "bimetal"
-version = "202611.11.0"
+version = "202611.12.0"
 dependencies = [
  "bimetal-ir",
  "bimetal-macros",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-ir"
-version = "202611.11.0"
+version = "202611.12.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-macros"
-version = "202611.11.0"
+version = "202611.12.0"
 dependencies = [
  "bimetal-ir",
  "heck",
