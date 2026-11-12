@@ -19,7 +19,7 @@ backend = "node"                  # a native Node.js addon; "wasm" by default
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "431b02f6844dd5f9a25924afd1e3f42f"
+source_fingerprint = "3189dfcccb06458cf47ffaf0fb95c6dc"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "3a37b32024e89d78d590c656ad7f273d"

@@ -3,7 +3,7 @@
 Apache Arrow values cross as Arrow values on every host. In Python, nothing is copied. Enable the `arrow` feature of `bimetal`:
 
 ```toml
-bimetal = { version = "=202611.11.0", features = ["arrow"] }
+bimetal = { version = "=202611.12.0", features = ["arrow"] }
 ```
 
 Then annotate a top-level parameter with `arrow`, or the export with `returns(arrow)`:

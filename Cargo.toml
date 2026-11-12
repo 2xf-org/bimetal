@@ -5,7 +5,7 @@ members = ["apps/cli", "packages/ir", "packages/macros", "packages/runtime"]
 exclude = ["apps/examples"]
 
 [workspace.package]
-version = "202611.11.0"
+version = "202611.12.0"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT OR Apache-2.0"
@@ -17,9 +17,9 @@ categories = ["api-bindings", "development-tools::ffi", "wasm"]
 [workspace.dependencies]
 # The four crates release together, so each names the others at exactly the
 # workspace's version.
-bimetal = { path = "packages/runtime", version = "=202611.11.0" }
-bimetal-ir = { path = "packages/ir", version = "=202611.11.0" }
-bimetal-macros = { path = "packages/macros", version = "=202611.11.0" }
+bimetal = { path = "packages/runtime", version = "=202611.12.0" }
+bimetal-ir = { path = "packages/ir", version = "=202611.12.0" }
+bimetal-macros = { path = "packages/macros", version = "=202611.12.0" }
 
 anyhow = "1.0"
 # The arrow-rs crates share one version, which applications reach through
