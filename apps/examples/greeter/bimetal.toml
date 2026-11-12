@@ -19,7 +19,7 @@ backend = "node"                  # a native Node.js addon; "wasm" by default
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "5492b50465eeefc4bceacdde9bf68b08"
+source_fingerprint = "f5e704ee8ff393e1cf2c3bb8659733b7"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "cfa4b3b68e8b028dc8a6dbf6426f9546"
@@ -66,6 +66,7 @@ inputs = [
     "../../../packages/runtime/src/lib.rs",
     "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
+    "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",
     "../../../packages/runtime/src/runtime/callback.rs",
     "../../../packages/runtime/src/runtime/contract_error.rs",

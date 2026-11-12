@@ -1,8 +1,8 @@
 //! Strict parsing and normalization of supported Serde and Bimetal attributes.
 //!
 //! A generated API has one public name and one wire representation. Serde
-//! features that imply asymmetric serialization, aliases, or executable
-//! default functions are rejected here rather than approximated by a host.
+//! features that imply asymmetric serialization or aliases are rejected here
+//! rather than approximated by a host.
 //! Doc comments are attributes too, so their normalized text comes from here.
 
 use bimetal_ir::Protocol;
@@ -276,11 +276,21 @@ pub(super) struct SerdeField {
     pub(super) rename: Option<String>,
     /// Whether this runtime-only field is excluded from the wire model.
     pub(super) skip: bool,
-    /// Where `#[serde(default)]` asks deserialization to supply
-    /// `Default::default()` for an absent field, if it does.
-    pub(super) default: Option<Span>,
+    /// What `#[serde(default)]` or `#[serde(default = "path")]` asks
+    /// deserialization to supply for an absent field, if either is declared.
+    pub(super) default: Option<SerdeDefault>,
     /// Optional predicate accepted only when it preserves round trips.
     pub(super) skip_serializing_if: Option<LitStr>,
+}
+
+/// A field's `#[serde(default)]` or `#[serde(default = "path")]`.
+pub(super) struct SerdeDefault {
+    /// Where the attribute names `default`.
+    pub(super) span: Span,
+    /// The path that `default = "path"` names, as written, to the function
+    /// that gives the value of an absent field; `None` asks for the Rust
+    /// `Default` of its type.
+    pub(super) function: Option<LitStr>,
 }
 
 /// Parse supported Serde field attributes and reject lossy features.
@@ -299,12 +309,15 @@ pub(super) fn serde_field(attrs: &[Attribute]) -> syn::Result<SerdeField> {
                 result.skip = true;
             } else if meta.path.is_ident("default") {
                 declare_once(&meta, result.default.is_some())?;
-                if meta.input.peek(Token![=]) {
-                    return Err(meta.error(
-                        "`#[serde(default = \"path\")]` is not supported because function-provided defaults cannot be represented by bimetal",
-                    ));
-                }
-                result.default = Some(meta.path.span());
+                let function = if meta.input.peek(Token![=]) {
+                    Some(meta.value()?.parse::<LitStr>()?)
+                } else {
+                    None
+                };
+                result.default = Some(SerdeDefault {
+                    span: meta.path.span(),
+                    function,
+                });
             } else if meta.path.is_ident("skip_serializing_if") {
                 declare_once(&meta, result.skip_serializing_if.is_some())?;
                 result.skip_serializing_if = Some(meta.value()?.parse::<LitStr>()?);

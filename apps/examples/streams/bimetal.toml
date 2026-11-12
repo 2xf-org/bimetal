@@ -9,7 +9,7 @@
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "3ca3faad502316cadcb65a56403abe42"
+source_fingerprint = "6088bb1d94b4fa51dcddce2de90dac8d"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "d8444e49034c4977907530650fb2fc17"
@@ -60,6 +60,7 @@ inputs = [
     "../../../packages/runtime/src/lib.rs",
     "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
+    "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",
     "../../../packages/runtime/src/runtime/callback.rs",
     "../../../packages/runtime/src/runtime/contract_error.rs",

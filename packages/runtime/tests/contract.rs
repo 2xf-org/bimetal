@@ -208,6 +208,35 @@ fn a_field_default_is_the_rust_default_of_its_type() {
 }
 
 #[test]
+fn a_field_default_is_what_its_default_function_returns() {
+    let manifest = discovered_manifest();
+    let policy = lookup::model(&manifest, "RetryPolicy");
+    let defaults = [
+        ("notify", json!(true)),
+        ("icon", json!("brackets-curly")),
+        ("fallback", json!("dead-letter")),
+        ("overflow", json!({"cap": 10, "factor": 1.5})),
+    ];
+    for (name, default) in &defaults {
+        let field = field_named(&policy.shape, name);
+        assert!(!field.required, "`{name}` may be absent");
+        assert_eq!(
+            field.default.as_ref(),
+            Some(default),
+            "the default of `{name}`"
+        );
+    }
+
+    // Serde fills in an absent field with what the contract says it holds.
+    let decoded: fixtures::defaults::RetryPolicy =
+        serde_json::from_value(json!({})).expect("every field has a default");
+    let decoded = serde_json::to_value(decoded).expect("the policy serializes");
+    for (name, default) in defaults {
+        assert_eq!(decoded[name], default, "what Serde fills in for `{name}`");
+    }
+}
+
+#[test]
 fn request_fields_preserve_names_constraints_defaults_and_boundaries() {
     let manifest = discovered_manifest();
     let request = lookup::model(&manifest, "JobRequest");

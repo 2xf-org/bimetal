@@ -227,6 +227,9 @@ class Settings(BaseModel):
     prefix: str = Field(default="")
     tags: list[str] = Field(default=[])
     retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({"attempts": 3, "factor": 2.0}, strict=False))
+    color: bool = Field(default=True)
+    icon: str = Field(default="brackets-curly")
+    theme: str | None = Field(default="dark")
 
 
 class StrokeLift(_bimetal_ExternalVariant):

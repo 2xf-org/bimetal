@@ -10,18 +10,20 @@
 //! the Node.js addon read the contract, and the Wasm module, which nothing
 //! asks for it, does not carry it.
 
+mod finite;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::ContractType;
 #[cfg(any(feature = "python", feature = "node"))]
 use crate::ir::discovery;
 use crate::ir::{
     ConstantDef, DefinitionId, ErrorDef, FunctionDef, Manifest, ResourceDef, TypeDef, TypeRef,
 };
+use crate::runtime::ValueError;
 
 /// A linked type contract produced by [`crate::Model`].
 pub struct TypeRegistration(
@@ -222,30 +224,41 @@ fn collect(
     }
 }
 
-/// Return what an absent `field` of the declaration `owner` holds: the Rust
-/// `Default` of its type, as Serde writes it. A default that cannot enter
-/// the contract gives `None` and adds to `problems`.
+/// Return what an absent `field` of the declaration `owner` holds: what
+/// `make`, the function that `name` names, returns, as Serde writes it.
+/// `check` checks the field's rules and the rules inside the value. A
+/// default that cannot enter the contract, such as one that holds a NaN that
+/// JSON would write as `null`, gives `None` and adds to `problems`.
 ///
 /// A package rebuilds its contract when it loads and compares it with the
-/// one that the build read, so the default must be the same on every call.
+/// one that the build read, so `make` must return the same value on every
+/// call.
 #[doc(hidden)]
-pub fn field_default<T>(owner: &str, field: &str, problems: &mut Vec<String>) -> Option<Value>
+pub fn field_default<T>(
+    owner: &str,
+    field: &str,
+    make: fn() -> T,
+    name: &str,
+    check: impl Fn(&T) -> Result<(), ValueError>,
+    problems: &mut Vec<String>,
+) -> Option<Value>
 where
-    T: ContractType + Default + Serialize,
+    T: Serialize,
 {
-    let default = T::default();
-    let problem = match default.check_rules() {
+    let default = make();
+    let problem = match check(&default) {
         Err(violation) => format!("breaks a field rule: {violation}"),
-        Ok(()) => match (
-            serde_json::to_value(default),
-            serde_json::to_value(T::default()),
-        ) {
+        Ok(()) if finite::has_non_finite_float(&default) => {
+            "holds a NaN or an infinity, which the generated packages cannot represent; use a finite value"
+                .to_owned()
+        }
+        Ok(()) => match (serde_json::to_value(default), serde_json::to_value(make())) {
             (Ok(first), Ok(second)) => {
                 let first = sorted(first);
                 if first == sorted(second) {
                     return Some(first);
                 }
-                "changes from one call of `Default::default` to the next".to_owned()
+                format!("changes from one call of `{name}` to the next")
             }
             (Err(error), _) | (_, Err(error)) => format!("could not serialize as JSON: {error}"),
         },

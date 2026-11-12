@@ -174,6 +174,9 @@ suite("models", () => {
       prefix: "",
       tags: [],
       retry: { attempts: 3, factor: 2 },
+      color: true,
+      icon: "brackets-curly",
+      theme: "dark",
     });
   });
 

@@ -44,6 +44,7 @@ test("default arguments", () => {
 test("models", () => {
   assert.equal(echoSettings({ version: "v1" }).verbose, false);
   assert.deepEqual(echoSettings({ version: "v1" }).retry, { attempts: 3, factor: 2 });
+  assert.equal(echoSettings({ version: "v1" }).icon, "brackets-curly");
   assert.equal(Priority.High, "high");
   assert.deepEqual(retrace(["lift", { move_to: { x: 1, y: 2 } }]), [{ move_to: { x: 1, y: 2 } }, "lift"]);
 });

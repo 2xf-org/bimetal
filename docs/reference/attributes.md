@@ -69,6 +69,7 @@ Serde decides what crosses, so its attributes shape the contract:
 | `tag = "..."` on an enum | Makes an internally tagged enum, a discriminated union. Without it, an enum with a variant that carries data is in Serde's default form |
 | `transparent` on a tuple struct | Makes an alias of its field's type |
 | `default` on a field whose type has a Rust `Default` | Makes it optional. An absent field holds that `Default` |
+| `default = "path"` on a field | Makes it optional. An absent field holds what the function `path` returns |
 | `skip` on a field of an error's details | Leaves it out |
 
-Bimetal rejects directional renames, such as `rename(serialize = "...")`, Serde aliases, and `tag` on a struct.
+Bimetal rejects directional renames, such as `rename(serialize = "...")`, Serde aliases, `tag` on a struct, and `skip_serializing_if` on a field with a default function.

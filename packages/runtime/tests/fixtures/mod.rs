@@ -1018,6 +1018,44 @@ pub mod defaults {
         /// How long one attempt may run.
         #[serde(default)]
         pub limit: Duration,
+        /// Whether a person hears of each failure.
+        #[serde(default = "yes")]
+        pub notify: bool,
+        /// The icon that shows the job.
+        #[serde(default = "self::icon")]
+        #[bimetal(min_length = 1)]
+        pub icon: String,
+        /// The queue that takes the job after the last attempt.
+        #[serde(default = "fallback")]
+        pub fallback: Option<String>,
+        /// How the delay grows after the queue is full.
+        #[serde(default = "Backoff::gentle")]
+        pub overflow: Backoff,
+    }
+
+    /// Say yes, the default of a flag that is on.
+    fn yes() -> bool {
+        true
+    }
+
+    /// The icon of a job that names none.
+    fn icon() -> String {
+        "brackets-curly".to_owned()
+    }
+
+    /// The queue of a job that names none.
+    fn fallback() -> Option<String> {
+        Some("dead-letter".to_owned())
+    }
+
+    impl Backoff {
+        /// A backoff that grows slowly.
+        fn gentle() -> Self {
+            Self {
+                factor: 1.5,
+                cap: 10,
+            }
+        }
     }
 
     /// One step of a retry, whose variant holds a field with a default.

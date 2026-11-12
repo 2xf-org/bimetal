@@ -144,6 +144,9 @@ export interface Settings {
   readonly prefix?: string;
   readonly tags?: ReadonlyArray<string>;
   readonly retry?: Retry;
+  readonly color?: boolean;
+  readonly icon?: string;
+  readonly theme?: string | null;
 }
 /**
  * Lift the pen.

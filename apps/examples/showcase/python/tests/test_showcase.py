@@ -207,6 +207,9 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(settings.tags, [])
         self.assertIsNot(settings.tags, Settings(version="v1").tags)
         self.assertEqual(settings.retry, Retry(attempts=3, factor=2.0))
+        self.assertTrue(settings.color)
+        self.assertEqual(echo_settings(settings).icon, "brackets-curly")
+        self.assertEqual(settings.theme, "dark")
         self.assertEqual(record().revision, 0)
         with self.assertRaises(ValidationError):
             Settings(version="v2")  # type: ignore[arg-type]

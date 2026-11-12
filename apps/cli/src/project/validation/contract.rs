@@ -186,7 +186,6 @@ fn validate_namespaces(
         types::validate_type_names(items, packages, problems);
         types::validate_nullable_options(items, &callables, contract, problems)?;
         types::validate_constant_values(items, contract, problems)?;
-        types::validate_default_values(items, contract, problems)?;
         resources::validate_protocols(items, problems);
         resources::validate_defaults(items, contract, problems)?;
         resources::validate_error_details(items, contract, packages, problems)?;
@@ -1141,43 +1140,6 @@ mod tests {
             [
                 "constant `test::RATIO` holds a NaN or an infinity, which the generated packages cannot represent; use a finite value",
                 "constant `test::ORIGINS` holds a NaN or an infinity, which the generated packages cannot represent; use a finite value",
-            ]
-        );
-    }
-
-    #[test]
-    fn defaults_cannot_hold_nan_or_infinity() {
-        let float = TypeRef::Float { bits: 64 };
-        let absent = |name: &str, ty: TypeRef, default: Value| FieldDef {
-            required: false,
-            default: Some(default),
-            ..fixtures::typed_field(name, ty)
-        };
-        let mut manifest = fixtures::manifest();
-        manifest.types.extend([
-            fixtures::model(
-                "Limits",
-                vec![fixtures::typed_field("longest", float.clone())],
-            ),
-            fixtures::model(
-                "Job",
-                vec![
-                    absent("share", float.clone(), Value::Null),
-                    absent(
-                        "limits",
-                        fixtures::named("Limits"),
-                        serde_json::json!({"longest": null}),
-                    ),
-                    absent("weight", float, serde_json::json!(0.5)),
-                ],
-            ),
-        ]);
-
-        assert_eq!(
-            problems(&manifest),
-            [
-                "the default of field `share` of `test::Job` holds a NaN or an infinity, which the generated packages cannot represent; use a finite value",
-                "the default of field `limits` of `test::Job` holds a NaN or an infinity, which the generated packages cannot represent; use a finite value",
             ]
         );
     }

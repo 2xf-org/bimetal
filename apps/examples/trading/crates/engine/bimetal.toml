@@ -17,7 +17,7 @@ backend = "node"
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "464b231e996d5f8512d652a54ed5a6e0"
+source_fingerprint = "c7e7a6d62821563bdd6ba1dfbb57ea2f"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "cea084fc3f910148373ce6727c743b5d"
@@ -68,6 +68,7 @@ inputs = [
     "../../../packages/runtime/src/lib.rs",
     "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
+    "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",
     "../../../packages/runtime/src/runtime/callback.rs",
     "../../../packages/runtime/src/runtime/contract_error.rs",

@@ -107,6 +107,12 @@ pub struct Settings {
     pub tags: Vec<String>,
     #[serde(default)]
     pub retry: Retry,
+    #[serde(default = "yes")]
+    pub color: bool,
+    #[serde(default = "default_icon")]
+    pub icon: String,
+    #[serde(default = "default_theme")]
+    pub theme: Option<String>,
 }
 
 /// How often to try again, and how fast the wait grows.
@@ -123,6 +129,18 @@ impl Default for Retry {
             factor: 2.0,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_icon() -> String {
+    "brackets-curly".to_owned()
+}
+
+fn default_theme() -> Option<String> {
+    Some("dark".to_owned())
 }
 
 /// Something that happened to a record.
