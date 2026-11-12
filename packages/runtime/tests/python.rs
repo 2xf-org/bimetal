@@ -335,6 +335,27 @@ assert count_stops({"stops": [4, 8, 15]}) == 3
     )
 }
 
+#[test]
+fn a_feature_gate_decides_whether_python_has_a_member() -> PyResult<()> {
+    let scenario = if cfg!(feature = "alloy") {
+        cr#"
+till = Till.holding(5)
+assert till.take(2) == 7
+assert till.receipt() == {"total": 7}
+assert not hasattr(till, "plainTotal")
+"#
+    } else {
+        cr#"
+till = Till()
+assert till.take(2) == 2
+assert till.plainTotal() == 2
+assert not hasattr(till, "receipt")
+assert not hasattr(Till, "holding")
+"#
+    };
+    python::run_scenario(scenario, &[], &["Till"])
+}
+
 #[cfg(feature = "alloy")]
 #[test]
 fn alloy_types_cross_as_hex_strings() -> PyResult<()> {

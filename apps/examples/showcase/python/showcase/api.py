@@ -17,6 +17,7 @@ from .models import (
     Priority,
     Record,
     Settings,
+    Statement,
     Stroke,
 )
 import showcase.geometry.api as _bimetal_api_4
@@ -121,7 +122,7 @@ async def count_words(text: str) -> int:
     """
     Count the words of a text asynchronously.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_e5997a239e875dd4")(
+    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_5ac5d0dd104ac5e7")(
         text,
     )
     __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
@@ -197,7 +198,7 @@ async def find_item(items: list[str], index: int) -> str:
         Panics when `index` is out of range, as `item_at` does. Python raises the
         panic from `await`, and TypeScript rejects the promise.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_0a85463814ba241a")(
+    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_367c4919411a371c")(
         items,
         index,
     )
@@ -288,7 +289,7 @@ def nest(depth: int) -> int:
         A depth of a million overflows the stack. In TypeScript, that is a trap
         without a panic, which aborts the WebAssembly module as a panic does.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_45064a7cc305f911")(
+    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_9a75df89105e1497")(
         depth,
     )
     __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
@@ -302,7 +303,7 @@ async def nest_later(depth: int) -> int:
     """
     Count `depth` nested calls asynchronously, as `nest` does.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_b6e84cff9da68ed3")(
+    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_0c257a621d38e3f5")(
         depth,
     )
     __bimetal_result: int = _bimetal_type_adapter(int).validate_python(
@@ -567,7 +568,7 @@ class Ledger:
             ParseError
         """
         try:
-            self.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_5099bc0ccd4e96af")(
+            self.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_76085cf7a79fd5a0")(
                 owner,
             )
         except RuntimeError as __bimetal_error:
@@ -585,7 +586,7 @@ class Ledger:
         Open a ledger with a starting balance.
         """
         __bimetal_instance = cls.__new__(cls)
-        __bimetal_instance.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_5099bc0ccd4e96af").withBalance(
+        __bimetal_instance.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_76085cf7a79fd5a0").withBalance(
             owner,
             balance,
         )
@@ -648,6 +649,17 @@ class Ledger:
         )
         return __bimetal_result
 
+    def statement(self) -> Statement:
+        """
+        Sum up the ledger, with the `statements` feature.
+        """
+        __bimetal_native = self.native_resource.statement()
+        __bimetal_result: Statement = _bimetal_type_adapter(Statement).validate_python(
+            __bimetal_native,
+            strict=False,
+        )
+        return __bimetal_result
+
     def close(self) -> None:
         """
         Release the native resources owned by this instance.
@@ -701,7 +713,7 @@ class Mailbox:
         """
         __bimetal_instance = cls.__new__(cls)
         try:
-            __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_showcase_b9200de371e9a767").open(
+            __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_showcase_9c56c5b5f8547a09").open(
                 recipient,
             )
         except RuntimeError as __bimetal_error:

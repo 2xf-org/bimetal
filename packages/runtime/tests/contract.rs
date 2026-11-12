@@ -55,6 +55,7 @@ fn discovery_returns_the_complete_application_contract() {
         "contract::fixtures::columns",
         "contract::fixtures::defaults",
         "contract::fixtures::extra",
+        "contract::fixtures::gates",
         "contract::fixtures::streams",
     ];
     manifest
@@ -65,6 +66,9 @@ fn discovery_returns_the_complete_application_contract() {
         .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
     manifest
         .errors
+        .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
+    manifest
+        .resources
         .retain(|item| !optional_modules.contains(&item.rust_module.as_str()));
 
     assert_eq!(manifest.package_name, env!("CARGO_PKG_NAME"));
@@ -205,6 +209,39 @@ fn a_field_default_is_the_rust_default_of_its_type() {
         field_named(&declared.shape, "backoff").default,
         Some(backoff)
     );
+}
+
+#[test]
+fn a_feature_gate_decides_whether_a_member_is_in_the_contract() {
+    let manifest = discovered_manifest();
+    let till = lookup::resource(&manifest, "Till");
+    let methods: Vec<&str> = till
+        .methods
+        .iter()
+        .map(|method| method.callable.rust_name.as_str())
+        .collect();
+    let factories: Vec<&str> = till
+        .factories
+        .iter()
+        .map(|factory| factory.rust_name.as_str())
+        .collect();
+    let receipt = manifest.types.iter().find(|item| item.name == "Receipt");
+
+    if cfg!(feature = "alloy") {
+        assert_eq!(methods, ["take", "receipt", "settle"]);
+        assert_eq!(factories, ["holding"]);
+        assert!(
+            receipt.is_some(),
+            "the gated method's type is in the contract"
+        );
+    } else {
+        assert_eq!(methods, ["take", "plain_total"]);
+        assert!(factories.is_empty());
+        assert!(receipt.is_none());
+    }
+    // A gated constructor never becomes the class constructor.
+    let constructor = till.constructor.as_ref().expect("an ungated constructor");
+    assert_eq!(constructor.rust_name, "new");
 }
 
 #[test]

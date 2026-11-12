@@ -504,6 +504,12 @@ suite("resources", () => {
     ]);
   });
 
+  it("offer a method that a feature gates", () => {
+    using ledger = Ledger.withBalance("Ada", 5n);
+    ledger.deposit(2n);
+    assert.deepEqual(ledger.statement(), { owner: "Ada", balance: 7n, entries: 2 });
+  });
+
   it("offer extra constructors and constructor errors", () => {
     using ledger = Ledger.withBalance("Grace", 100n);
     assert.equal(ledger.balance(), 100n);

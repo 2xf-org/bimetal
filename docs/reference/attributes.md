@@ -57,6 +57,8 @@ Every `#[bimetal(...)]`, by where it goes.
 | `getitem`, `setitem`, `delitem` | Implements `value[key]`, in Python |
 | `contains`, `eq`, `hash`, `bool`, `call` | Implements `in`, `==`, `hash()`, `bool()` and `value(...)`, in Python |
 
+A method also takes Rust's `#[cfg(feature = "...")]`, which exports it only with that feature. [Resources](../guides/resources.md#features) says which tests a `#[cfg]` can hold.
+
 [Protocols](../guides/protocols.md) has the signature each one needs.
 
 ## Serde attributes that matter

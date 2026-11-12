@@ -41,12 +41,11 @@ export function __bimetal_function_showcase_06e179cc1232b3de(str, int) {
 }
 
 /**
- * @param {any} items
- * @param {any} index
+ * @param {any} depth
  * @returns {any}
  */
-export function __bimetal_function_showcase_0a85463814ba241a(items, index) {
-    const ret = wasm.__bimetal_function_showcase_0a85463814ba241a(items, index);
+export function __bimetal_function_showcase_0c257a621d38e3f5(depth) {
+    const ret = wasm.__bimetal_function_showcase_0c257a621d38e3f5(depth);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -131,11 +130,12 @@ export function __bimetal_function_showcase_2e5443aebc44da4f(date) {
 }
 
 /**
- * @param {any} depth
+ * @param {any} items
+ * @param {any} index
  * @returns {any}
  */
-export function __bimetal_function_showcase_45064a7cc305f911(depth) {
-    const ret = wasm.__bimetal_function_showcase_45064a7cc305f911(depth);
+export function __bimetal_function_showcase_367c4919411a371c(items, index) {
+    const ret = wasm.__bimetal_function_showcase_367c4919411a371c(items, index);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -160,6 +160,18 @@ export function __bimetal_function_showcase_4771162941742abf(rows) {
  */
 export function __bimetal_function_showcase_4ceaf7968fc03fea(batch) {
     const ret = wasm.__bimetal_function_showcase_4ceaf7968fc03fea(batch);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {any} text
+ * @returns {any}
+ */
+export function __bimetal_function_showcase_5ac5d0dd104ac5e7(text) {
+    const ret = wasm.__bimetal_function_showcase_5ac5d0dd104ac5e7(text);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -359,6 +371,18 @@ export function __bimetal_function_showcase_8e7eeca2a4db34ab(route) {
 }
 
 /**
+ * @param {any} depth
+ * @returns {any}
+ */
+export function __bimetal_function_showcase_9a75df89105e1497(depth) {
+    const ret = wasm.__bimetal_function_showcase_9a75df89105e1497(depth);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {any} text
  * @returns {any}
  */
@@ -413,18 +437,6 @@ export function __bimetal_function_showcase_b295a1ff3715f93a(table) {
  */
 export function __bimetal_function_showcase_b312b9ab4d477737(batch, size) {
     const ret = wasm.__bimetal_function_showcase_b312b9ab4d477737(batch, size);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-/**
- * @param {any} depth
- * @returns {any}
- */
-export function __bimetal_function_showcase_b6e84cff9da68ed3(depth) {
-    const ret = wasm.__bimetal_function_showcase_b6e84cff9da68ed3(depth);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -532,18 +544,6 @@ export function __bimetal_function_showcase_e0ad1fc2ba6d4e3e(samples, factor) {
     var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
-}
-
-/**
- * @param {any} text
- * @returns {any}
- */
-export function __bimetal_function_showcase_e5997a239e875dd4(text) {
-    const ret = wasm.__bimetal_function_showcase_e5997a239e875dd4(text);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
 }
 
 /**
@@ -1084,114 +1084,6 @@ export class __bimetal_resource_showcase_4c5f82ea59c0edd9 {
 }
 if (Symbol.dispose) __bimetal_resource_showcase_4c5f82ea59c0edd9.prototype[Symbol.dispose] = __bimetal_resource_showcase_4c5f82ea59c0edd9.prototype.free;
 
-export class __bimetal_resource_showcase_5099bc0ccd4e96af {
-    static __wrap(ptr) {
-        const obj = Object.create(__bimetal_resource_showcase_5099bc0ccd4e96af.prototype);
-        obj.__wbg_ptr = ptr;
-        __bimetal_resource_showcase_5099bc0ccd4e96afFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        __bimetal_resource_showcase_5099bc0ccd4e96afFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg___bimetal_resource_showcase_5099bc0ccd4e96af_free(ptr, 0);
-    }
-    /**
-     * @param {any} owner
-     */
-    constructor(owner) {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af___bimetal_constructor_new(owner);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        this.__wbg_ptr = ret[0];
-        __bimetal_resource_showcase_5099bc0ccd4e96afFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-    __bimetal_share() {
-        wasm.__bimetal_resource_showcase_5099bc0ccd4e96af___bimetal_share(this.__wbg_ptr);
-    }
-    /**
-     * @returns {any}
-     */
-    balance() {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_balance(this.__wbg_ptr);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    close() {
-        wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_close(this.__wbg_ptr);
-    }
-    /**
-     * @returns {boolean}
-     */
-    closed() {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_closed(this.__wbg_ptr);
-        return ret !== 0;
-    }
-    /**
-     * @param {any} amount
-     * @returns {any}
-     */
-    deposit(amount) {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_deposit(this.__wbg_ptr, amount);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * @returns {any}
-     */
-    history() {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_history(this.__wbg_ptr);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * @returns {any}
-     */
-    lock() {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_lock(this.__wbg_ptr);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * @returns {any}
-     */
-    owner() {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_owner(this.__wbg_ptr);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return takeFromExternrefTable0(ret[0]);
-    }
-    /**
-     * @param {any} owner
-     * @param {any} balance
-     * @returns {__bimetal_resource_showcase_5099bc0ccd4e96af}
-     */
-    static withBalance(owner, balance) {
-        const ret = wasm.__bimetal_resource_showcase_5099bc0ccd4e96af_withBalance(owner, balance);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return __bimetal_resource_showcase_5099bc0ccd4e96af.__wrap(ret[0]);
-    }
-}
-if (Symbol.dispose) __bimetal_resource_showcase_5099bc0ccd4e96af.prototype[Symbol.dispose] = __bimetal_resource_showcase_5099bc0ccd4e96af.prototype.free;
-
 export class __bimetal_resource_showcase_6b56352dbdee5fdd {
     static __wrap(ptr) {
         const obj = Object.create(__bimetal_resource_showcase_6b56352dbdee5fdd.prototype);
@@ -1342,6 +1234,124 @@ export class __bimetal_resource_showcase_7373f6c9fdbd34cd {
 }
 if (Symbol.dispose) __bimetal_resource_showcase_7373f6c9fdbd34cd.prototype[Symbol.dispose] = __bimetal_resource_showcase_7373f6c9fdbd34cd.prototype.free;
 
+export class __bimetal_resource_showcase_76085cf7a79fd5a0 {
+    static __wrap(ptr) {
+        const obj = Object.create(__bimetal_resource_showcase_76085cf7a79fd5a0.prototype);
+        obj.__wbg_ptr = ptr;
+        __bimetal_resource_showcase_76085cf7a79fd5a0Finalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        __bimetal_resource_showcase_76085cf7a79fd5a0Finalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg___bimetal_resource_showcase_76085cf7a79fd5a0_free(ptr, 0);
+    }
+    /**
+     * @param {any} owner
+     */
+    constructor(owner) {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0___bimetal_constructor_new(owner);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        __bimetal_resource_showcase_76085cf7a79fd5a0Finalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    __bimetal_share() {
+        wasm.__bimetal_resource_showcase_76085cf7a79fd5a0___bimetal_share(this.__wbg_ptr);
+    }
+    /**
+     * @returns {any}
+     */
+    balance() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_balance(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    close() {
+        wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_close(this.__wbg_ptr);
+    }
+    /**
+     * @returns {boolean}
+     */
+    closed() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_closed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {any} amount
+     * @returns {any}
+     */
+    deposit(amount) {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_deposit(this.__wbg_ptr, amount);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    history() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_history(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    lock() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_lock(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    owner() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_owner(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @returns {any}
+     */
+    statement() {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_statement(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * @param {any} owner
+     * @param {any} balance
+     * @returns {__bimetal_resource_showcase_76085cf7a79fd5a0}
+     */
+    static withBalance(owner, balance) {
+        const ret = wasm.__bimetal_resource_showcase_76085cf7a79fd5a0_withBalance(owner, balance);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return __bimetal_resource_showcase_76085cf7a79fd5a0.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) __bimetal_resource_showcase_76085cf7a79fd5a0.prototype[Symbol.dispose] = __bimetal_resource_showcase_76085cf7a79fd5a0.prototype.free;
+
 export class __bimetal_resource_showcase_77ed035686d74863 {
     static __wrap(ptr) {
         const obj = Object.create(__bimetal_resource_showcase_77ed035686d74863.prototype);
@@ -1386,41 +1396,41 @@ export class __bimetal_resource_showcase_77ed035686d74863 {
 }
 if (Symbol.dispose) __bimetal_resource_showcase_77ed035686d74863.prototype[Symbol.dispose] = __bimetal_resource_showcase_77ed035686d74863.prototype.free;
 
-export class __bimetal_resource_showcase_b9200de371e9a767 {
+export class __bimetal_resource_showcase_9c56c5b5f8547a09 {
     static __wrap(ptr) {
-        const obj = Object.create(__bimetal_resource_showcase_b9200de371e9a767.prototype);
+        const obj = Object.create(__bimetal_resource_showcase_9c56c5b5f8547a09.prototype);
         obj.__wbg_ptr = ptr;
-        __bimetal_resource_showcase_b9200de371e9a767Finalization.register(obj, obj.__wbg_ptr, obj);
+        __bimetal_resource_showcase_9c56c5b5f8547a09Finalization.register(obj, obj.__wbg_ptr, obj);
         return obj;
     }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
-        __bimetal_resource_showcase_b9200de371e9a767Finalization.unregister(this);
+        __bimetal_resource_showcase_9c56c5b5f8547a09Finalization.unregister(this);
         return ptr;
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg___bimetal_resource_showcase_b9200de371e9a767_free(ptr, 0);
+        wasm.__wbg___bimetal_resource_showcase_9c56c5b5f8547a09_free(ptr, 0);
     }
     __bimetal_share() {
-        wasm.__bimetal_resource_showcase_b9200de371e9a767___bimetal_share(this.__wbg_ptr);
+        wasm.__bimetal_resource_showcase_9c56c5b5f8547a09___bimetal_share(this.__wbg_ptr);
     }
     close() {
-        wasm.__bimetal_resource_showcase_b9200de371e9a767_close(this.__wbg_ptr);
+        wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_close(this.__wbg_ptr);
     }
     /**
      * @returns {boolean}
      */
     closed() {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_closed(this.__wbg_ptr);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_closed(this.__wbg_ptr);
         return ret !== 0;
     }
     /**
      * @returns {any}
      */
     count() {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_count(this.__wbg_ptr);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_count(this.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1431,7 +1441,7 @@ export class __bimetal_resource_showcase_b9200de371e9a767 {
      * @returns {any}
      */
     deliver(message) {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_deliver(this.__wbg_ptr, message);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_deliver(this.__wbg_ptr, message);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1442,7 +1452,7 @@ export class __bimetal_resource_showcase_b9200de371e9a767 {
      * @returns {any}
      */
     static open(recipient) {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_open(recipient);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_open(recipient);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1452,7 +1462,7 @@ export class __bimetal_resource_showcase_b9200de371e9a767 {
      * @returns {any}
      */
     recipient() {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_recipient(this.__wbg_ptr);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_recipient(this.__wbg_ptr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -1463,14 +1473,14 @@ export class __bimetal_resource_showcase_b9200de371e9a767 {
      * @returns {any}
      */
     search(word) {
-        const ret = wasm.__bimetal_resource_showcase_b9200de371e9a767_search(this.__wbg_ptr, word);
+        const ret = wasm.__bimetal_resource_showcase_9c56c5b5f8547a09_search(this.__wbg_ptr, word);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
     }
 }
-if (Symbol.dispose) __bimetal_resource_showcase_b9200de371e9a767.prototype[Symbol.dispose] = __bimetal_resource_showcase_b9200de371e9a767.prototype.free;
+if (Symbol.dispose) __bimetal_resource_showcase_9c56c5b5f8547a09.prototype[Symbol.dispose] = __bimetal_resource_showcase_9c56c5b5f8547a09.prototype.free;
 
 /**
  * @param {any} listener
@@ -1520,8 +1530,8 @@ function __wbg_get_imports() {
             const ret = __bimetal_resource_showcase_77ed035686d74863.__wrap(arg0);
             return ret;
         },
-        __wbg___bimetal_resource_showcase_b9200de371e9a767_new: function(arg0) {
-            const ret = __bimetal_resource_showcase_b9200de371e9a767.__wrap(arg0);
+        __wbg___bimetal_resource_showcase_9c56c5b5f8547a09_new: function(arg0) {
+            const ret = __bimetal_resource_showcase_9c56c5b5f8547a09.__wrap(arg0);
             return ret;
         },
         __wbg___wbindgen_bigint_get_as_i64_d968e41184ae354f: function(arg0, arg1) {
@@ -1899,21 +1909,21 @@ const __bimetal_resource_showcase_45ce1cb1008d82dfFinalization = (typeof Finaliz
 const __bimetal_resource_showcase_4c5f82ea59c0edd9Finalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_4c5f82ea59c0edd9_free(ptr, 1));
-const __bimetal_resource_showcase_5099bc0ccd4e96afFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_5099bc0ccd4e96af_free(ptr, 1));
 const __bimetal_resource_showcase_6b56352dbdee5fddFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_6b56352dbdee5fdd_free(ptr, 1));
 const __bimetal_resource_showcase_7373f6c9fdbd34cdFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_7373f6c9fdbd34cd_free(ptr, 1));
+const __bimetal_resource_showcase_76085cf7a79fd5a0Finalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_76085cf7a79fd5a0_free(ptr, 1));
 const __bimetal_resource_showcase_77ed035686d74863Finalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_77ed035686d74863_free(ptr, 1));
-const __bimetal_resource_showcase_b9200de371e9a767Finalization = (typeof FinalizationRegistry === 'undefined')
+const __bimetal_resource_showcase_9c56c5b5f8547a09Finalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_b9200de371e9a767_free(ptr, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg___bimetal_resource_showcase_9c56c5b5f8547a09_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

@@ -53,7 +53,7 @@ export async function countWords(text) {
   $checkNative();
   $checkArgument(text, "string", "countWords(): argument `text`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_e5997a239e875dd4"]($prepareHost(text, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_5ac5d0dd104ac5e7"]($prepareHost(text, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -104,7 +104,7 @@ export async function findItem(items, index) {
   $checkArgument(items, "array", "findItem(): argument `items`");
   $checkArgument(index, "number", "findItem(): argument `index`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_0a85463814ba241a"]($prepareHost(items, ["list", null]), $prepareHost(index, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_367c4919411a371c"]($prepareHost(items, ["list", null]), $prepareHost(index, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -156,7 +156,7 @@ export function nest(depth) {
   $checkNative();
   $checkArgument(depth, "number", "nest(): argument `depth`");
   try {
-    return $native["__bimetal_function_showcase_45064a7cc305f911"]($prepareHost(depth, null));
+    return $native["__bimetal_function_showcase_9a75df89105e1497"]($prepareHost(depth, null));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -166,7 +166,7 @@ export async function nestLater(depth) {
   $checkNative();
   $checkArgument(depth, "number", "nestLater(): argument `depth`");
   try {
-    return await $nativePromise($native["__bimetal_function_showcase_b6e84cff9da68ed3"]($prepareHost(depth, null)));
+    return await $nativePromise($native["__bimetal_function_showcase_0c257a621d38e3f5"]($prepareHost(depth, null)));
   } catch ($error) {
     throw $nativeError($error);
   }
@@ -338,7 +338,7 @@ export class Ledger {
     $checkNative();
     $checkArgument(owner, "string", "new Ledger(): argument `owner`");
     try {
-      this.nativeResource = new $native["__bimetal_resource_showcase_5099bc0ccd4e96af"]($prepareHost(owner, null));
+      this.nativeResource = new $native["__bimetal_resource_showcase_76085cf7a79fd5a0"]($prepareHost(owner, null));
     } catch ($error) {
       throw $nativeError($error, ParseError);
     }
@@ -356,7 +356,7 @@ export class Ledger {
     $checkArgument(owner, "string", "Ledger.withBalance(): argument `owner`");
     $checkArgument(balance, "bigint", "Ledger.withBalance(): argument `balance`");
     try {
-      $resource.nativeResource = $native["__bimetal_resource_showcase_5099bc0ccd4e96af"].withBalance($prepareHost(owner, null), $prepareHost(balance, null));
+      $resource.nativeResource = $native["__bimetal_resource_showcase_76085cf7a79fd5a0"].withBalance($prepareHost(owner, null), $prepareHost(balance, null));
     } catch ($error) {
       throw $nativeError($error);
     }
@@ -409,6 +409,15 @@ export class Ledger {
     }
   }
 
+  statement() {
+    $checkNative();
+    try {
+      return $restoreHost(this.nativeResource.statement(), ["named", "showcase::showcase::Statement"]);
+    } catch ($error) {
+      throw $nativeError($error);
+    }
+  }
+
   close() {
     this.nativeResource.close();
   }
@@ -440,7 +449,7 @@ export class Mailbox {
     $checkNative();
     $checkArgument(recipient, "string", "Mailbox.open(): argument `recipient`");
     try {
-      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_showcase_b9200de371e9a767"].open($prepareHost(recipient, null)));
+      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_showcase_9c56c5b5f8547a09"].open($prepareHost(recipient, null)));
     } catch ($error) {
       throw $nativeError($error, ParseError);
     }

@@ -52,6 +52,7 @@ feature_sets=(
   bimetal/arrow-59
   bimetal/python,bimetal/node,bimetal/arrow-59
   bimetal/python,bimetal/alloy
+  bimetal/node,bimetal/alloy
 )
 for features in "${feature_sets[@]}"; do
   cargo clippy --locked --workspace --all-targets --features "$features" -- -D warnings
@@ -65,6 +66,12 @@ for example in apps/examples/*/; do
   cargo fmt --manifest-path "$example/Cargo.toml" --all --check
   cargo clippy --locked --manifest-path "$example/Cargo.toml" --workspace --all-targets -- -D warnings
 done
+# The showcase gates a method on a default feature; compile it without that
+# feature too, with the native hosts' wrappers and for Wasm.
+cargo clippy --locked --manifest-path apps/examples/showcase/Cargo.toml --all-targets \
+  --no-default-features --features bimetal/python,bimetal/node -- -D warnings
+cargo clippy --locked --manifest-path apps/examples/showcase/Cargo.toml \
+  --target wasm32-unknown-unknown --no-default-features -- -D warnings
 # trading's models build for Wasm, though its engine does not.
 cargo clippy --locked --manifest-path apps/examples/trading/Cargo.toml -p trading-core \
   --target wasm32-unknown-unknown -- -D warnings

@@ -928,6 +928,68 @@ pub mod extra {
     }
 }
 
+/// A resource with members that the `alloy` feature gates, which the suites
+/// run with the feature on and off.
+pub mod gates {
+    /// What a till took, a type that only the `alloy` feature declares.
+    #[cfg(feature = "alloy")]
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, bimetal::Model)]
+    pub struct Receipt {
+        /// The total, in cents.
+        pub total: u32,
+    }
+
+    /// A till that adds up what it takes.
+    pub struct Till {
+        total: u32,
+    }
+
+    #[bimetal::export]
+    impl Till {
+        /// Open an empty till.
+        #[bimetal(constructor)]
+        #[must_use]
+        pub fn new() -> Self {
+            Self { total: 0 }
+        }
+
+        /// Open a till that already holds `total`, a factory that the
+        /// feature gates.
+        #[bimetal(constructor)]
+        #[cfg(feature = "alloy")]
+        #[must_use]
+        pub fn holding(total: u32) -> Self {
+            Self { total }
+        }
+
+        /// Take `amount` and return the total.
+        pub fn take(&mut self, amount: u32) -> u32 {
+            self.total += amount;
+            self.total
+        }
+
+        /// Return the receipt, of a type that exists only with the feature.
+        #[cfg(feature = "alloy")]
+        #[must_use]
+        pub fn receipt(&self) -> Receipt {
+            Receipt { total: self.total }
+        }
+
+        /// Return the total later, an async call that the feature gates.
+        #[cfg(feature = "alloy")]
+        pub async fn settle(&self) -> u32 {
+            self.total
+        }
+
+        /// Return the total, a method that the feature removes.
+        #[cfg(not(feature = "alloy"))]
+        #[must_use]
+        pub fn plain_total(&self) -> u32 {
+            self.total
+        }
+    }
+}
+
 /// The contract revision used by this integration fixture.
 #[bimetal::export]
 pub const CONTRACT_REVISION: u32 = 7;

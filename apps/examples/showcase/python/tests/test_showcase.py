@@ -53,6 +53,7 @@ from showcase import (
     Record,
     Retry,
     Settings,
+    Statement,
     StrokeAgain,
     StrokeLift,
     StrokeLineTo,
@@ -514,6 +515,11 @@ class ResourceTest(unittest.TestCase):
             self.assertEqual(caught.exception.code, "locked_error")
             self.assertEqual(ledger.owner(), "Ada")
             self.assertEqual(ledger.history(), [Entry(amount=10, balance=10), Entry(amount=-3, balance=7)])
+
+    def test_a_method_that_a_feature_gates(self) -> None:
+        with Ledger.with_balance("Ada", 5) as ledger:
+            ledger.deposit(2)
+            self.assertEqual(ledger.statement(), Statement(owner="Ada", balance=7, entries=2))
 
     def test_extra_constructors_and_constructor_errors(self) -> None:
         with Ledger.with_balance("Grace", 100) as ledger:

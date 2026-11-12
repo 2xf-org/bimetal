@@ -332,6 +332,82 @@ pub(super) fn reject_type_attributes(attrs: &[Attribute]) -> syn::Result<()> {
     }
 }
 
+/// Return the `#[cfg(...)]` attributes of an exported method, each of which
+/// tests only features. Every host of one build compiles with the same
+/// features, so the method is in all of their contracts or in none; the
+/// hosts differ by target, so a target cannot gate a method.
+pub(super) fn feature_gates(attrs: &[Attribute]) -> syn::Result<Vec<Attribute>> {
+    let mut gates = Vec::new();
+    for attr in attrs {
+        if attr.path().is_ident("cfg") {
+            reject_target_predicate(&attr.parse_args::<Meta>()?)?;
+            gates.push(attr.clone());
+        } else if attr.path().is_ident("cfg_attr") {
+            reject_conditional_gate(&attr.meta)?;
+        }
+    }
+    Ok(gates)
+}
+
+/// Reject a `cfg` among the attributes that a `cfg_attr` adds, also inside a
+/// nested `cfg_attr`. Rustc strips such a method after Bimetal reads it, so
+/// the contract would list a method that no host has.
+fn reject_conditional_gate(cfg_attr: &Meta) -> syn::Result<()> {
+    let Meta::List(list) = cfg_attr else {
+        return Ok(());
+    };
+    let nested = list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)?;
+    for added in nested.iter().skip(1) {
+        if added.path().is_ident("cfg") {
+            return Err(syn::Error::new_spanned(
+                added,
+                "write the gate of an exported method as `#[cfg(feature = \"...\")]`, not inside `#[cfg_attr(...)]`, so that Bimetal sees which builds keep the method",
+            ));
+        }
+        if added.path().is_ident("cfg_attr") {
+            reject_conditional_gate(added)?;
+        }
+    }
+    Ok(())
+}
+
+/// Reject a `cfg` predicate unless each of its leaves is `feature = "..."`,
+/// joined by `all`, `any` and `not`.
+fn reject_target_predicate(predicate: &Meta) -> syn::Result<()> {
+    match predicate {
+        Meta::NameValue(pair)
+            if pair.path.is_ident("feature")
+                && matches!(
+                    &pair.value,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(_),
+                        ..
+                    })
+                ) =>
+        {
+            Ok(())
+        }
+        Meta::List(list)
+            if ["all", "any", "not"]
+                .iter()
+                .any(|name| list.path.is_ident(name)) =>
+        {
+            let nested = list.parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)?;
+            if nested.is_empty() && list.path.is_ident("any") {
+                return Err(syn::Error::new_spanned(
+                    list,
+                    "`any()` holds in no build, so it tests no feature; name the features it tests, or remove it",
+                ));
+            }
+            nested.iter().try_for_each(reject_target_predicate)
+        }
+        other => Err(syn::Error::new_spanned(
+            other,
+            "an exported method may be gated only on features: each leaf of its `#[cfg]` must be `feature = \"...\"`, joined by `all`, `any` or `not`, because every host of one build has the same features but not the same target; put a target's `#[cfg]` inside its body and return an error where it cannot run, or mark it `#[bimetal(skip)]`",
+        )),
+    }
+}
+
 /// What an exported parameter's attributes declare.
 #[derive(Default)]
 pub(super) struct ParameterOptions {

@@ -146,6 +146,14 @@ export interface Settings {
   readonly retry?: Retry;
 }
 /**
+ * A summary of a ledger, which only the `statements` feature declares.
+ */
+export interface Statement {
+  readonly owner: string;
+  readonly balance: bigint;
+  readonly entries: number;
+}
+/**
  * Lift the pen.
  */
 export type StrokeLift = "lift";

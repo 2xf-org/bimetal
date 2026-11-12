@@ -12,10 +12,10 @@ additional_packages = ["showcase-geometry"]
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "e94b70be6691d7d2d0dd4b9984982adb"
+source_fingerprint = "d996e091d36a6dc77ffb5f81a80bf3fd"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "d696ffd98c8ea42067bd3c4c1bab8057"
+output_fingerprint = "b24ba0f8c75886563fc7fe9cc1df77e6"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.

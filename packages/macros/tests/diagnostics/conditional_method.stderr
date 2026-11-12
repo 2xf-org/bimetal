@@ -1,5 +1,11 @@
-error: an exported method must exist on every host, because Bimetal reads one contract for them all; put the `#[cfg]` inside its body, and return an error where it cannot run, or mark it `#[bimetal(skip)]`
- --> tests/diagnostics/conditional_method.rs:7:5
+error: an exported method may be gated only on features: each leaf of its `#[cfg]` must be `feature = "..."`, joined by `all`, `any` or `not`, because every host of one build has the same features but not the same target; put a target's `#[cfg]` inside its body and return an error where it cannot run, or mark it `#[bimetal(skip)]`
+ --> tests/diagnostics/conditional_method.rs:9:15
   |
-7 |     #[cfg(not(target_arch = "wasm32"))]
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+9 |     #[cfg(not(target_arch = "wasm32"))]
+  |               ^^^^^^^^^^^^^^^^^^^^^^
+
+error: an exported method may be gated only on features: each leaf of its `#[cfg]` must be `feature = "..."`, joined by `all`, `any` or `not`, because every host of one build has the same features but not the same target; put a target's `#[cfg]` inside its body and return an error where it cannot run, or mark it `#[bimetal(skip)]`
+  --> tests/diagnostics/conditional_method.rs:18:35
+   |
+18 |     #[cfg(all(feature = "extras", unix))]
+   |                                   ^^^^

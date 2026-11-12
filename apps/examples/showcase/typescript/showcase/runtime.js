@@ -350,6 +350,7 @@ const nativeSchemas = {
   "showcase::showcase::Retry": ["struct", {__proto__: null, attempts: null, factor: null}],
   "showcase::showcase::Score": ["alias", null],
   "showcase::showcase::Settings": ["struct", {__proto__: null, prefix: null, retry: ["named", "showcase::showcase::Retry"], tags: ["list", null], verbose: null, version: null}],
+  "showcase::showcase::Statement": ["struct", {__proto__: null, balance: null, entries: null, owner: null}],
   "showcase::showcase::Stroke": ["external", {__proto__: null, again: ["named", "showcase::showcase::Stroke"], lift: null, line_to: ["struct", {__proto__: null, to: ["named", "showcase-geometry::showcase_geometry::Point"], width: null}], move_to: ["named", "showcase-geometry::showcase_geometry::Point"], pause: null}],
   "showcase::showcase::shelf::ShelfErrorFull": ["struct", {__proto__: null, limit: null, title: null}],
   "showcase::showcase::shelf::ShelfErrorVisitor": ["struct", {__proto__: null, reason: null}],

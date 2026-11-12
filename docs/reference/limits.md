@@ -51,4 +51,5 @@ These come from the hosts:
 - JavaScript can't cancel a promise, so an async call runs to its end.
 - JavaScript doesn't tell `using` whether its block threw.
 - A browser can't load a native addon.
+- A `#[cfg]` that tests the target can't gate an exported method, because the hosts share one contract but differ by target. A feature can.
 - Python and JavaScript type checkers can't read types from a binary, so the generated files stay.

@@ -59,7 +59,17 @@ pub(super) fn resource(
     let close = format_ident!("{}", ResourceDef::CLOSE);
     let closed = format_ident!("{}", ResourceDef::CLOSED);
     let module_ident = format_ident!("__bimetal_wasm_resource_{}", resource_name.to_snake_case());
-    let members = plan.members().map(|member| {
+    let class = quote! {
+        #[doc(hidden)]
+        #[allow(missing_docs)]
+        #[wasm_bindgen(
+            js_class = #native_name,
+            wasm_bindgen = ::bimetal::__private::wasm_bindgen
+        )]
+    };
+    let mut members = Vec::new();
+    let mut gated = Vec::new();
+    for member in plan.members() {
         let host_name = &member.signature.host_name;
         let host_attributes = match member.role {
             Role::Constructor => quote!(#[wasm_bindgen(constructor)]),
@@ -72,7 +82,7 @@ pub(super) fn resource(
             return_ty,
             body,
         } = member.wrapper(resource_ty, resource_name, HostBackend::Wasm);
-        quote! {
+        let function = quote! {
             #host_attributes
             pub fn #ident(
                 #receiver
@@ -80,8 +90,23 @@ pub(super) fn resource(
             ) -> #return_ty {
                 #body
             }
+        };
+        // A gated member has an impl block of its own, which its gate removes
+        // whole, so wasm-bindgen never reads a member that the build leaves
+        // out.
+        if member.gates.is_empty() {
+            members.push(function);
+        } else {
+            let gates = &member.gates;
+            gated.push(quote! {
+                #(#gates)*
+                #class
+                impl #wrapper_ident {
+                    #function
+                }
+            });
         }
-    });
+    }
 
     quote! {
         #[cfg(target_arch = "wasm32")]
@@ -99,12 +124,7 @@ pub(super) fn resource(
                 inner: ::bimetal::runtime::Resource<#resource_ty>,
             }
 
-            #[doc(hidden)]
-            #[allow(missing_docs)]
-            #[wasm_bindgen(
-                js_class = #native_name,
-                wasm_bindgen = ::bimetal::__private::wasm_bindgen
-            )]
+            #class
             impl #wrapper_ident {
                 #(#members)*
 
@@ -120,6 +140,8 @@ pub(super) fn resource(
                     ::bimetal::convert::wasm::share(&self.inner);
                 }
             }
+
+            #(#gated)*
 
             impl ::bimetal::convert::wasm::HostResource for #resource_ty {
                 fn into_host(value: Self) -> ::bimetal::__private::wasm_bindgen::JsValue {

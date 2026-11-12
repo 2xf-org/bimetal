@@ -485,6 +485,15 @@ pub struct Entry {
     pub balance: i64,
 }
 
+/// A summary of a ledger, which only the `statements` feature declares.
+#[cfg(feature = "statements")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+pub struct Statement {
+    pub owner: String,
+    pub balance: i64,
+    pub entries: u32,
+}
+
 /// A balance kept in Rust between host calls.
 pub struct Ledger {
     owner: String,
@@ -552,6 +561,17 @@ impl Ledger {
     #[must_use]
     pub fn history(&self) -> &[Entry] {
         &self.entries
+    }
+
+    /// Sum up the ledger, with the `statements` feature.
+    #[cfg(feature = "statements")]
+    #[must_use]
+    pub fn statement(&self) -> Statement {
+        Statement {
+            owner: self.owner.clone(),
+            balance: self.balance(),
+            entries: u32::try_from(self.entries.len()).unwrap_or(u32::MAX),
+        }
     }
 
     /// Clear the history. Rust code can call this; hosts cannot.
