@@ -1,10 +1,10 @@
 //! Contract and rule-check tokens for one named model field.
 
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
-use syn::{Field, Ident};
+use quote::{ToTokens, format_ident, quote};
+use syn::{ExprPath, Field, Ident};
 
-use crate::attributes::{self, SerdeRenameRule};
+use crate::attributes::{self, SerdeDefault, SerdeRenameRule};
 use crate::types::field_options::{self, FieldOptions, RuleCall};
 use crate::types::type_ref;
 
@@ -52,24 +52,59 @@ impl ModelField {
 }
 
 /// Render what an absent field holds in the contract: for a field with
-/// `#[serde(default)]`, the Rust `Default` of its type, which the
-/// registration asks the runtime for. `variant` names the field's variant
-/// in an enum. Serde reads an absent `Option` as `None` either way.
+/// `#[serde(default)]`, the Rust `Default` of its type, and for one with
+/// `#[serde(default = "path")]`, what that function returns. The
+/// registration calls the function, and checks the field's `rules` and the
+/// rules inside the value. `variant` names the field's variant in an enum.
 fn default_tokens(
     field: &Field,
-    declared: bool,
+    default: Option<&SerdeDefault>,
+    rules: &[RuleCall],
     variant: Option<&str>,
     rust_name: &str,
-) -> TokenStream2 {
-    if !declared || type_ref::option_item(&field.ty).is_some() {
-        return quote!(::core::option::Option::None);
-    }
+) -> syn::Result<TokenStream2> {
     let ty = &field.ty;
+    let (function, name) = match default {
+        None => return Ok(quote!(::core::option::Option::None)),
+        Some(SerdeDefault {
+            function: Some(function),
+            ..
+        }) => (
+            function.parse::<ExprPath>()?.into_token_stream(),
+            function.value(),
+        ),
+        // Serde reads an absent `Option` as `None` either way.
+        Some(_) if type_ref::option_item(ty).is_some() => {
+            return Ok(quote!(::core::option::Option::None));
+        }
+        Some(_) => (
+            quote!(<#ty as ::core::default::Default>::default),
+            "Default::default".to_owned(),
+        ),
+    };
     let owner = match variant {
         Some(variant) => quote!(&::std::format!("{}::{}", __bimetal_owner, #variant)),
         None => quote!(&__bimetal_owner),
     };
-    quote!(::bimetal::registry::field_default::<#ty>(#owner, #rust_name, __bimetal_problems))
+    let own = rules.iter().map(
+        |RuleCall {
+             function,
+             arguments,
+         }| quote!(#function(__bimetal_value, #arguments)?;),
+    );
+    // The call and the inferred type repeat Serde's own call of the function,
+    // so a missing or mistyped function fails only where Serde reports it.
+    Ok(quote!(::bimetal::registry::field_default(
+        #owner,
+        #rust_name,
+        || #function(),
+        #name,
+        |__bimetal_value| {
+            #(#own)*
+            ::bimetal::ContractType::check_rules(__bimetal_value)
+        },
+        __bimetal_problems,
+    )))
 }
 
 /// Render one named model field and its validated constraints, or `None` for
@@ -130,7 +165,8 @@ pub(crate) fn field_tokens(
         .rename
         .unwrap_or_else(|| attributes::apply_serde_field_case(&rust_name, rename_all));
     let ty = type_ref::type_ref_tokens(&field.ty, None)?;
-    let default = default_tokens(field, serde.default.is_some(), variant, &rust_name);
+    let rules = options.rule_calls();
+    let default = default_tokens(field, serde.default.as_ref(), &rules, variant, &rust_name)?;
     let literal = field_options::scalar_option_tokens(options.literal.as_ref());
     let min_length = field_options::option_tokens(options.min_length);
     let max_length = field_options::option_tokens(options.max_length);
@@ -155,7 +191,7 @@ pub(crate) fn field_tokens(
         definition,
         ident: ident.clone(),
         wire_name,
-        rules: options.rule_calls(),
+        rules,
     }))
 }
 

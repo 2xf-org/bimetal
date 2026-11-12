@@ -60,6 +60,31 @@ Every public method is exported, unless `#[bimetal(skip)]` keeps it in Rust. Met
 pub fn clear(&mut self) {
 ```
 
+## Features
+
+A `#[cfg]` that tests a feature can gate a method, because every host of one build compiles the same features. The method is then in every package or in none, and so is a type that only the feature declares:
+
+```rust
+/// Sum up the ledger, with the `statements` feature.
+#[cfg(feature = "statements")]
+#[must_use]
+pub fn statement(&self) -> Statement {
+```
+
+```python
+self.assertEqual(ledger.statement(), Statement(owner="Ada", balance=7, entries=2))
+```
+
+```ts
+assert.deepEqual(ledger.statement(), { owner: "Ada", balance: 7n, entries: 2 });
+```
+
+Each test in the `#[cfg]` must be `feature = "..."`, and `all`, `any` and `not` can join them. A test of the target, such as `target_arch = "wasm32"`, `unix` or `windows`, is a compile error, because the hosts share one contract but not one target. Put such a `#[cfg]` inside the method's body, and return an error where the method can't run. Write the gate as a `#[cfg]` of its own: one inside a `#[cfg_attr(...)]` is a compile error, and so is an empty `any()`, which holds in no build.
+
+A gated constructor is always a factory, so the class has the same constructor in every build. When every constructor is gated, the class has no constructor, and only its factories create it.
+
+`bimetal build` compiles each package with its default features only, and has no option to choose others. A gate on a feature that isn't in `default` is therefore off in every generated package. Add the feature to `default` to export what it gates.
+
 ## Returning resources
 
 `#[bimetal(returns(resource))]` returns a resource from a function or a method, on its own or in an `Option` or a `Vec`. `Self` doesn't work here, so write the resource's name:

@@ -36,10 +36,13 @@ import {
   corners,
   countTags,
   countWords,
+  countWordsAtOnce,
+  findItemAtOnce,
   describe,
   echoNumbers,
   echoRecord,
   echoSettings,
+  themeOf,
   fingerprint,
   finish,
   longer,
@@ -47,6 +50,7 @@ import {
   nextDay,
   observe,
   parsePriority,
+  parsePriorityAtOnce,
   ping,
   qualify,
   retrace,
@@ -74,7 +78,9 @@ import {
   describe as describeSchema,
   scale as scaleColumn,
   split,
+  Rows,
   sumColumn,
+  sumColumnAtOnce,
   totals as streamTotals,
   withNote,
 } from "showcase/columns";
@@ -167,6 +173,14 @@ suite("models", () => {
     assert.ok(Object.isFrozen(echoed.tags));
   });
 
+  // Guards an optional model with a default function: an absent one crosses
+  // as nothing, and a `null` that the caller gives is not the default.
+  it("keep an optional model's field that the caller sets to null", () => {
+    assert.equal(themeOf(undefined), null);
+    assert.equal(themeOf({ version: "v1" }), "dark");
+    assert.equal(themeOf({ version: "v1", theme: null }), null);
+  });
+
   it("fill defaults that the caller leaves out", () => {
     assert.deepEqual(echoSettings({ version: "v1" }), {
       version: "v1",
@@ -174,6 +188,9 @@ suite("models", () => {
       prefix: "",
       tags: [],
       retry: { attempts: 3, factor: 2 },
+      color: true,
+      icon: "brackets-curly",
+      theme: "dark",
     });
   });
 
@@ -504,6 +521,24 @@ suite("resources", () => {
     ]);
   });
 
+  it("offer a method that a feature gates", () => {
+    using ledger = Ledger.withBalance("Ada", 5n);
+    ledger.deposit(2n);
+    assert.deepEqual(ledger.statement(), { owner: "Ada", balance: 7n, entries: 2 });
+  });
+
+  // Guards a gated async method's first poll: it starts where an ungated one
+  // does, on the caller's thread, unless it takes a function, which starts on
+  // a worker on the addon and in a microtask on Wasm.
+  it("start a gated async method where an ungated one starts", async () => {
+    using ledger = Ledger.withBalance("Ada", 5n);
+    assert.equal(await settlesInMicrotasks(ledger.countEntriesAtOnce()), true);
+    assert.equal(await ledger.countEntriesAtOnce(), 1);
+    const labeled = ledger.labelOwnerAtOnce((owner) => `${owner}?`);
+    assert.equal(await settlesInMicrotasks(labeled), !addon);
+    assert.equal(await labeled, "Ada?");
+  });
+
   it("offer extra constructors and constructor errors", () => {
     using ledger = Ledger.withBalance("Grace", 100n);
     assert.equal(ledger.balance(), 100n);
@@ -522,10 +557,57 @@ suite("resources", () => {
   });
 });
 
+/**
+ * Whether `promise` settles while only microtasks run. A result that another
+ * thread hands back arrives only when the event loop turns.
+ */
+async function settlesInMicrotasks(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  promise.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  for (let tick = 0; tick < 100 && !settled; tick += 1) {
+    await Promise.resolve();
+  }
+  return settled;
+}
+
 suite("async", () => {
   it("returns promises from async functions", async () => {
     assert.equal(await countWords("one two three"), 3);
     assert.deepEqual(await Promise.all([countWords("a"), countWords("a b")]), [1, 2]);
+  });
+
+  it("settles a call that does not wait before the event loop turns", async () => {
+    assert.equal(await countWordsAtOnce("one two three"), 3);
+    assert.deepEqual(await Promise.all([countWordsAtOnce("a"), countWordsAtOnce("a b")]), [1, 2]);
+    assert.equal(await settlesInMicrotasks(countWordsAtOnce("a b")), true);
+  });
+
+  // Guards the ready path's rejection: an error settles the promise at once.
+  it("rejects a call that fails without a wait before the event loop turns", async () => {
+    const failed = parsePriorityAtOnce("urgent");
+    assert.equal(await settlesInMicrotasks(failed), true);
+    await assert.rejects(
+      failed,
+      (error: unknown) => error instanceof ParseError && error.message === "unknown value `urgent`",
+    );
+    assert.equal(await parsePriorityAtOnce("high"), Priority.High);
+  });
+
+  // Guards the ready path's panic: it rejects the promise at once, and the
+  // addon stays usable. A panic aborts the Wasm module, which
+  // async-panic.test.ts covers.
+  it("rejects a call that panics without a wait, and keeps working", { skip: !addon }, async () => {
+    const panicked = findItemAtOnce(["a"], 3);
+    assert.equal(await settlesInMicrotasks(panicked), true);
+    await assert.rejects(panicked, /^Error: Rust panicked: index 3 is out of range for 1 items$/);
+    assert.equal(await findItemAtOnce(["a"], 0), "a");
   });
 
   it("opens resources with async factories and awaits their methods", async () => {
@@ -720,6 +802,45 @@ suite("arrow streams", () => {
     const noted = new Table(new Schema(table.schema.fields, new Map([["note", "euros"]])), table.batches);
     assert.equal(await sumColumn(noted, "price"), total);
     assert.equal(await sumColumn(source(3).batches, "price"), 3 * (0.5 + 1.5));
+  });
+
+  // Guards where a call that takes a stream starts: on a worker on the addon,
+  // which blocking reads may stop, where a read on the JavaScript thread
+  // would wait for that thread. Wasm cannot block.
+  it("reads a stream with blocking reads in an async call on the addon only", async () => {
+    const summed = sumColumnAtOnce(source(3).batches, "price");
+    if (addon) {
+      assert.equal(await summed, 3 * (0.5 + 1.5));
+    } else {
+      await assert.rejects(summed, /must be read with `\.await`/);
+    }
+  });
+
+  // Guards the feed's check: a blocking read on the JavaScript thread fails
+  // rather than waits for that thread, while an async call's first poll there
+  // returns and lets JavaScript write.
+  it("fails a blocking read of a stream that JavaScript writes, and awaits an async one", async () => {
+    const awaited = await Rows.open(source(3).batches);
+    assert.equal(await awaited.sum("price"), 3 * (0.5 + 1.5));
+
+    const blocked = await Rows.open(source(3).batches);
+    assert.throws(
+      () => blocked.sumNow("price"),
+      (error: unknown) =>
+        error instanceof ColumnError && /must be read with `\.await`/.test(error.message),
+    );
+  });
+
+  // Guards the blocking read inside an async call's first poll: it clears the
+  // first poll's mark, so a read of a stream that JavaScript writes fails
+  // there instead of hanging the JavaScript thread.
+  it("fails a blocking read in an async call's first poll", async () => {
+    const rows = await Rows.open(source(3).batches);
+    await assert.rejects(
+      rows.sumAtOnce("price"),
+      (error: unknown) =>
+        error instanceof ColumnError && /must be read with `\.await`/.test(error.message),
+    );
   });
 
   it("passes a stream through Rust as the reader asks", async () => {

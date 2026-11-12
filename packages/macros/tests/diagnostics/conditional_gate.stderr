@@ -1,0 +1,17 @@
+error: write the gate of an exported method as `#[cfg(feature = "...")]`, not inside `#[cfg_attr(...)]`, so that Bimetal sees which builds keep the method
+ --> tests/diagnostics/conditional_gate.rs:9:41
+  |
+9 |     #[cfg_attr(not(feature = "extras"), cfg(feature = "extras"))]
+  |                                         ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: write the gate of an exported method as `#[cfg(feature = "...")]`, not inside `#[cfg_attr(...)]`, so that Bimetal sees which builds keep the method
+  --> tests/diagnostics/conditional_gate.rs:18:56
+   |
+18 |     #[cfg_attr(unix, cfg_attr(not(feature = "extras"), cfg(feature = "extras")))]
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `any()` holds in no build, so it tests no feature; name the features it tests, or remove it
+  --> tests/diagnostics/conditional_gate.rs:27:11
+   |
+27 |     #[cfg(any())]
+   |           ^^^^^

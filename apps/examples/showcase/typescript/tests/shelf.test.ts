@@ -18,6 +18,8 @@ import {
   offset,
 } from "showcase/shelf";
 
+import { addon } from "./backend.ts";
+
 function shelf(titles: string[] = [], limit = 3): Shelf {
   const result = new Shelf("fiction", limit);
   for (const title of titles) result.add(title);
@@ -343,6 +345,23 @@ test("an async self method closes the resource", async () => {
 
 test("a function runs from an async call", async () => {
   assert.equal(await shelf().labelLater((name) => `${name}!`), "fiction!");
+});
+
+// Guards where a call that takes a function starts: on a worker on the
+// addon, which hands the function's call to the JavaScript thread, and in a
+// microtask on Wasm.
+test("a function from an async call that does not wait", async () => {
+  let settled = false;
+  const labeled = shelf()
+    .labelAtOnce((name) => `${name}?`)
+    .finally(() => {
+      settled = true;
+    });
+  for (let tick = 0; tick < 100 && !settled; tick += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(settled, !addon);
+  assert.equal(await labeled, "fiction?");
 });
 
 test("a function from an async call can call sync methods", async () => {

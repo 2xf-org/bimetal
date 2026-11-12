@@ -227,6 +227,26 @@ class Settings(BaseModel):
     prefix: str = Field(default="")
     tags: list[str] = Field(default=[])
     retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({"attempts": 3, "factor": 2.0}, strict=False))
+    color: bool = Field(default=True)
+    icon: str = Field(default="brackets-curly")
+    theme: str | None = Field(default="dark")
+
+
+class Statement(BaseModel):
+    """
+    A summary of a ledger, which only the `statements` feature declares.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+        protected_namespaces=(),
+    )
+    owner: str = Field(default=...)
+    balance: int = Field(default=...)
+    entries: int = Field(default=...)
 
 
 class StrokeLift(_bimetal_ExternalVariant):
@@ -342,6 +362,7 @@ Numbers.model_rebuild()
 Record.model_rebuild()
 Retry.model_rebuild()
 Settings.model_rebuild()
+Statement.model_rebuild()
 StrokeLift.model_rebuild()
 StrokeMoveTo.model_rebuild()
 StrokeLineTo.model_rebuild()
@@ -364,6 +385,7 @@ __all__ = [
     "Retry",
     "Score",
     "Settings",
+    "Statement",
     "Stroke",
     "StrokeAgain",
     "StrokeLift",

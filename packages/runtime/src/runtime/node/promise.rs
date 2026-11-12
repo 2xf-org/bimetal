@@ -1,7 +1,8 @@
-//! Async calls. Each returns a promise and runs its future on the shared
-//! runtime of [`executor`], and the worker that finishes it hands the result
-//! back to the JavaScript thread through a thread-safe function of its own,
-//! which converts it and settles the promise.
+//! Async calls. Each returns a promise, and runs its future to its first wait
+//! on the JavaScript thread, unless it takes a `Callback` or a stream. A call
+//! that waits goes on the shared runtime of [`executor`], and the worker that
+//! finishes it hands the result back to the JavaScript thread through a
+//! thread-safe function of its own, which converts it and settles the promise.
 //!
 //! A pending call keeps the event loop alive, as a pending timer does. When
 //! the environment tears down first, the result is dropped without calling
@@ -18,11 +19,10 @@ use napi_sys as sys;
 use super::env::{self, Env, napi};
 use super::error::Error;
 use super::value::Value;
-use crate::runtime::executor;
+use crate::runtime::executor::{self, Start, Started};
 
-/// Run an async call on the shared Tokio runtime and return a promise of its
-/// result, which the call's [`deferred`] conversion makes on the JavaScript
-/// thread.
+/// Start an async call and return a promise of its result, which the call's
+/// [`deferred`] conversion makes on the JavaScript thread.
 ///
 /// The promise rejects with the call's error, the conversion's, or a panic
 /// in either as `Error("Rust panicked: …")`.
@@ -31,12 +31,12 @@ use crate::runtime::executor;
 ///
 /// Returns [`Error::Pending`] when Node-API cannot create the promise.
 #[doc(hidden)]
-pub fn awaitable<'env, F, D>(env: Env<'env>, future: F) -> Result<Value<'env>, Error>
+pub fn awaitable<'env, F, D>(env: Env<'env>, start: Start, future: F) -> Result<Value<'env>, Error>
 where
     F: Future<Output = Result<Deferred<D>, Error>> + Send + 'static,
     D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error> + Send + 'static,
 {
-    promise_of(env, future, Hold::EventLoop)
+    promise_of(env, start, future, Hold::EventLoop)
 }
 
 /// Return a promise of `future`'s result, as [`awaitable`] does, which does
@@ -47,12 +47,16 @@ where
 ///
 /// Returns [`Error::Pending`] when Node-API cannot create the promise.
 #[doc(hidden)]
-pub fn unref_awaitable<'env, F, D>(env: Env<'env>, future: F) -> Result<Value<'env>, Error>
+pub fn unref_awaitable<'env, F, D>(
+    env: Env<'env>,
+    start: Start,
+    future: F,
+) -> Result<Value<'env>, Error>
 where
     F: Future<Output = Result<Deferred<D>, Error>> + Send + 'static,
     D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error> + Send + 'static,
 {
-    promise_of(env, future, Hold::Nothing)
+    promise_of(env, start, future, Hold::Nothing)
 }
 
 /// Whether a pending promise keeps Node.js running.
@@ -64,8 +68,16 @@ enum Hold {
     Nothing,
 }
 
-/// Run `future` on the shared runtime, and return a promise of its result.
-fn promise_of<'env, F, D>(env: Env<'env>, future: F, hold: Hold) -> Result<Value<'env>, Error>
+/// Return a promise of `future`'s result. Unless `start` gives the call to a
+/// worker, the future runs to its first wait on this thread, which settles the
+/// promise of a call that finishes there with no thread-safe function. A call
+/// that waits goes on the shared runtime.
+fn promise_of<'env, F, D>(
+    env: Env<'env>,
+    start: Start,
+    future: F,
+    hold: Hold,
+) -> Result<Value<'env>, Error>
 where
     F: Future<Output = Result<Deferred<D>, Error>> + Send + 'static,
     D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error> + Send + 'static,
@@ -73,9 +85,25 @@ where
     let mut deferred = ptr::null_mut();
     let mut promise = ptr::null_mut();
     napi!(env, napi_create_promise(&mut deferred, &mut promise))?;
-    let sender = Sender::<D>::start(env, deferred, hold)?;
+    let call = match executor::first_poll(executor::catch_panic(future, Error::panic), start) {
+        Started::Ready(outcome) => {
+            resolve(env, Promise(deferred), outcome);
+            return Ok(env.value(promise));
+        }
+        Started::Pending(call) => call,
+    };
+    // The call may have run up to its first wait, so a failure here rejects
+    // its promise, as a failure of the call would, and the call drops
+    // unfinished.
+    let sender = match Sender::<D>::start(env, deferred, hold) {
+        Ok(sender) => sender,
+        Err(error) => {
+            resolve::<D>(env, Promise(deferred), Err(error));
+            return Ok(env.value(promise));
+        }
+    };
     executor::spawn(async move {
-        sender.send(executor::catch_panic(future, Error::panic).await);
+        sender.send(call.await);
     });
     Ok(env.value(promise))
 }
@@ -262,6 +290,15 @@ unsafe extern "C" fn settle<D>(
     // environment's thread, with a scope open until it returns.
     let env = unsafe { Env::new(env) };
     let Completion { promise, outcome } = *completion;
+    resolve(env, promise, outcome);
+}
+
+/// Convert a finished call's result on the JavaScript thread, and settle its
+/// promise.
+fn resolve<D>(env: Env<'_>, promise: Promise, outcome: Result<Deferred<D>, Error>)
+where
+    D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error>,
+{
     let converted = executor::catch_error(
         || outcome.and_then(|Deferred(convert)| convert(env)),
         Error::panic,

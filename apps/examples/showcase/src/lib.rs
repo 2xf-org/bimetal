@@ -107,6 +107,12 @@ pub struct Settings {
     pub tags: Vec<String>,
     #[serde(default)]
     pub retry: Retry,
+    #[serde(default = "yes")]
+    pub color: bool,
+    #[serde(default = "default_icon")]
+    pub icon: String,
+    #[serde(default = "default_theme")]
+    pub theme: Option<String>,
 }
 
 /// How often to try again, and how fast the wait grows.
@@ -123,6 +129,18 @@ impl Default for Retry {
             factor: 2.0,
         }
     }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_icon() -> String {
+    "brackets-curly".to_owned()
+}
+
+fn default_theme() -> Option<String> {
+    Some("dark".to_owned())
 }
 
 /// Something that happened to a record.
@@ -205,6 +223,13 @@ pub fn echo_record(record: Record) -> Record {
 #[must_use]
 pub fn echo_settings(settings: Settings) -> Settings {
     settings
+}
+
+/// The theme of optional settings: none without them.
+#[bimetal::export]
+#[must_use]
+pub fn theme_of(settings: Option<Settings>) -> Option<String> {
+    settings.and_then(|settings| settings.theme)
 }
 
 /// Return a copy of the record with a new revision and creation time.
@@ -443,6 +468,13 @@ pub fn route_length(route: Vec<Point>) -> Result<f64, GeometryError> {
         .sum())
 }
 
+/// The distance of a point from `origin`, or from `(0, 0)` without one.
+#[bimetal::export]
+#[must_use]
+pub fn distance_from(point: Point, origin: Option<Point>) -> f64 {
+    showcase_geometry::distance(origin.unwrap_or(Point { x: 0.0, y: 0.0 }), point)
+}
+
 /// Join a package and a class name, as in `geometry.Point`.
 ///
 /// JavaScript reserves `package` and `class`, so TypeScript names these
@@ -483,6 +515,15 @@ pub fn item_at(items: Vec<String>, index: u32) -> String {
 pub struct Entry {
     pub amount: i64,
     pub balance: i64,
+}
+
+/// A summary of a ledger, which only the `statements` feature declares.
+#[cfg(feature = "statements")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Model)]
+pub struct Statement {
+    pub owner: String,
+    pub balance: i64,
+    pub entries: u32,
 }
 
 /// A balance kept in Rust between host calls.
@@ -554,6 +595,35 @@ impl Ledger {
         &self.entries
     }
 
+    /// Sum up the ledger, with the `statements` feature.
+    #[cfg(feature = "statements")]
+    #[must_use]
+    pub fn statement(&self) -> Statement {
+        Statement {
+            owner: self.owner.clone(),
+            balance: self.balance(),
+            entries: u32::try_from(self.entries.len()).unwrap_or(u32::MAX),
+        }
+    }
+
+    /// Count the entries in an async call that does not wait, with the
+    /// `statements` feature. Such a call finishes on the caller's thread.
+    #[cfg(feature = "statements")]
+    pub async fn count_entries_at_once(&self) -> u32 {
+        u32::try_from(self.entries.len()).unwrap_or(u32::MAX)
+    }
+
+    /// Name the owner with `label` in an async call that does not wait, with
+    /// the `statements` feature, or return why `label` failed. A call that
+    /// takes a host function starts on a worker on the native hosts all the
+    /// same.
+    #[cfg(feature = "statements")]
+    pub async fn label_owner_at_once(&self, label: bimetal::Callback<(String,), String>) -> String {
+        label
+            .call((self.owner.clone(),))
+            .unwrap_or_else(|error| error.to_string())
+    }
+
     /// Clear the history. Rust code can call this; hosts cannot.
     #[bimetal(skip)]
     pub fn clear(&mut self) {
@@ -588,6 +658,33 @@ pub async fn count_words(text: String) -> u32 {
         .count()
         .try_into()
         .unwrap_or(u32::MAX)
+}
+
+/// Count the words of a text in an async call that does not wait, as a read
+/// from memory does. Such a call finishes on the caller's thread.
+#[bimetal::export]
+pub async fn count_words_at_once(text: String) -> u32 {
+    text.split_whitespace()
+        .count()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+/// Parse a priority in an async call that does not wait, as
+/// [`parse_priority`] does.
+#[bimetal::export]
+pub async fn parse_priority_at_once(text: String) -> Result<Priority, ParseError> {
+    parse_priority(&text)
+}
+
+/// The item at a position, found in an async call that does not wait.
+///
+/// # Panics
+///
+/// Panics when `index` is out of range, as [`item_at`] does.
+#[bimetal::export]
+pub async fn find_item_at_once(items: Vec<String>, index: u32) -> String {
+    item_at(items, index)
 }
 
 /// The item at a position, found asynchronously.

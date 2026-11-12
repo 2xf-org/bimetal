@@ -3,6 +3,7 @@
 from .api import (
     ColumnError,
     ColumnErrorCode,
+    Rows,
     add_totals,
     batches,
     count_rows,
@@ -10,6 +11,7 @@ from .api import (
     scale,
     split,
     sum_column,
+    sum_column_at_once,
     totals,
     with_note,
 )
@@ -17,6 +19,7 @@ from .api import (
 __all__ = [
     "ColumnError",
     "ColumnErrorCode",
+    "Rows",
     "add_totals",
     "batches",
     "count_rows",
@@ -24,6 +27,7 @@ __all__ = [
     "scale",
     "split",
     "sum_column",
+    "sum_column_at_once",
     "totals",
     "with_note",
 ]

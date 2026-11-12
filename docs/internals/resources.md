@@ -6,7 +6,7 @@ Read [Resources](../concepts/resources.md) first. Serde can't carry a resource o
 
 Every resource keeps its value in `bimetal::runtime::Resource` (`bimetal/src/runtime/resource.rs`): an outer `Arc<Mutex<Option<...>>>`, which `close` and `take` empty, around an `Arc<RwLock<T>>`, a Tokio lock. Each call clones the inner `Arc`, so an async call keeps the value after `close()`.
 
-`&self` methods take the read lock, and `&mut self` methods the write lock. A Python synchronous method waits for the lock without the interpreter lock, and keeps the lock while it converts its result. Wasm and Node.js can't block the JavaScript thread, so a synchronous method that finds the lock taken reports that the resource is busy.
+`&self` methods take the read lock, and `&mut self` methods the write lock. A Python synchronous method takes a free lock with the interpreter lock held, waits for a taken one without the interpreter lock (`sync_lock` in `bimetal-macros/src/export/boundary.rs`), and keeps the lock while it converts its result. Wasm and Node.js can't block the JavaScript thread, so a synchronous method that finds the lock taken reports that the resource is busy.
 
 An async method tries its lock on the calling thread when the host makes the call, which in Python is when the coroutine first runs. If another call holds it, the method joins the lock's queue when its future is first polled, which on the native hosts gives calls waiting this way no guaranteed order. It keeps the lock until its result has converted: inside the future in Wasm, and in the deferred conversion in Python and Node.js.
 

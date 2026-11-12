@@ -458,8 +458,27 @@ impl Query {
     /// Run the query without blocking the host's event loop on native hosts.
     #[bimetal(returns(resource))]
     pub async fn collect_async(&self) -> Result<Frame, FrameError> {
-        self.collect()
+        let query = self.query.clone();
+        Ok(Frame {
+            frame: run_blocking(move || query.collect()).await?,
+        })
     }
+}
+
+/// Run `work` on a blocking thread of Bimetal's runtime, which a native async
+/// call would otherwise run on the caller's thread, with its event loop.
+#[cfg(not(target_family = "wasm"))]
+async fn run_blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(value) => value,
+        Err(error) => std::panic::resume_unwind(error.into_panic()),
+    }
+}
+
+/// Run `work` in place: a browser has one thread.
+#[cfg(target_family = "wasm")]
+async fn run_blocking<T>(work: impl FnOnce() -> T) -> T {
+    work()
 }
 
 /// Arrow batches of a frame, one call at a time.

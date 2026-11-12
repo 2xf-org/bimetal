@@ -372,6 +372,14 @@ export declare class Shelf {
   labelLater(label: ((arg0: string) => string)): Promise<string>;
 
   /**
+   * Call `label` from an async call that does not wait. A call that takes a host function starts on
+   * a worker on the native hosts all the same.
+   *
+   * @throws {@link ShelfError}
+   */
+  labelAtOnce(label: ((arg0: string) => string)): Promise<string>;
+
+  /**
    * Keep `label` in a labeler, which calls it after this call returned.
    */
   labeler(label: ((arg0: string) => string)): Labeler;

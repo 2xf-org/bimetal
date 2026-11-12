@@ -15,7 +15,7 @@ check-examples = { description = "Rebuild every example and verify that it and i
 bench = { description = "Measure build times, per-call time, peak memory, and artifact sizes on this machine, and write them to target/bench/report.md", run = "python3 apps/benchmark/run.py" }
 
 [tasks.test]
-description = "Run the Rust tests, including the embedded-Python tests"
+description = "Run the Rust tests, including the embedded-Python tests and the runtime's unit tests with the Node.js boundary"
 # The runtime's Python tests embed CPython, so their binary needs an rpath to
 # that interpreter's libpython.
 run = '''
@@ -26,12 +26,16 @@ library_dir="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_v
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-rpath,$library_dir"
 cargo test --locked -p bimetal --features python,arrow,alloy
 cargo test --locked -p bimetal --features python,arrow-59
+# The first poll's mark, which the addon's fed stream reads, compiles only with
+# the Node.js boundary and Arrow.
+cargo test --locked -p bimetal --lib --features node,arrow
 '''
 # Windows finds the interpreter's DLL on PATH, and its linker takes no rpath.
 run_windows = [
     "cargo test --locked -p bimetal-ir -p bimetal-macros -p bimetal-cli",
     "cargo test --locked -p bimetal --features python,arrow,alloy",
     "cargo test --locked -p bimetal --features python,arrow-59",
+    "cargo test --locked -p bimetal --lib --features node,arrow",
 ]
 
 [tasks.lint]
@@ -52,6 +56,7 @@ feature_sets=(
   bimetal/arrow-59
   bimetal/python,bimetal/node,bimetal/arrow-59
   bimetal/python,bimetal/alloy
+  bimetal/node,bimetal/alloy
 )
 for features in "${feature_sets[@]}"; do
   cargo clippy --locked --workspace --all-targets --features "$features" -- -D warnings
@@ -65,6 +70,12 @@ for example in apps/examples/*/; do
   cargo fmt --manifest-path "$example/Cargo.toml" --all --check
   cargo clippy --locked --manifest-path "$example/Cargo.toml" --workspace --all-targets -- -D warnings
 done
+# The showcase gates a method on a default feature; compile it without that
+# feature too, with the native hosts' wrappers and for Wasm.
+cargo clippy --locked --manifest-path apps/examples/showcase/Cargo.toml --all-targets \
+  --no-default-features --features bimetal/python,bimetal/node -- -D warnings
+cargo clippy --locked --manifest-path apps/examples/showcase/Cargo.toml \
+  --target wasm32-unknown-unknown --no-default-features -- -D warnings
 # trading's models build for Wasm, though its engine does not.
 cargo clippy --locked --manifest-path apps/examples/trading/Cargo.toml -p trading-core \
   --target wasm32-unknown-unknown -- -D warnings

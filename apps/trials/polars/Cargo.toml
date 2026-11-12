@@ -19,6 +19,8 @@ thiserror = "2.0"
 # Native builds keep the engine that `prepare` turns off for a browser.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 polars = { version = "0.55", default-features = false, features = ["streaming"] }
+# An async call runs a query on a blocking thread of Bimetal's runtime.
+tokio = { version = "1", default-features = false, features = ["rt"] }
 
 [patch.crates-io]
 polars = { path = "vendor/polars" }

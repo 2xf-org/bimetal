@@ -350,7 +350,7 @@ class ArrowSchemaExportable(Protocol):
     def __arrow_c_schema__(self) -> object: ...
 
 
-require_contract("826eb4fbb1fbe633")
+require_contract("f51bdef30a48cea6")
 
 native_schemas = {
     "showcase::showcase::Entry": ["struct", {"amount": None, "balance": None}],
@@ -362,7 +362,8 @@ native_schemas = {
     "showcase::showcase::RecordId": ["alias", None],
     "showcase::showcase::Retry": ["struct", {"attempts": None, "factor": None}],
     "showcase::showcase::Score": ["alias", None],
-    "showcase::showcase::Settings": ["struct", {"prefix": None, "retry": ["named", "showcase::showcase::Retry"], "tags": ["list", None], "verbose": None, "version": None}],
+    "showcase::showcase::Settings": ["struct", {"color": None, "icon": None, "prefix": None, "retry": ["named", "showcase::showcase::Retry"], "tags": ["list", None], "theme": None, "verbose": None, "version": None}],
+    "showcase::showcase::Statement": ["struct", {"balance": None, "entries": None, "owner": None}],
     "showcase::showcase::Stroke": ["external", {"again": ["named", "showcase::showcase::Stroke"], "lift": None, "line_to": ["struct", {"to": ["named", "showcase-geometry::showcase_geometry::Point"], "width": None}], "move_to": ["named", "showcase-geometry::showcase_geometry::Point"], "pause": None}],
     "showcase::showcase::shelf::ShelfErrorFull": ["struct", {"limit": None, "title": None}],
     "showcase::showcase::shelf::ShelfErrorVisitor": ["struct", {"reason": None}],

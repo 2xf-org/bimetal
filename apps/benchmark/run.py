@@ -69,6 +69,7 @@ CALL_CASES = {
     "arrow-1m": (1, 30),
     "stream-out-1m": (1, 30),
     "async": (100, 100),
+    "async-ready": (1000, 200),
     "stream-through-1m": (1, 30),
 }
 # The memory cases: the calls each makes, and the bytes its input holds. The
@@ -420,6 +421,7 @@ def render(results: dict[str, Any]) -> str:
             "stream-out-1m": "`columns.batches(table)` read to its end: a table of 100 batches of 10,000 rows in, a stream of them out",
             "stream-through-1m": "`await columns.sum_column(columns.batches(table), \"price\")`: that stream back into Rust, one batch at a time",
             "async": "`await count_words(\"a b c\")`, one at a time",
+            "async-ready": "`await count_words_at_once(\"a b c\")`, an async call that does not wait",
         }
         header = " | ".join(f"{host} median / p90" for host in hosts)
         lines += [

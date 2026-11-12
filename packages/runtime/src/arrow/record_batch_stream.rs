@@ -320,6 +320,10 @@ fn block_on<F: Future>(future: F) -> Option<F::Output> {
         }
     }
 
+    // This read blocks even inside an async call's first poll, so a stream
+    // that JavaScript writes must fail it there as anywhere else.
+    #[cfg(feature = "node")]
+    let _mark = crate::runtime::executor::leave_first_poll();
     let waker = Waker::from(Arc::new(Unpark(thread::current())));
     let mut context = Context::from_waker(&waker);
     let mut future = pin!(future);

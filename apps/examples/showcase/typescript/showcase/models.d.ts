@@ -144,6 +144,17 @@ export interface Settings {
   readonly prefix?: string;
   readonly tags?: ReadonlyArray<string>;
   readonly retry?: Retry;
+  readonly color?: boolean;
+  readonly icon?: string;
+  readonly theme?: string | null;
+}
+/**
+ * A summary of a ledger, which only the `statements` feature declares.
+ */
+export interface Statement {
+  readonly owner: string;
+  readonly balance: bigint;
+  readonly entries: number;
 }
 /**
  * Lift the pen.

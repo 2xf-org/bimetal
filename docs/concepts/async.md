@@ -4,8 +4,8 @@ An `async fn` becomes a Python coroutine and a TypeScript function that returns 
 
 | | Runs on | Needs |
 | --- | --- | --- |
-| Python | A Tokio runtime that the extension shares | A running asyncio event loop |
-| Node.js addon | A Tokio runtime that the addon shares | Nothing |
+| Python | The caller's thread to the first wait, then a Tokio runtime that the extension shares | A running asyncio event loop |
+| Node.js addon | The JavaScript thread to the first wait, then a Tokio runtime that the addon shares | Nothing |
 | Wasm | The JavaScript event loop | Nothing |
 
 On Python and the addon, synchronous constructors and factories run inside the runtime too, as do synchronous functions and methods that return a resource, so a resource can `tokio::spawn` the tasks that it keeps. Other synchronous calls don't, so a package with no resources or async calls never starts the runtime's threads.
@@ -14,9 +14,21 @@ On Python and the addon, synchronous constructors and factories run inside the r
 
 A Python coroutine starts when it's awaited or scheduled, for example with `asyncio.create_task`. A JavaScript call checks and converts its arguments at once. Its Rust body starts at once on the addon, and on Wasm in a microtask, once the calling code yields. Both try to take a method's resource when the call starts. If another call holds it, the call waits in its future, and on Python and the addon calls waiting this way have no guaranteed order among themselves.
 
+## The first wait
+
+On Python and the addon, a call runs on the caller's thread until it first waits. A call that finishes there, as a read from memory does, settles its future or promise at once, and no worker runs it. The first async call still starts the runtime's threads. A call that waits moves to the runtime, where a worker finishes it and hands the result back.
+
+A call that takes a `Callback` or a `RecordBatchStream` starts on a worker instead. Before its first wait, it could wait for the caller's event loop: a function that waits for a coroutine on that loop, or a stream that JavaScript writes. On the caller's thread, that wait would never end, and on Python a blocking read of a stream would stop the event loop.
+
+On Python the first part runs without the interpreter lock, as a synchronous call does. An `await` of a call that finished doesn't suspend the caller, so other tasks of the event loop get no turn from it.
+
+Long work before the first wait stops the caller's event loop. Give it to `tokio::task::spawn_blocking`, or put `tokio::task::yield_now().await` first, which moves the whole call to a worker.
+
+The caller's thread polls with a waker that wakes no one, and a worker's poll replaces it. So a hand-written future must register its waker on every poll, as Tokio's futures do. Before the first wait the body isn't a Tokio task yet, so `tokio::task::id()` panics there.
+
 ## Cancellation
 
-Cancelling a Python task drops the Rust future as soon as a runtime thread gets to it, or right after a poll in progress. A JavaScript promise can't be cancelled, so the call runs to its end.
+Cancelling a Python task drops the Rust future as soon as a runtime thread gets to it, or right after a poll in progress. A call that finished before its first wait has nothing left to cancel. A JavaScript promise can't be cancelled, so the call runs to its end.
 
 ## Fork
 

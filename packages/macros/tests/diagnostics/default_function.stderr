@@ -1,0 +1,11 @@
+error: a `required` field cannot have `#[serde(default = "label")]`, which the hosts would fill in when it is absent
+  --> tests/diagnostics/default_function.rs:15:13
+   |
+15 |     #[serde(default = "label")]
+   |             ^^^^^^^
+
+error: remove `#[serde(skip_serializing_if = ...)]` or `#[serde(default = "label")]`: Serde leaves out a `None`, then reads it back as what the function returns
+  --> tests/diagnostics/default_function.rs:22:54
+   |
+22 |     #[serde(default = "label", skip_serializing_if = "Option::is_none")]
+   |                                                      ^^^^^^^^^^^^^^^^^

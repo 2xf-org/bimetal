@@ -115,7 +115,7 @@ self.assertEqual(
 )
 ```
 
-A Python source may need the interpreter lock to make a batch, as a reader over a generator does, so nothing holds the lock while Rust waits for one. A synchronous export reads on its calling thread, after it releases the lock. An async export reads each batch on a blocking thread, so the source runs while the event loop waits. A pull from Python releases the lock too, if the puller holds it, and an async `RecordBatchStream::new` stream runs on the puller's thread inside Bimetal's runtime.
+A Python source may need the interpreter lock to make a batch, as a reader over a generator does, so nothing holds the lock while Rust waits for one. A synchronous export reads on its calling thread, after it releases the lock. An async export that takes a stream starts on a runtime worker, not on the caller's thread, and reads each batch on a blocking thread, so the source runs while the event loop waits. A pull from Python releases the lock too, if the puller holds it, and an async `RecordBatchStream::new` stream runs on the puller's thread inside Bimetal's runtime.
 
 Each batch must have the stream's schema, and one that doesn't fails the read with a `SchemaError`. Imported batches are validated, as other Arrow arguments are, and no batch is copied in either direction.
 

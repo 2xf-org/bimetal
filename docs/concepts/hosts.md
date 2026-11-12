@@ -9,7 +9,7 @@ A *host* is a language your Rust runs inside. Bimetal has two host languages and
 | Runs in | CPython 3.11 and newer | Node.js, browsers, bundlers | Node.js and Electron |
 | Built on | PyO3 | wasm-bindgen | Node-API, through `napi-sys` |
 | One file per | Platform | Nothing: it serves every platform | Platform |
-| Async calls run on | A Tokio runtime Bimetal starts | The JavaScript event loop | A Tokio runtime Bimetal starts |
+| Async calls run on | The caller's thread to the first wait, then a Tokio runtime that the extension shares | The JavaScript event loop | The JavaScript thread to the first wait, then a Tokio runtime that the addon shares |
 | Threads | Yes, without the interpreter lock | No | Yes |
 | A panic | Raises `PanicException`, and the extension stays usable | Ends the module | Throws an `Error`, and the addon stays usable |
 

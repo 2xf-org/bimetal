@@ -56,8 +56,13 @@ impl From<ArrowError> for QueryError {
 
 /// Run a future that may spawn Tokio tasks, as DataFusion's plans do. Native
 /// hosts run it on Bimetal's runtime, and a browser on a runtime of its own.
+///
+/// A native call runs on the caller's thread until it first waits, and
+/// planning or running a query may not wait at all, so the yield moves the
+/// work to a worker first.
 #[cfg(not(target_arch = "wasm32"))]
 async fn run<F: Future>(future: F) -> F::Output {
+    tokio::task::yield_now().await;
     future.await
 }
 

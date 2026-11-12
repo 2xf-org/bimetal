@@ -283,6 +283,16 @@ fn emit_python_callable(
             source,
             "{indent}    {RESULT}: {return_type} = {wrapped}\n{indent}    return {RESULT}"
         );
+    } else if matches!(
+        returns,
+        TypeRef::Bool | TypeRef::Int { .. } | TypeRef::Float { .. } | TypeRef::String
+    ) {
+        // The extension makes a scalar as Python holds it, so nothing is
+        // left to validate.
+        let _ = writeln!(
+            source,
+            "{indent}    {RESULT}: {return_type} = {NATIVE_RESULT}\n{indent}    return {RESULT}"
+        );
     } else {
         let _ = write!(source, "{indent}    {RESULT}: {return_type} = ");
         let restored = render::python_restored(NATIVE_RESULT, returns, context)?;
@@ -945,11 +955,16 @@ fn python_host_argument(
     if python_reads_directly(&param.ty) {
         return Ok(name.to_owned());
     }
-    Ok(format!(
+    let dumped = format!(
         "{}({}, {name})",
         context.runtime("dump_host"),
         render::python_adapter_type(&param.ty, context)?
-    ))
+    );
+    // `None` crosses as it is, so an absent argument costs no validation.
+    Ok(match param.ty {
+        TypeRef::Option { .. } => format!("None if {name} is None else {dumped}"),
+        _ => dumped,
+    })
 }
 
 /// Render the argument of a parameter that crosses as a host object: a
@@ -1240,6 +1255,39 @@ mod tests {
             "        data,\n",
             "        count,\n",
         )));
+    }
+
+    /// Guards the two validations a call skips: an absent optional argument
+    /// crosses as `None` without `dump_host`, and a scalar result returns as
+    /// the extension made it, without `validate_python`.
+    #[test]
+    fn absent_arguments_and_scalar_results_skip_pydantic() {
+        let mut manifest = fixtures::recorder_manifest();
+        manifest.resources.clear();
+        manifest.types = vec![model("Point", "x", TypeRef::Float { bits: 64 })];
+        manifest.functions = vec![function(
+            "count",
+            vec![fixtures::typed_param(
+                "near",
+                TypeRef::Option {
+                    item: Box::new(fixtures::named("Point")),
+                },
+            )],
+            TypeRef::Int {
+                signed: false,
+                bits: 32,
+            },
+        )];
+
+        let source = render_api(&manifest);
+
+        assert!(source.contains(
+            "        None if near is None else _bimetal_dump_host(Point | None, near),\n"
+        ));
+        assert!(source.contains(
+            "    __bimetal_result: int = __bimetal_native\n    return __bimetal_result\n"
+        ));
+        assert!(!source.contains("validate_python"));
     }
 
     #[test]

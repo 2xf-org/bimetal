@@ -33,7 +33,7 @@ Before you hand off, run all four:
 | Command | Covers |
 | --- | --- |
 | `mise run lint` | rustfmt, and Clippy with warnings as errors, for combinations of the `python`, `node` and `arrow` features and for `wasm32`, then for each example |
-| `mise run test` | Unit tests of every crate, then discovery, the Python boundary, which embeds CPython, and `fork`, with each version of Arrow |
+| `mise run test` | Unit tests of every crate, then discovery, the Python boundary, which embeds CPython, and `fork`, with each version of Arrow, then the runtime's unit tests with the `node` feature |
 | `mise run example` | Every example from end to end, as [the examples](#the-examples) describes |
 | `mise run check-examples` | The same, but it verifies the committed outputs instead of rewriting them |
 

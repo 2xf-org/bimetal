@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import warnings
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -53,6 +54,7 @@ from showcase import (
     Record,
     Retry,
     Settings,
+    Statement,
     StrokeAgain,
     StrokeLift,
     StrokeLineTo,
@@ -62,7 +64,9 @@ from showcase import (
     corners,
     count_tags,
     count_words,
+    count_words_at_once,
     describe,
+    distance_from,
     echo_numbers,
     echo_record,
     echo_settings,
@@ -82,6 +86,7 @@ from showcase import (
     route_length,
     running_total,
     scale,
+    theme_of,
     total,
     totals,
     touch,
@@ -207,6 +212,14 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(settings.tags, [])
         self.assertIsNot(settings.tags, Settings(version="v1").tags)
         self.assertEqual(settings.retry, Retry(attempts=3, factor=2.0))
+        self.assertTrue(settings.color)
+        self.assertEqual(echo_settings(settings).icon, "brackets-curly")
+        self.assertEqual(settings.theme, "dark")
+        # An absent optional model crosses as `None`, and a `None` field that
+        # the caller sets is not the default function's value.
+        self.assertIsNone(theme_of(None))
+        self.assertEqual(theme_of(settings), "dark")
+        self.assertIsNone(theme_of(Settings(version="v1", theme=None)))
         self.assertEqual(record().revision, 0)
         with self.assertRaises(ValidationError):
             Settings(version="v2")  # type: ignore[arg-type]
@@ -322,6 +335,14 @@ class FunctionTest(unittest.TestCase):
         for call in invalid:
             with self.subTest(call=call), self.assertRaises(ValidationError):
                 call()
+
+    def test_an_optional_model_crosses_absent_as_a_model_or_as_a_dictionary(self) -> None:
+        # An absent model skips Pydantic, and a present one meets the model's rules.
+        self.assertEqual(distance_from(Point(x=3, y=4), None), 5.0)
+        self.assertEqual(distance_from(Point(x=4, y=6), Point(x=1, y=2)), 5.0)
+        self.assertEqual(distance_from(Point(x=4, y=6), {"x": 1, "y": 2}), 5.0)  # type: ignore[arg-type]
+        with self.assertRaises(ValidationError):
+            distance_from(Point(x=0, y=0), {"x": 0, "y": "north"})  # type: ignore[arg-type]
 
     def test_parameters_named_like_builtins_gain_an_underscore(self) -> None:
         self.assertEqual(reverse(bytes_=b"\x01\x02"), b"\x02\x01")
@@ -515,6 +536,31 @@ class ResourceTest(unittest.TestCase):
             self.assertEqual(ledger.owner(), "Ada")
             self.assertEqual(ledger.history(), [Entry(amount=10, balance=10), Entry(amount=-3, balance=7)])
 
+    def test_a_method_that_a_feature_gates(self) -> None:
+        with Ledger.with_balance("Ada", 5) as ledger:
+            ledger.deposit(2)
+            self.assertEqual(ledger.statement(), Statement(owner="Ada", balance=7, entries=2))
+
+    def test_a_gated_async_method_starts_where_an_ungated_one_starts(self) -> None:
+        # On the caller's thread, unless it takes a function, which starts on
+        # a worker.
+        callers: list[int] = []
+
+        def label(owner: str) -> str:
+            callers.append(threading.get_ident())
+            return f"{owner}?"
+
+        async def main() -> str:
+            with Ledger.with_balance("Ada", 5) as ledger:
+                call = ledger.count_entries_at_once()
+                with self.assertRaises(StopIteration) as finished:
+                    call.send(None)
+                self.assertEqual(finished.exception.value, 1)
+                return await ledger.label_owner_at_once(label)
+
+        self.assertEqual(asyncio.run(main()), "Ada?")
+        self.assertNotEqual(callers, [threading.get_ident()])
+
     def test_extra_constructors_and_constructor_errors(self) -> None:
         with Ledger.with_balance("Grace", 100) as ledger:
             self.assertEqual(ledger.balance(), 100)
@@ -537,6 +583,17 @@ class AsyncTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await count_words("one two three"), 3)
         counts = await asyncio.gather(count_words("a"), count_words("a b"))
         self.assertEqual(counts, [1, 2])
+
+    async def test_an_async_call_that_does_not_wait_does_not_suspend(self) -> None:
+        self.assertEqual(await count_words_at_once("one two three"), 3)
+        counts = await asyncio.gather(count_words_at_once("a"), count_words_at_once("a b"))
+        self.assertEqual(counts, [1, 2])
+        # The call's future is done when the call returns, so its coroutine
+        # finishes in one step, without giving the event loop a turn.
+        call = count_words_at_once("a b")
+        with self.assertRaises(StopIteration) as finished:
+            call.send(None)
+        self.assertEqual(finished.exception.value, 2)
 
     async def test_async_factories_and_methods(self) -> None:
         async with await Mailbox.open("Ada") as mailbox:

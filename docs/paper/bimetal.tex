@@ -61,7 +61,7 @@ Compiled file & \ttt{.abi3.so} & \ttt{.wasm} & \ttt{.node} \\
 One build serves & A platform & All platforms & A platform \\
 Runs in browsers & No & Yes & No \\
 Threads in Rust & Yes & No & Yes \\
-Async calls run on & Tokio & Event loop & Tokio \\
+Async calls that wait run on & Tokio & Event loop & Tokio \\
 A sync call can wait & Yes & No & No \\
 Shares Arrow memory & Yes & No & No \\
 Usable after a panic & Yes & No & Yes \\
@@ -152,7 +152,7 @@ The contract comes from one build for the current machine, but a package runs an
 \item[C1, native hosts.] The extension and the addon are built from the same sources and for the same target as the discovery build, with the runtime's host feature and a different profile. Each artifact computes a hash of its contract when it loads, and the generated code compares this hash with its own. A mismatch raises an error that says to rebuild.
 \item[C2, the module's exports.] The module is built for a different compilation target. After this build, the command reads the module's export section. The command stops if the module lacks a function, resource, factory or method of the contract, or has a function or resource that the contract lacks.
 \item[C3, unresolved symbols.] If the module needs a symbol that nothing defines, the command stops and names the symbol. A C library compiled for the wrong target usually causes this failure.
-\item[C4, conditional exports.] A \ttt{\#[cfg]} attribute on an exported method is a compile error, which says to put the condition inside the method's body.
+\item[C4, conditional exports.] A \ttt{\#[cfg]} attribute on an exported method may test only features, joined by \ttt{all}, \ttt{any} and \ttt{not}, because every build compiles the default features of the application's packages, while the module is built for another target. A test of the target is a compile error, which says to put the condition inside the method's body. A \ttt{cfg} that a \ttt{cfg\_attr} adds, at any depth, is also a compile error, because rustc would remove the method after the macro had listed it, and so is an empty \ttt{any()}, which holds in no build. A gated method is therefore in every artifact or in none, and C1 and C2 check that this holds. Rust evaluates a \ttt{\#[cfg]} on a function or an \ttt{impl} block before the macro runs, so there C2 alone finds a difference between the targets, as it does for a feature that only a dependency of one target turns on.
 \end{description}
 
 \begin{claim}[Agreement]
@@ -164,7 +164,7 @@ Under A3, if \ttt{bimetal build} succeeds, each generated call names a function 
 For the native hosts, C1 gives the same sources and target as the discovery build, and the hash comparison rejects an artifact whose contract differs. For the module, C2 gives the same names. The types behind one name come from one Rust source, and by A3, no target changes those types.
 \end{proof}
 
-The argument depends on A3 because the command cannot detect a difference inside an export between targets. For example, a constant whose value depends on the target takes the current machine's value in every package. The default of a field is read from the compiled library in the same way, and a package builds its contract again when it loads and refuses to load if that contract differs from the one that the build read. A \ttt{Default} must therefore give the same value on every call, and the build fails when two calls differ.
+The argument depends on A3 because the command cannot detect a difference inside an export between targets. For example, a constant whose value depends on the target takes the current machine's value in every package. The default of a field is read from the compiled library in the same way, and a package builds its contract again when it loads and refuses to load if that contract differs from the one that the build read. A \ttt{Default}, or the function that \ttt{\#[serde(default = "path")]} names, must therefore give the same value on every call, and the build fails when two calls differ.
 
 \subsection{Names}
 
@@ -215,9 +215,9 @@ Arrow stream & No copy, one batch at a time & An IPC stream and one copy each wa
 
 \subsection{Converted Values}
 
-Models, strings, numbers, lists and maps are converted field by field. Serde reads and writes these values through \ttt{pythonize} on the extension, through \ttt{serde-\allowbreak wasm-\allowbreak bindgen} on the module, and through a serializer and a deserializer of our own on the addon. Our deserializer follows \ttt{serde-\allowbreak wasm-\allowbreak bindgen}'s checks, order and error messages, apart from a limit on nesting. In Python, a scalar or a container of scalars passes unchanged. Pydantic writes every other argument in one pass, in its JSON mode, where a model is a dictionary and a date is ISO 8601 text. When a value returns, Pydantic validates it.
+Models, strings, numbers, lists and maps are converted field by field. Serde reads and writes these values through \ttt{pythonize} on the extension, through \ttt{serde-\allowbreak wasm-\allowbreak bindgen} on the module, and through a serializer and a deserializer of our own on the addon. Our deserializer follows \ttt{serde-\allowbreak wasm-\allowbreak bindgen}'s checks, order and error messages, apart from a limit on nesting. In Python, a scalar or a container of scalars passes unchanged, and so does an optional argument that is absent. Pydantic writes every other argument in one pass, in its JSON mode, where a model is a dictionary and a date is ISO 8601 text. When a value returns, Pydantic validates it, unless it is a Boolean, an integer, a float or a string, which the extension already makes as Python holds it.
 
-Rust checks an author's field rules on every host. It checks every argument and result of an export, and what a callback returns to Rust, but not the arguments that Rust passes to a callback. The check may look redundant in Python, where Pydantic enforces the same rules. However, \ttt{model\_copy(update=...)} skips Pydantic, and TypeScript has no equivalent of Pydantic at all. A returned value that breaks a rule indicates a bug in the Rust code, and the caller then receives an untyped error. A field that is absent holds the Rust \ttt{Default} of its type, which no caller passed. The derive checks that default against the field's own rules, and the model's registration checks the rules inside it when the contract is read, so a default that breaks a rule fails the build.
+Rust checks an author's field rules on every host. It checks every argument and result of an export, and what a callback returns to Rust, but not the arguments that Rust passes to a callback. The check may look redundant in Python, where Pydantic enforces the same rules. However, \ttt{model\_copy(update=...)} skips Pydantic, and TypeScript has no equivalent of Pydantic at all. A returned value that breaks a rule indicates a bug in the Rust code, and the caller then receives an untyped error. A field that is absent holds the Rust \ttt{Default} of its type or what its default function returns, which no caller passed. The model's registration calls that function when the contract is read and checks the value against the field's own rules and the rules inside it, so a default that breaks a rule fails the build. The registration also fails the build when the value holds a NaN or an infinity at any depth, because JSON writes either as \ttt{null}, which inside an \ttt{Option} reads back as \ttt{None}. For the same reason, the derive rejects \ttt{skip\_serializing\_if} on a field with a default function, because Serde would leave out a \ttt{None} and then read the absent field as what the function returns. The derive also checks the \ttt{Default} of a scalar or a list against the field's rules, because it knows that value before the library is compiled.
 
 \subsection{Bytes and Buffers}
 
@@ -227,7 +227,7 @@ Bytes and buffers cross as one block of memory, which avoids the cost of a host 
 
 Arrow values show the largest difference between hosts, because only the extension can share their memory with Rust. On the extension, arrays, batches, tables and schemas cross through the PyCapsule interface~\cite{pycapsule}, which is built on the C Data Interface~\cite{arrowc}, without a copy in either direction. The runtime accepts any producer of this interface, after it validates each incoming value. Our tests pass pyarrow values, and one binding crate's test passes a Polars DataFrame. The other two hosts cannot share memory in this way. On the module, a view into WebAssembly memory stops working when the memory grows, and on the addon, the apache-arrow JavaScript library has no C Data Interface. Arrow values on these two hosts therefore cross as an IPC stream, with one copy into Rust's memory and one copy out.
 
-A \emph{stream} of record batches crosses one batch at a time. An export can return a \ttt{Record\allowbreak Batch\allowbreak Stream}, which wraps an asynchronous Rust stream or a blocking reader. Python receives it as a pyarrow \ttt{Record\allowbreak Batch\allowbreak Reader}, which is built on the C Stream Interface~\cite{arrowc}, and any thread can ask this reader for the next batch, including the worker threads of a query engine such as DuckDB. A parameter can also take a stream, from any producer of the interface, and the runtime then reads each batch only when the Rust code asks for it. A synchronous export reads on its caller's thread, while an asynchronous export reads on a blocking thread of the runtime and never on a worker. Dropping a stream drops its source, which cancels the source's work. The first error ends a returned stream: every later read fails with the same message, and a typed error keeps its code at the start of that message.
+A \emph{stream} of record batches crosses one batch at a time. An export can return a \ttt{Record\allowbreak Batch\allowbreak Stream}, which wraps an asynchronous Rust stream or a blocking reader. Python receives it as a pyarrow \ttt{Record\allowbreak Batch\allowbreak Reader}, which is built on the C Stream Interface~\cite{arrowc}, and any thread can ask this reader for the next batch, including the worker threads of a query engine such as DuckDB. A parameter can also take a stream, from any producer of the interface, and the runtime then reads each batch only when the Rust code asks for it. A synchronous export reads on its caller's thread, while an asynchronous export, which starts on the runtime because it takes a stream, reads each batch on a blocking thread of the runtime and never on a worker. Dropping a stream drops its source, which cancels the source's work. The first error ends a returned stream: every later read fails with the same message, and a typed error keeps its code at the start of that message.
 
 On the module and the addon, TypeScript reads a returned stream as an asynchronous iterator, and each batch crosses as its own IPC stream. In the other direction, a JavaScript source writes a batch only when Rust asks for one. JavaScript makes these batches asynchronously, and a synchronous call on its one thread could not wait for them. The command therefore refuses a stream parameter of a synchronous export when an application builds a TypeScript package.
 
@@ -237,7 +237,7 @@ Rust never waits for a batch of a stream parameter while it holds the interprete
 \end{claim}
 
 \begin{proof}[Argument]
-A synchronous export runs without the lock, so it reads its parameter's batches without the lock. An asynchronous export runs on the runtime's workers, which never hold the lock, and it reads each batch on a blocking thread. A read of a returned stream checks whether its thread holds the lock. If the thread holds it, the read releases it, waits for the batch and takes the lock back.
+A synchronous export runs without the lock, so it reads its parameter's batches without the lock. An asynchronous export with a stream parameter runs on the runtime's workers, which never hold the lock, and it reads each batch on a blocking thread. A read of a returned stream checks whether its thread holds the lock. If the thread holds it, the read releases it, waits for the batch and takes the lock back.
 \end{proof}
 
 This claim matters because a source may need the lock to make its next batch, as a pyarrow reader over a Python generator does, or a stream that calls a Python function. If a read waited with the lock held, the source would wait for the read, and neither would finish. One test covers this case: a Python function feeds a returned stream, and an import that holds the lock reads the stream. Without the release, that test does not finish.
@@ -301,7 +301,7 @@ Async method & Waits in its future & Waits in its future \\
 \end{tabular}
 \end{table}
 
-The hosts also differ in when an asynchronous method takes its lock. On the JavaScript hosts, the method tries its lock on the calling thread when the caller makes the call. In Python, this attempt happens when the generated coroutine first runs. A call that gets the lock holds the resource from that moment, even on the module, where the Rust body starts in a later microtask. If the lock is taken, the call waits in its future and joins the lock's queue when its future is first polled. On the native hosts, this polling happens on a multi-threaded runtime, so calls that find the lock taken have no guaranteed order among themselves.
+The hosts also differ in when an asynchronous method takes its lock. On the JavaScript hosts, the method tries its lock on the calling thread when the caller makes the call. In Python, this attempt happens when the generated coroutine first runs. A call that gets the lock holds the resource from that moment, even on the module, where the Rust body starts in a later microtask. If the lock is taken, the call waits in its future and joins the lock's queue when its future is first polled. On the native hosts, a multi-threaded runtime makes every poll after the first, so calls that find the lock taken have no guaranteed order among themselves.
 
 \subsection{Blocks and Failure}
 
@@ -343,6 +343,10 @@ Every path into the module passes through the guard. When the guard sees a trap,
 \label{sec:async}
 
 An \ttt{async fn} becomes a Python coroutine and a TypeScript function that returns a \ttt{Promise}, and the host decides what runs it. The native hosts run these futures on a Tokio runtime that the process starts on demand, while the module runs them on the JavaScript event loop.
+
+A native host polls a future once on the caller's thread before it gives the future to the runtime, because a call that finishes without a wait, such as a read from memory, then needs no worker. Such a call settles its asyncio future or its promise at once, while a call that waits becomes a task of the runtime, whose first poll replaces the waker of the caller's poll. That first waker wakes no one, so a future must register its waker on every poll, and code before the first wait runs outside any Tokio task. The extension makes that first poll without the interpreter lock, as it runs a synchronous export, so long work before the first wait stops the caller's event loop but no other Python thread.
+
+A call that takes a \ttt{Callback} or a \ttt{Record\allowbreak Batch\allowbreak Stream} is the exception, and a worker makes its first poll, because such a call may wait for the caller's event loop before its first wait. A Python function may wait for a coroutine on that loop, and on the addon JavaScript writes a stream argument on the thread that runs the loop. On the caller's thread, either wait would never end. The macros know the type of each parameter, so they choose where each asynchronous export starts when they expand it.
 
 On the extension, a worker thread must be able to finish a call without waiting for the interpreter lock. References to the event loop and to the asyncio future are therefore kept in a structure that only code holding that lock can touch. A \ttt{Callback} argument is the exception, because the task owns its Python function, and if the last clone drops on a worker thread, PyO3 defers the release to its reference pool. When the task finishes, a thread that is allowed to block takes the lock and converts the result. Cancellation works in Python only. When a caller cancels the future, a callback aborts the task, and Tokio drops the Rust future at its next opportunity. A JavaScript promise cannot be cancelled, so a call there runs to its end.
 
@@ -398,10 +402,10 @@ To learn what real code needs, we also wrote binding crates for five large Rust 
 \section{What It Costs}
 \label{sec:costs}
 
-Bimetal has three kinds of cost: time on every call, memory for copies, and time to build. Table~\ref{tab:costs} gives measurements of the first, from one run on an Apple M5 laptop with 10 cores and 32~GiB of memory, on macOS 27, with Rust 1.94, Python 3.11 and Node.js 24. Each cell is the median of at least 30 samples. These numbers show where the costs are, and they do not compare Bimetal with other tools.
+Bimetal has three kinds of cost: time on every call, memory for copies, and time to build. Table~\ref{tab:costs} gives measurements of the first, from two runs on an Apple M5 laptop with 10 cores and 32~GiB of memory, on macOS 27, with Rust 1.94, Python 3.11 and Node.js 24. Each cell is the median of at least 30 samples, and the caption says which run each row comes from. These numbers show where the costs are, and they do not compare Bimetal with other tools.
 
 \begin{table}[t]
-\caption{Median time per call into the \ttt{showcase} example. ``Wrapper only'' calls the wrapper directly, without the generated code, and we measured this for models only in Python. An Arrow call passes a batch of 16~MB and receives a table of one batch.}
+\caption{Median time per call into the \ttt{showcase} example. ``Wrapper only'' calls the wrapper directly, without the generated code, and we measured this for models only in Python. An Arrow call passes a batch of 16~MB and receives a table of one batch. The two asynchronous rows come from a later run of the per-call step, which started at a load average of 22 for the extension and 5 for the addon, and the module did not change between the runs. The module has no figure for a call that does not wait, because we did not measure it under comparable load.}
 \label{tab:costs}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -417,12 +421,13 @@ No arguments & 53~ns & 28~ns & 19~ns \\
 \quad Wrapper only & 0.6~ms & & \\
 1~MiB of bytes & 44~$\mu$s & 324~$\mu$s & 72~$\mu$s \\
 1,000,000 Arrow rows & 4.8~$\mu$s & 2.1~ms & 2.0~ms \\
-Async, one yield & 33.6~$\mu$s & 0.7~$\mu$s & 9.2~$\mu$s \\
+Async, one yield & 34.4~$\mu$s & 0.7~$\mu$s & 12.5~$\mu$s \\
+Async, no wait & 0.37~$\mu$s & & 0.33~$\mu$s \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The table shows three things. First, most of the cost of a Python call with models is the generated code. Of 53.4~ms for 10,000 models that contain dates and JSON, 16.3~ms is the wrapper, and the rest is the generated code, which validates the list and writes each model for the wrapper. Second, an Arrow call on the extension took the same time at every batch size that we tried: 4.5 to 4.9~$\mu$s with two fixed-width columns, from 1,000 to 4,000,000 rows. The time on the JavaScript hosts grew with the batch. Third, an asynchronous call cost more on the native hosts than on the module. A likely cause is that the native hosts move each call between threads.
+The table shows three things. First, most of the cost of a Python call with models is the generated code. Of 53.4~ms for 10,000 models that contain dates and JSON, 16.3~ms is the wrapper, and the rest is the generated code, which validates the list and writes each model for the wrapper. Second, an Arrow call on the extension took the same time at every batch size that we tried: 4.5 to 4.9~$\mu$s with two fixed-width columns, from 1,000 to 4,000,000 rows. The time on the JavaScript hosts grew with the batch. Third, an asynchronous call that waits once cost more on the native hosts than on the module, while a call that does not wait cost 0.37~$\mu$s on the extension and 0.33~$\mu$s on the addon. The two calls differ only in one yield, which moves the call to a worker thread and back, so that yield costs about 34~$\mu$s on the extension and 12~$\mu$s on the addon.
 
 We also measured peak memory, to check the copies in Table~\ref{tab:copies}. When a call reversed 100~MiB of bytes, peak memory rose by 3.0 times the payload on every host: one copy in, Rust's result and one copy out. When an Arrow call passed 16~MB, peak memory rose by 0.06 times the payload on the extension and by about 4.1 times the payload on the JavaScript hosts, which is one stream and one copy in each direction.
 

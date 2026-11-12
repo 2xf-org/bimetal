@@ -26,7 +26,7 @@ A build also stops, and names the symbols, when the module imports something not
 - **Tokio.** [Async](async.md#tokio) has the options.
 - **C libraries.** They don't compile for this target without work. [Wrapping a large project](large-projects.md) shows what the trials did.
 
-`#[cfg]` on an exported method is a compile error, which says to put it inside the method's body. An export has to exist on every target, or the contract and the module would disagree.
+A `#[cfg]` on an exported method can test features but not the target, as [Resources](resources.md#features) says. An export has to exist on every target, or the contract and the module would disagree. Rust reads a `#[cfg]` on a function or an `impl` block before Bimetal sees it, so there `bimetal build` finds the difference instead: it fails when the module lacks an export of the contract or has one more.
 
 ## After a panic
 

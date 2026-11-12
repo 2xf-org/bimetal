@@ -71,4 +71,4 @@ async fn run<F: Future>(future: F) -> F::Output {
 }
 ```
 
-On native hosts the same function just awaits. Calling a blocking function from a future stops a Tokio worker on Python and the addon, as it would in any Tokio program, so use `spawn_blocking` for long work.
+On native hosts the same function just awaits. Calling a blocking function from a future stops a Tokio worker on Python and the addon, as it would in any Tokio program, and before the future's first wait it stops the caller's event loop. So use `spawn_blocking` for long work.

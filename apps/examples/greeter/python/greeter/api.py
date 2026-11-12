@@ -92,10 +92,7 @@ class Guestbook:
         The event this guestbook belongs to.
         """
         __bimetal_native = self.native_resource.event()
-        __bimetal_result: str = _bimetal_type_adapter(str).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: str = __bimetal_native
         return __bimetal_result
 
     def names(self) -> list[str]:
