@@ -103,7 +103,7 @@ pub note: Option<String>,
 
 | Attribute | Rule |
 | --- | --- |
-| `required` | The field must be present, also when its type is `Option<T>` |
+| `required` | The `Option<T>` field must be present, even as `None` |
 | `literal = <literal>` | The field must have this boolean, integer or string value. It doesn't apply to an `Option` field |
 | `min_length`, `max_length` | Limits for the length of a string or a list |
 | `ge`, `le` | Limits for an integer field. They don't apply through an alias |
@@ -112,7 +112,7 @@ Rust checks `literal`, `min_length`, `max_length`, `ge` and `le` on every argume
 
 Pydantic also checks the rules where a Python model is built. Rust catches what Pydantic doesn't validate, such as a model changed with `model_copy(update=...)`. TypeScript's declarations carry the same names and types: a field with a default is optional, and a `literal` field has its value as its type.
 
-Only Python checks two things at run time: `required`, because Serde reads a missing `Option` field as `None` (TypeScript's declarations make the field required), and unknown fields, which Pydantic rejects and Serde ignores.
+Serde reads a missing `Option` field as `None`, so the hosts check `required` before the call: Pydantic in Python, and the generated wrapper in TypeScript. Only Python rejects unknown fields, which Serde ignores.
 
 The check is one more pass over each decoded value. It skips values whose types have no rules, except inside maps and recursive models, which it still walks.
 
@@ -191,4 +191,4 @@ pub struct RecordId(pub String);
 
 ## What a model can't hold
 
-A model can't hold `bytes`, `buffer`, Arrow values, resources or callbacks. A `Vec<u8>` field is a list of integers, so send large payloads as separate parameters. A `Model` must be a type of your crate, so a type from another crate needs a mirror, as each [trial](large-projects.md) does.
+A model can't hold buffers, Arrow values, resources or callbacks. A `Vec<u8>` field is a list of integers, so send large payloads as separate parameters. A `Model` must be a type of your crate, so a type from another crate needs a mirror, as each [trial](large-projects.md) does.

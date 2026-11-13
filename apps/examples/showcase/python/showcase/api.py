@@ -21,22 +21,82 @@ from .models import (
     Statement,
     Stroke,
 )
-import showcase.geometry.api as _bimetal_api_4
 import showcase.geometry.models as _bimetal_models_4
 from showcase._runtime import (
+    Adapter as _bimetal_Adapter,
     ArrowArrayExportable,
     ArrowSchemaExportable,
     ArrowStreamExportable,
+    Dumped as _bimetal_Dumped,
     Duration as _bimetal_Duration,
     JsonValue as _bimetal_JsonValue,
     PanicException,
-    dump_host as _bimetal_dump_host,
-    host_callback as _bimetal_host_callback,
+    Revalidate as _bimetal_Revalidate,
+    bound as _bimetal_bound,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
     restore_host as _bimetal_restore_host,
     type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_showcase_26468ee95f534500")
+_bimetal_native_1 = getattr(_bimetal_native, "__bimetal_function_showcase_faf0faa02b839d11")
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_function_showcase_2c816d1c66866c00")
+_bimetal_adapter_3 = _bimetal_Adapter(lambda: list[Record])
+_bimetal_native_4 = getattr(_bimetal_native, "__bimetal_function_showcase_49b04c62bb462bdd")
+_bimetal_native_5 = getattr(_bimetal_native, "__bimetal_function_showcase_d71636c80a9e7b82")
+_bimetal_native_6 = getattr(_bimetal_native, "__bimetal_function_showcase_3695ae6e7c7cdabe")
+_bimetal_adapter_7 = _bimetal_Adapter(lambda: Event)
+_bimetal_native_8 = getattr(_bimetal_native, "__bimetal_function_showcase_2dde32006fcffed4")
+_bimetal_adapter_9 = _bimetal_Adapter(lambda: _bimetal_models_4.Point)
+_bimetal_adapter_10 = _bimetal_Adapter(lambda: _bimetal_models_4.Point | None)
+_bimetal_native_11 = getattr(_bimetal_native, "__bimetal_function_showcase_fe4fdfc43028f39d")
+_bimetal_adapter_12 = _bimetal_Adapter(lambda: Numbers)
+_bimetal_native_13 = getattr(_bimetal_native, "__bimetal_function_showcase_44a32a9489b2ee19")
+_bimetal_adapter_14 = _bimetal_Adapter(lambda: Record)
+_bimetal_native_15 = getattr(_bimetal_native, "__bimetal_function_showcase_2739c2dbfb04ad77")
+_bimetal_adapter_16 = _bimetal_Adapter(lambda: Settings)
+_bimetal_native_17 = getattr(_bimetal_native, "__bimetal_function_showcase_2755b39851461819")
+_bimetal_native_18 = getattr(_bimetal_native, "__bimetal_function_showcase_c35ae62fc8021d6b")
+_bimetal_native_19 = getattr(_bimetal_native, "__bimetal_function_showcase_ee81e93c330546ba")
+_bimetal_native_20 = getattr(_bimetal_native, "__bimetal_function_showcase_4bb5b0f933ad7376")
+_bimetal_adapter_21 = _bimetal_Adapter(lambda: list[Stroke])
+_bimetal_adapter_22 = _bimetal_Adapter(lambda: Stroke)
+_bimetal_native_23 = getattr(_bimetal_native, "__bimetal_function_showcase_33b794fc2164d568")
+_bimetal_native_24 = getattr(_bimetal_native, "__bimetal_function_showcase_19d28473e10f484f")
+_bimetal_adapter_25 = _bimetal_Adapter(lambda: _bimetal_Duration)
+_bimetal_native_26 = getattr(_bimetal_native, "__bimetal_function_showcase_c41f69f9c90f957c")
+_bimetal_native_27 = getattr(_bimetal_native, "__bimetal_function_showcase_973415b394613f28")
+_bimetal_native_28 = getattr(_bimetal_native, "__bimetal_function_showcase_769d13851752fc98")
+_bimetal_adapter_29 = _bimetal_Adapter(lambda: _bimetal_datetime.date)
+_bimetal_native_30 = getattr(_bimetal_native, "__bimetal_function_showcase_0728f9493973744c")
+_bimetal_adapter_31 = _bimetal_Adapter(lambda: Holiday)
+_bimetal_native_32 = getattr(_bimetal_native, "__bimetal_function_showcase_d687fc53129df29f")
+_bimetal_native_33 = getattr(_bimetal_native, "__bimetal_function_showcase_e236eb67bc198ae4")
+_bimetal_native_34 = getattr(_bimetal_native, "__bimetal_function_showcase_2889a661045b720a")
+_bimetal_native_35 = getattr(_bimetal_native, "__bimetal_function_showcase_753df9fc6ff9f074")
+_bimetal_native_36 = getattr(_bimetal_native, "__bimetal_function_showcase_4f65fb4eda2ef03d")
+_bimetal_native_37 = getattr(_bimetal_native, "__bimetal_function_showcase_2ca01b6c2d0bc39f")
+_bimetal_native_38 = getattr(_bimetal_native, "__bimetal_function_showcase_c0f094c49784e99b")
+_bimetal_native_39 = getattr(_bimetal_native, "__bimetal_function_showcase_acf984cc050cd9cc")
+_bimetal_adapter_40 = _bimetal_Adapter(lambda: list[_bimetal_models_4.Point])
+_bimetal_native_41 = getattr(_bimetal_native, "__bimetal_function_showcase_1c8ac8b1b7860d02")
+_bimetal_adapter_42 = _bimetal_Adapter(lambda: Int64Buffer, arbitrary_types=True)
+_bimetal_native_43 = getattr(_bimetal_native, "__bimetal_function_showcase_1f201a625951f028")
+_bimetal_adapter_44 = _bimetal_Adapter(lambda: Float32Buffer, arbitrary_types=True)
+_bimetal_native_45 = getattr(_bimetal_native, "__bimetal_function_showcase_bc6c11225303a76b")
+_bimetal_native_46 = getattr(_bimetal_native, "__bimetal_function_showcase_ad1cb8e475b4a36b")
+_bimetal_adapter_47 = _bimetal_Adapter(lambda: Settings | None)
+_bimetal_native_48 = getattr(_bimetal_native, "__bimetal_function_showcase_799abc456a4ee505")
+_bimetal_adapter_49 = _bimetal_Adapter(lambda: list[_bimetal_Duration | None])
+_bimetal_native_50 = getattr(_bimetal_native, "__bimetal_function_showcase_d30b7d529c9e1bc7")
+_bimetal_native_51 = getattr(_bimetal_native, "__bimetal_function_showcase_2adbd68385e21351")
+_bimetal_adapter_52 = _bimetal_Adapter(lambda: AwareDatetime)
+_bimetal_native_53 = getattr(_bimetal_native, "__bimetal_function_showcase_10c2fad8652be154")
+_bimetal_adapter_54 = _bimetal_Adapter(lambda: _bimetal_JsonValue)
+_bimetal_native_55 = getattr(_bimetal_native, "__bimetal_resource_showcase_0c183a113e0877c9")
+_bimetal_adapter_56 = _bimetal_Adapter(lambda: str)
+_bimetal_native_57 = getattr(_bimetal_native, "__bimetal_resource_showcase_a86681b694c8eb6c")
+_bimetal_adapter_58 = _bimetal_Adapter(lambda: tuple[()])
 
 
 LockedErrorCode: TypeAlias = Literal[
@@ -76,17 +136,17 @@ class ParseError(RuntimeError):
         self.code = code
 
 
+@_bimetal_bound(_bimetal_native_0)
 def bounds(values: list[int]) -> tuple[int, int] | None:
     """
     The smallest and largest value, or nothing for an empty list.
+
+    Notes:
+        A brief call keeps Python's interpreter lock, and this one, which takes and
+        returns plain values, is the native function itself in Python.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_262bf7f24b0f17ab")(
-        values,
-    )
-    __bimetal_result: tuple[int, int] | None = _bimetal_type_adapter(tuple[int, int] | None).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_0(values)
+    __bimetal_result: tuple[int, int] | None = __bimetal_native
     return __bimetal_result
 
 
@@ -96,13 +156,8 @@ def corners(
     """
     Return the corners of a rectangle of `size` at the origin, counterclockwise.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_922910167a7b640a")(
-        size,
-    )
-    __bimetal_result: tuple[_bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point] = _bimetal_type_adapter(tuple[_bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_1(size)
+    __bimetal_result: tuple[_bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point, _bimetal_models_4.Point] = __bimetal_native
     return __bimetal_result
 
 
@@ -110,13 +165,13 @@ def count_tags(records: list[Record]) -> dict[str, int]:
     """
     Count how often each tag appears across records.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_2c816d1c66866c00")(
-        _bimetal_dump_host(list[Record], records),
-    )
-    __bimetal_result: dict[str, int] = _bimetal_type_adapter(dict[str, int]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_2(records)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_2(
+            _bimetal_Dumped(_bimetal_adapter_3.dump(records)),
+        )
+    __bimetal_result: dict[str, int] = __bimetal_native
     return __bimetal_result
 
 
@@ -124,9 +179,7 @@ async def count_words(text: str) -> int:
     """
     Count the words of a text asynchronously.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_b776db2fe43c44f0")(
-        text,
-    )
+    __bimetal_native = await _bimetal_native_4(text)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -136,9 +189,7 @@ async def count_words_at_once(text: str) -> int:
     Count the words of a text in an async call that does not wait, as a read from
     memory does. Such a call finishes on the caller's thread.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_0a5b8dc99e7ea50a")(
-        text,
-    )
+    __bimetal_native = await _bimetal_native_5(text)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -147,9 +198,7 @@ def describe(event: Event) -> str:
     """
     Describe an event.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_3695ae6e7c7cdabe")(
-        _bimetal_dump_host(Event, event),
-    )
+    __bimetal_native = _bimetal_native_6(_bimetal_adapter_7.dump(event))
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -161,10 +210,13 @@ def distance_from(
     """
     The distance of a point from `origin`, or from `(0, 0)` without one.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_2263cd433ee8fffb")(
-        _bimetal_dump_host(_bimetal_models_4.Point, point),
-        None if origin is None else _bimetal_dump_host(_bimetal_models_4.Point | None, origin),
-    )
+    try:
+        __bimetal_native = _bimetal_native_8(point, origin)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_8(
+            _bimetal_Dumped(_bimetal_adapter_9.dump(point)),
+            None if origin is None else _bimetal_Dumped(_bimetal_adapter_10.dump(origin)),
+        )
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
@@ -173,13 +225,13 @@ def echo_numbers(numbers: Numbers) -> Numbers:
     """
     Return the numbers unchanged.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_fe4fdfc43028f39d")(
-        _bimetal_dump_host(Numbers, numbers),
-    )
-    __bimetal_result: Numbers = _bimetal_type_adapter(Numbers).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_11(numbers)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_11(
+            _bimetal_Dumped(_bimetal_adapter_12.dump(numbers)),
+        )
+    __bimetal_result: Numbers = __bimetal_native
     return __bimetal_result
 
 
@@ -187,13 +239,13 @@ def echo_record(record: Record) -> Record:
     """
     Return the record unchanged.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_44a32a9489b2ee19")(
-        _bimetal_dump_host(Record, record),
-    )
-    __bimetal_result: Record = _bimetal_type_adapter(Record).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_13(record)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_13(
+            _bimetal_Dumped(_bimetal_adapter_14.dump(record)),
+        )
+    __bimetal_result: Record = __bimetal_native
     return __bimetal_result
 
 
@@ -201,13 +253,13 @@ def echo_settings(settings: Settings) -> Settings:
     """
     Return the settings unchanged.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_2739c2dbfb04ad77")(
-        _bimetal_dump_host(Settings, settings),
-    )
-    __bimetal_result: Settings = _bimetal_type_adapter(Settings).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_15(settings)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_15(
+            _bimetal_Dumped(_bimetal_adapter_16.dump(settings)),
+        )
+    __bimetal_result: Settings = __bimetal_native
     return __bimetal_result
 
 
@@ -221,10 +273,7 @@ async def find_item(items: list[str], index: int) -> str:
         Panics when `index` is out of range, as `item_at` does. Python raises the
         panic from `await`, and TypeScript rejects the promise.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_39592d3ec6c56886")(
-        items,
-        index,
-    )
+    __bimetal_native = await _bimetal_native_17(items, index)
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -238,10 +287,7 @@ async def find_item_at_once(items: list[str], index: int) -> str:
 
         Panics when `index` is out of range, as `item_at` does.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_f20afd3d87bee6c4")(
-        items,
-        index,
-    )
+    __bimetal_native = await _bimetal_native_18(items, index)
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -250,13 +296,8 @@ def fingerprint(data: bytes) -> bytes:
     """
     A 4-byte fingerprint of some data.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_198644f9547c8a96")(
-        data,
-    )
-    __bimetal_result: bytes = _bimetal_type_adapter(bytes).validate_python(
-        _bimetal_restore_host(__bimetal_native, ["bytes"]),
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_19(data)
+    __bimetal_result: bytes = __bimetal_native
     return __bimetal_result
 
 
@@ -267,14 +308,11 @@ def finish(
     """
     End a drawing with `last`, which lifts the pen unless the caller says otherwise.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_3b45a06439ab33a1")(
-        _bimetal_dump_host(list[Stroke], strokes),
-        _bimetal_dump_host(Stroke, last),
+    __bimetal_native = _bimetal_native_20(
+        _bimetal_adapter_21.dump(strokes),
+        _bimetal_adapter_22.dump(last),
     )
-    __bimetal_result: list[Stroke] = _bimetal_type_adapter(list[Stroke]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: list[Stroke] = __bimetal_native
     return __bimetal_result
 
 
@@ -289,10 +327,7 @@ def item_at(items: list[str], index: int) -> str:
         exception, and TypeScript throws an `Error` with the panic's message. The
         TypeScript package's WebAssembly module is unusable after a panic.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_3201d8cbb416e76d")(
-        items,
-        index,
-    )
+    __bimetal_native = _bimetal_native_23(items, index)
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -304,14 +339,14 @@ def longer(
     """
     Return the longer of two waits, the second a second unless given.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_67b1d7f519d15636")(
-        _bimetal_dump_host(_bimetal_Duration, first),
-        _bimetal_dump_host(_bimetal_Duration, second),
-    )
-    __bimetal_result: _bimetal_Duration = _bimetal_type_adapter(_bimetal_Duration).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_24(first, second)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_24(
+            _bimetal_Dumped(_bimetal_adapter_25.dump(first)),
+            _bimetal_Dumped(_bimetal_adapter_25.dump(second)),
+        )
+    __bimetal_result: _bimetal_Duration = __bimetal_native
     return __bimetal_result
 
 
@@ -323,9 +358,7 @@ def nest(depth: int) -> int:
         A depth of a million overflows the stack. In TypeScript, that is a trap
         without a panic, which aborts the WebAssembly module as a panic does.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_0bc4c674b6f56018")(
-        depth,
-    )
+    __bimetal_native = _bimetal_native_26(depth)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -334,9 +367,7 @@ async def nest_later(depth: int) -> int:
     """
     Count `depth` nested calls asynchronously, as `nest` does.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_2a6bee71574c3a98")(
-        depth,
-    )
+    __bimetal_native = await _bimetal_native_27(depth)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -347,13 +378,13 @@ def next_day(
     """
     Return the day after `date`, or `None` past the last day a date can be.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_769d13851752fc98")(
-        _bimetal_dump_host(_bimetal_datetime.date, date),
-    )
-    __bimetal_result: _bimetal_datetime.date | None = _bimetal_type_adapter(_bimetal_datetime.date | None).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_28(date)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_28(
+            _bimetal_Dumped(_bimetal_adapter_29.dump(date)),
+        )
+    __bimetal_result: _bimetal_datetime.date | None = __bimetal_native
     return __bimetal_result
 
 
@@ -361,13 +392,13 @@ def observe(holiday: Holiday) -> Holiday:
     """
     Return `holiday` observed on the Monday after it when it falls on a weekend.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_c0461ca573a3faed")(
-        _bimetal_dump_host(Holiday, holiday),
-    )
-    __bimetal_result: Holiday = _bimetal_type_adapter(Holiday).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_30(holiday)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_30(
+            _bimetal_Dumped(_bimetal_adapter_31.dump(holiday)),
+        )
+    __bimetal_result: Holiday = __bimetal_native
     return __bimetal_result
 
 
@@ -378,16 +409,8 @@ def parse_priority(text: str) -> Priority:
     Raises:
         ParseError
     """
-    try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_30476b1ac363617b")(
-            text,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ParseError) from None
-    __bimetal_result: Priority = _bimetal_type_adapter(Priority).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_32(text)
+    __bimetal_result: Priority = __bimetal_native
     return __bimetal_result
 
 
@@ -398,16 +421,8 @@ async def parse_priority_at_once(text: str) -> Priority:
     Raises:
         ParseError
     """
-    try:
-        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_d69ea4a5e7919268")(
-            text,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ParseError) from None
-    __bimetal_result: Priority = _bimetal_type_adapter(Priority).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = await _bimetal_native_33(text)
+    __bimetal_result: Priority = __bimetal_native
     return __bimetal_result
 
 
@@ -415,7 +430,7 @@ def ping() -> None:
     """
     Do nothing and return nothing.
     """
-    getattr(_bimetal_native, "__bimetal_function_showcase_6fdc93b9512db748")()
+    _bimetal_native_34()
     return None
 
 
@@ -428,10 +443,7 @@ def qualify(package: str, class_value: str) -> str:
         parameters `package_` and `class_`, and Python names the second one
         `class_value`.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_6efd7cef83047da7")(
-        package,
-        class_value,
-    )
+    __bimetal_native = _bimetal_native_35(package, class_value)
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -439,11 +451,11 @@ def qualify(package: str, class_value: str) -> str:
 def repeat(str_: str, int_: int) -> str:
     """
     Repeat a text. Its Python parameters are `str_` and `int_`.
+
+    Notes:
+        It is brief, but its Python function renames its parameters, so it stays.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_8546963c2edfa3c1")(
-        str_,
-        int_,
-    )
+    __bimetal_native = _bimetal_native_36(str_, int_)
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -452,13 +464,8 @@ def retrace(strokes: list[Stroke]) -> list[Stroke]:
     """
     Return strokes in the opposite order.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_03f2cacb8b12c640")(
-        _bimetal_dump_host(list[Stroke], strokes),
-    )
-    __bimetal_result: list[Stroke] = _bimetal_type_adapter(list[Stroke]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_37(_bimetal_adapter_21.dump(strokes))
+    __bimetal_result: list[Stroke] = __bimetal_native
     return __bimetal_result
 
 
@@ -470,13 +477,8 @@ def reverse(bytes_: bytes) -> bytes:
         A parameter that shares its name with a Python builtin, such as `bytes`,
         gains a trailing underscore in Python: `bytes_`.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_01c69597c4a04f88")(
-        bytes_,
-    )
-    __bimetal_result: bytes = _bimetal_type_adapter(bytes).validate_python(
-        _bimetal_restore_host(__bimetal_native, ["bytes"]),
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_38(bytes_)
+    __bimetal_result: bytes = __bimetal_native
     return __bimetal_result
 
 
@@ -485,14 +487,14 @@ def route_length(route: list[_bimetal_models_4.Point]) -> float:
     The length of a route. Uses an error declared in the `geometry` namespace.
 
     Raises:
-        _bimetal_api_4.GeometryError
+        showcase.geometry.GeometryError
     """
     try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_8b204e93bcda0c63")(
-            _bimetal_dump_host(list[_bimetal_models_4.Point], route),
+        __bimetal_native = _bimetal_native_39(route)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_39(
+            _bimetal_Dumped(_bimetal_adapter_40.dump(route)),
         )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, _bimetal_api_4.GeometryError) from None
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
@@ -501,13 +503,8 @@ def running_total(values: Int64Buffer) -> Int64Buffer:
     """
     A running total. Buffers become NumPy arrays and typed arrays.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_1ca0bb4470f0c22f")(
-        values,
-    )
-    __bimetal_result: Int64Buffer = _bimetal_type_adapter(Int64Buffer, arbitrary_types=True).validate_python(
-        _bimetal_restore_host(__bimetal_native, ["buffer", "int64"]),
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_41(values)
+    __bimetal_result: Int64Buffer = _bimetal_adapter_42.validate(_bimetal_restore_host(__bimetal_native, ["buffer", "int64"]))
     return __bimetal_result
 
 
@@ -515,14 +512,8 @@ def scale(samples: Float32Buffer, factor: float) -> Float32Buffer:
     """
     Scale samples by a factor.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_719dff07119bdca5")(
-        samples,
-        factor,
-    )
-    __bimetal_result: Float32Buffer = _bimetal_type_adapter(Float32Buffer, arbitrary_types=True).validate_python(
-        _bimetal_restore_host(__bimetal_native, ["buffer", "float32"]),
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_43(samples, factor)
+    __bimetal_result: Float32Buffer = _bimetal_adapter_44.validate(_bimetal_restore_host(__bimetal_native, ["buffer", "float32"]))
     return __bimetal_result
 
 
@@ -530,8 +521,7 @@ def showcase() -> str:
     """
     The name of this example. An export may have the name of its own package.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_d25e2a68a43c7cf5")(
-    )
+    __bimetal_native = _bimetal_native_45()
     __bimetal_result: str = __bimetal_native
     return __bimetal_result
 
@@ -540,13 +530,13 @@ def theme_of(settings: Settings | None = None) -> str | None:
     """
     The theme of optional settings: none without them.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_ad1cb8e475b4a36b")(
-        None if settings is None else _bimetal_dump_host(Settings | None, settings),
-    )
-    __bimetal_result: str | None = _bimetal_type_adapter(str | None).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_46(settings)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_46(
+            None if settings is None else _bimetal_Dumped(_bimetal_adapter_47.dump(settings)),
+        )
+    __bimetal_result: str | None = __bimetal_native
     return __bimetal_result
 
 
@@ -554,13 +544,13 @@ def total(waits: list[_bimetal_Duration | None]) -> _bimetal_Duration:
     """
     Add up the waits that are given.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_1be36274c9fdd3dc")(
-        _bimetal_dump_host(list[_bimetal_Duration | None], waits),
-    )
-    __bimetal_result: _bimetal_Duration = _bimetal_type_adapter(_bimetal_Duration).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_48(waits)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_48(
+            _bimetal_Dumped(_bimetal_adapter_49.dump(waits)),
+        )
+    __bimetal_result: _bimetal_Duration = __bimetal_native
     return __bimetal_result
 
 
@@ -568,13 +558,8 @@ def totals(entries: list[tuple[str, int]]) -> dict[str, int]:
     """
     Add up totals by name.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_afb8e3df00a8099d")(
-        entries,
-    )
-    __bimetal_result: dict[str, int] = _bimetal_type_adapter(dict[str, int]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_50(entries)
+    __bimetal_result: dict[str, int] = __bimetal_native
     return __bimetal_result
 
 
@@ -582,14 +567,14 @@ def touch(record: Record, at: AwareDatetime) -> Record:
     """
     Return a copy of the record with a new revision and creation time.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_2adbd68385e21351")(
-        _bimetal_dump_host(Record, record),
-        _bimetal_dump_host(AwareDatetime, at),
-    )
-    __bimetal_result: Record = _bimetal_type_adapter(Record).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    try:
+        __bimetal_native = _bimetal_native_51(record, at)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_51(
+            _bimetal_Dumped(_bimetal_adapter_14.dump(record)),
+            _bimetal_Dumped(_bimetal_adapter_52.dump(at)),
+        )
+    __bimetal_result: Record = __bimetal_native
     return __bimetal_result
 
 
@@ -597,13 +582,8 @@ def wrap(value: _bimetal_JsonValue) -> _bimetal_JsonValue:
     """
     Wrap a JSON value in an envelope.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_72e2369bca69bcf0")(
-        _bimetal_dump_host(_bimetal_JsonValue, value),
-    )
-    __bimetal_result: _bimetal_JsonValue = _bimetal_type_adapter(_bimetal_JsonValue).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_53(_bimetal_adapter_54.dump(value))
+    __bimetal_result: _bimetal_JsonValue = __bimetal_native
     return __bimetal_result
 
 
@@ -617,12 +597,7 @@ class Ledger:
         Raises:
             ParseError
         """
-        try:
-            self.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_0025cd8a71a31a39")(
-                owner,
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ParseError) from None
+        self.native_resource = _bimetal_native_55(owner)
 
     @classmethod
     def __bimetal_wrap__(cls, native: Any) -> Ledger:
@@ -636,7 +611,7 @@ class Ledger:
         Open a ledger with a starting balance.
         """
         __bimetal_instance = cls.__new__(cls)
-        __bimetal_instance.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_0025cd8a71a31a39").withBalance(
+        __bimetal_instance.native_resource = _bimetal_native_55.withBalance(
             owner,
             balance,
         )
@@ -649,10 +624,7 @@ class Ledger:
         Raises:
             LockedError
         """
-        try:
-            __bimetal_native = self.native_resource.deposit(amount)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, LockedError) from None
+        __bimetal_native = self.native_resource.deposit(amount)
         __bimetal_result: int = __bimetal_native
         return __bimetal_result
 
@@ -684,10 +656,7 @@ class Ledger:
         Every change so far.
         """
         __bimetal_native = self.native_resource.history()
-        __bimetal_result: list[Entry] = _bimetal_type_adapter(list[Entry]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[Entry] = __bimetal_native
         return __bimetal_result
 
     def statement(self) -> Statement:
@@ -695,10 +664,7 @@ class Ledger:
         Sum up the ledger, with the `statements` feature.
         """
         __bimetal_native = self.native_resource.statement()
-        __bimetal_result: Statement = _bimetal_type_adapter(Statement).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: Statement = __bimetal_native
         return __bimetal_result
 
     async def count_entries_at_once(self) -> int:
@@ -717,7 +683,7 @@ class Ledger:
         function starts on a worker on the native hosts all the same.
         """
         __bimetal_native = await self.native_resource.labelOwnerAtOnce(
-            _bimetal_host_callback(label, [str], str),
+            (label, _bimetal_adapter_56),
         )
         __bimetal_result: str = __bimetal_native
         return __bimetal_result
@@ -774,12 +740,7 @@ class Mailbox:
             ParseError
         """
         __bimetal_instance = cls.__new__(cls)
-        try:
-            __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_showcase_a88183c4115d6a49").open(
-                recipient,
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ParseError) from None
+        __bimetal_instance.native_resource = await _bimetal_native_57.open(recipient)
         return __bimetal_instance
 
     async def deliver(self, message: str) -> int:
@@ -796,10 +757,7 @@ class Mailbox:
         The messages that contain a word. Searches can run together.
         """
         __bimetal_native = await self.native_resource.search(word)
-        __bimetal_result: list[str] = _bimetal_type_adapter(list[str]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[str] = __bimetal_native
         return __bimetal_result
 
     def recipient(self) -> str:
@@ -858,24 +816,15 @@ DEFAULT_LABEL: Final[str] = "untitled"
 
 
 #: Where every drawing starts.
-FIRST_STROKE: Final[Stroke] = _bimetal_type_adapter(Stroke).validate_python(
-    {"move_to": {"x": 0.0, "y": 0.0}},
-    strict=False,
-)
+FIRST_STROKE: Final[Stroke] = _bimetal_adapter_22.validate({"move_to": {"x": 0.0, "y": 0.0}})
 
 
 #: A drawing with no strokes.
-NO_STROKES: Final[tuple[()]] = _bimetal_type_adapter(tuple[()]).validate_python(
-    [],
-    strict=False,
-)
+NO_STROKES: Final[tuple[()]] = _bimetal_adapter_58.validate([])
 
 
 #: How long a drawing waits between strokes.
-PAUSE: Final[_bimetal_Duration] = _bimetal_type_adapter(_bimetal_Duration).validate_python(
-    {"nanos": 500000000, "secs": 1},
-    strict=False,
-)
+PAUSE: Final[_bimetal_Duration] = _bimetal_adapter_25.validate({"nanos": 500000000, "secs": 1})
 
 __all__ = [
     "ArrowArrayExportable",

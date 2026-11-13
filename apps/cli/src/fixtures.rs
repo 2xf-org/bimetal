@@ -65,6 +65,7 @@ pub(crate) fn callable(rust_name: &str, host_name: &str, params: Vec<ParamDef>) 
         params,
         error: None,
         is_async: false,
+        brief: false,
     }
 }
 

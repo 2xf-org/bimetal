@@ -1,7 +1,9 @@
 //! [`Value`], a JavaScript value of one environment during one call into
 //! Rust, and what Rust reads from and writes to it.
 
+use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_void};
+use std::marker::PhantomData;
 use std::{mem, ptr};
 
 use bimetal_ir::BufferElement;
@@ -15,6 +17,60 @@ use super::error::Error;
 pub struct Value<'env> {
     pub(super) env: Env<'env>,
     pub(super) raw: sys::napi_value,
+}
+
+/// The values that one conversion gathers for the calls that make objects,
+/// arrays and maps of them: a stack, on which each container keeps its own
+/// values above those of the containers around it.
+#[derive(Default)]
+pub(crate) struct Gathered<'env> {
+    raw: RefCell<Vec<sys::napi_value>>,
+    scope: PhantomData<Value<'env>>,
+}
+
+impl<'env> Gathered<'env> {
+    /// Where the values of a container start.
+    pub(crate) fn mark(&self) -> usize {
+        self.raw.borrow().len()
+    }
+
+    /// How many values were gathered since `mark`.
+    pub(crate) fn since(&self, mark: usize) -> usize {
+        self.raw.borrow().len() - mark
+    }
+
+    pub(crate) fn push(&self, value: Value<'env>) {
+        self.raw.borrow_mut().push(value.raw);
+    }
+
+    /// Call `function` with the values gathered since `mark`, which it takes
+    /// off the stack.
+    pub(crate) fn call(&self, function: Value<'env>, mark: usize) -> Result<Value<'env>, Error> {
+        let env = function.env;
+        let raw = self.raw.borrow();
+        let arguments = &raw[mark..];
+        let result = napi!(
+            env,
+            napi_call_function(
+                env.undefined().raw,
+                function.raw,
+                arguments.len(),
+                arguments.as_ptr()
+            ) -> value
+        );
+        drop(raw);
+        self.raw.borrow_mut().truncate(mark);
+        result
+    }
+
+    /// Take the values gathered since `mark` off the stack, in `env`.
+    pub(crate) fn take(&self, env: Env<'env>, mark: usize) -> Vec<Value<'env>> {
+        self.raw
+            .borrow_mut()
+            .drain(mark..)
+            .map(|raw| env.value(raw))
+            .collect()
+    }
 }
 
 /// What `typeof` says about a value, with `null` apart from objects.

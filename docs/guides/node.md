@@ -13,7 +13,7 @@ The package then loads `native/native.node`, which `bimetal build` installs for 
 
 ## When it won't load
 
-A missing addon, or one built for another platform or from other Rust sources, makes the import throw an `Error` that says to run `bimetal build-native` or `bimetal build`.
+A missing addon, or one built for another platform or from other Rust sources, makes the import throw an `Error` that says to run `bimetal build`.
 
 ## Electron
 

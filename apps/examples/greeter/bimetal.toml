@@ -13,16 +13,15 @@
 # project = "python"              # relative to this file
 
 [typescript]
-# package = "greeter"             # defaults to the name
 # project = "typescript"          # relative to this file
 backend = "node"                  # a native Node.js addon; "wasm" by default
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "3189dfcccb06458cf47ffaf0fb95c6dc"
+source_fingerprint = "d801d27acec329fd91d082f110445c64"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "3a37b32024e89d78d590c656ad7f273d"
+output_fingerprint = "ed87c70bbf58a2c4b271d32a9960243d"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -64,7 +63,6 @@ inputs = [
     "../../../packages/runtime/src/contract_type.rs",
     "../../../packages/runtime/src/convert.rs",
     "../../../packages/runtime/src/lib.rs",
-    "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
     "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",

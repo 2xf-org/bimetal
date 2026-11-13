@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime
-from functools import cache
+from collections.abc import Callable
+from functools import cache, partial
 from importlib import import_module
-from typing import Annotated, Any, ClassVar, Literal, Protocol, TypeAlias
+from typing import Annotated, Any, ClassVar, Literal, Protocol, TypeAlias, TypeVar, cast
 
 from pydantic import (
     BaseModel,
@@ -28,14 +29,16 @@ from pydantic.functional_validators import BeforeValidator
 # import, because Python then looks for `_native` in the package itself.
 try:
     from . import _native as native
-    from ._native import PanicException
+    from ._native import Dumped, PanicException, Revalidate
 except ImportError as error:
     raise ImportError(
         f"the native extension {__package__}._native is missing or was built for "
-        "another platform; run `bimetal build-native` (or `bimetal build`) to build it"
+        "another platform; run `bimetal build` to build it"
     ) from error
 
 __all__ = [
+    "Adapter",
+    "Dumped",
     "ArrowArrayExportable",
     "ArrowSchemaExportable",
     "ArrowStreamExportable",
@@ -43,10 +46,9 @@ __all__ = [
     "ExternalVariant",
     "JsonValue",
     "PanicException",
-    "dump_host",
+    "Revalidate",
     "external_discriminator",
     "native",
-    "native_error",
     "restore_host",
     "type_adapter",
     "variant_tag",
@@ -57,6 +59,18 @@ __all__ = [
 # it generated the package from.
 native_schemas: dict[str, Any]
 
+# The classes that each models module registers by key, whose instances the
+# extension makes as Pydantic would validate them.
+native_classes: dict[str, Any] = {}
+
+# The module and name of each error's class by the error's key, which
+# `bimetal build` assigns below; the extension raises a typed error as that class.
+native_errors: dict[str, tuple[str, str]]
+
+
+def register_classes(classes: dict[str, Any]) -> None:
+    native_classes.update(classes)
+
 
 def require_contract(contract: str) -> None:
     # An extension built from other Rust sources, such as one built before a
@@ -64,7 +78,7 @@ def require_contract(contract: str) -> None:
     if getattr(native, "__bimetal_contract__", None) != contract:
         raise ImportError(
             f"the native extension {__package__}._native was built from other Rust "
-            "sources than this package; run `bimetal build-native` (or `bimetal build`) "
+            "sources than this package; run `bimetal build` "
             "to rebuild it"
         )
 
@@ -271,19 +285,6 @@ Duration: TypeAlias = Annotated[
 
 # A typed error crosses as its code, its message, and its fields as JSON or
 # `None`. The class says which model reads the fields of each code.
-def native_error(error: RuntimeError, error_type: Any) -> RuntimeError:
-    if len(error.args) != 3:
-        return error
-    code, message, details = error.args
-    models = getattr(error_type, "__bimetal_details__", {})
-    typed: RuntimeError
-    if details is None or code not in models:
-        typed = error_type(code, message)
-    else:
-        typed = error_type(code, message, models[code].model_validate_json(details))
-    return typed
-
-
 def native_resource(value: Any, resource_type: Any, parameter: str) -> Any:
     if not isinstance(value, resource_type):
         raise TypeError(
@@ -293,20 +294,29 @@ def native_resource(value: Any, resource_type: Any, parameter: str) -> Any:
     return value.native_resource
 
 
-# What Rust calls in place of a Python function: Pydantic reads the arguments
-# as the function's types say, and the result as Rust's type says.
-def host_callback(function: Any, parameters: Any, returns: Any) -> Any:
+_Function = TypeVar("_Function", bound=Callable[..., Any])
+
+
+# Bind the native function in place of a brief function that only passes its
+# arguments on, under the module's name, so a call crosses no Python frame.
+def bound(native: Any) -> Callable[[_Function], _Function]:
+    def bind(function: _Function) -> _Function:
+        native.__module__ = function.__module__
+        return cast(_Function, native)
+
+    return bind
+
+
+# What Rust calls in place of a Python function whose arguments reach a
+# numeric buffer, which Pydantic restores as the function's types say.
+def host_callback(function: Any, parameters: list[Adapter]) -> Any:
     if not callable(function):
         raise TypeError(f"expected a callable, not {type(function).__name__}")
-    adapters = [type_adapter(parameter) for parameter in parameters]
-    result = type_adapter(returns)
 
     def call(*arguments: Any) -> Any:
-        values = [
-            adapter.validate_python(argument)
-            for adapter, argument in zip(adapters, arguments)
-        ]
-        return _dump(result, function(*values))
+        return function(
+            *[adapter.validate(argument) for adapter, argument in zip(parameters, arguments)]
+        )
 
     return call
 
@@ -319,19 +329,41 @@ def type_adapter(annotation: Any, arbitrary_types: bool = False) -> TypeAdapter[
     return TypeAdapter(annotation, config=config)
 
 
-# What crosses for a value that the extension cannot read as Python holds it.
-# Pydantic validates it, so that a dictionary passed for a model meets the
-# model's rules, and a model instance returns as it is, with its fields not
-# checked again. Pydantic then writes it in its JSON mode, in one pass: a model
-# is a dictionary, and a date is ISO 8601 text.
-def dump_host(annotation: Any, value: Any) -> Any:
-    return _dump(type_adapter(annotation), value)
+# The validator and writer of one type, which builds Pydantic's adapter at its
+# first call. `dump` validates a value that the extension can't read, and writes
+# it in JSON mode.
+class Adapter:
+    __slots__ = ("_annotation", "_arbitrary_types", "validate", "dump")
+
+    validate: Callable[[Any], Any]
+    dump: Callable[[Any], Any]
+
+    def __init__(self, annotation: Callable[[], Any], arbitrary_types: bool = False) -> None:
+        self._annotation = annotation
+        self._arbitrary_types = arbitrary_types
+        self.validate = self._validate_first
+        self.dump = self._dump_first
+
+    def _load(self) -> None:
+        adapter = type_adapter(self._annotation(), self._arbitrary_types)
+        self.validate = partial(adapter.validate_python, strict=False)
+        self.dump = partial(
+            _dump_json_mode, adapter.validate_python, adapter.dump_python
+        )
+
+    def _validate_first(self, value: Any) -> Any:
+        self._load()
+        return self.validate(value)
+
+    def _dump_first(self, value: Any) -> Any:
+        self._load()
+        return self.dump(value)
 
 
-def _dump(adapter: TypeAdapter[Any], value: Any) -> Any:
-    return adapter.dump_python(
-        adapter.validate_python(value), by_alias=True, mode="json", context=_CROSSING
-    )
+def _dump_json_mode(
+    validate: Callable[[Any], Any], dump: Callable[..., Any], value: Any
+) -> Any:
+    return dump(validate(value), by_alias=True, mode="json", context=_CROSSING)
 
 
 # The values that Arrow parameters accept: any producer of the Arrow PyCapsule
@@ -350,10 +382,14 @@ class ArrowSchemaExportable(Protocol):
     def __arrow_c_schema__(self) -> object: ...
 
 
-require_contract("435c5c1b80b76c86")
+require_contract("be90d74fcb366856")
 
 native_schemas = {
     "greeter::greeter::Greeting": ["struct", {"message": None, "tone": ["named", "greeter::greeter::Tone"]}],
     "greeter::greeter::GreetingRequest": ["struct", {"excited": None, "name": None, "tone": ["named", "greeter::greeter::Tone"]}],
     "greeter::greeter::Tone": None,
+}
+
+native_errors = {
+    "greeter::greeter::GreeterError": ("greeter.api", "GreeterError"),
 }

@@ -15,7 +15,7 @@ try {
   native = createRequire(import.meta.url)("./native/native.node");
 } catch (error) {
   throw new Error(
-    `The Node.js addon native/native.node is missing, was built for another platform, or failed to load; run \`bimetal build-native\` (or \`bimetal build\`) to build it: ${error?.message ?? error}`,
+    `The Node.js addon native/native.node is missing, was built for another platform, or failed to load; run \`bimetal build\` to build it: ${error?.message ?? error}`,
     { cause: error },
   );
 }
@@ -26,7 +26,7 @@ const nativeReady = Promise.resolve();
 function requireContract(contract) {
   if (native.__bimetal_contract__ !== contract) {
     throw new Error(
-      "The Node.js addon native/native.node was built from other Rust sources than this package; run `bimetal build-native` (or `bimetal build`) to rebuild it.",
+      "The Node.js addon native/native.node was built from other Rust sources than this package; run `bimetal build` to rebuild it.",
     );
   }
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::config::HostPackage;
+use crate::config::{Host, HostPackage};
 use crate::dependencies::HostDependency;
 use crate::literal;
 use crate::problems::{self, Subject};
@@ -34,7 +34,8 @@ pub(crate) fn validate_typescript_project(
 
 /// What the generated package needs from the user's `package.json`.
 struct Expected<'project> {
-    /// The npm package name that bimetal.toml configures.
+    /// The npm package name, or the application name until `package.json`
+    /// sets one.
     name: &'project str,
     /// The version that Cargo.toml declares.
     version: &'project str,
@@ -47,19 +48,13 @@ struct Expected<'project> {
 /// Check one parsed `package.json`, and report every problem at once.
 fn validate_package(path: &Path, package: &Value, expected: &Expected<'_>) -> Result<()> {
     let mut problems = Vec::new();
-    // The npm package name is `package` in the [typescript] table of
-    // bimetal.toml, which defaults to the application name.
-    let name = literal::quoted(expected.name);
-    match package["name"].as_str() {
-        None => problems.push(format!(
-            "must set `\"name\": {name}`, the application's npm package name"
-        )),
-        Some(declared) if declared != expected.name => problems.push(format!(
-            "sets `\"name\": {}`, but the application's npm package is {name}: set `\"name\": {name}` here, or `package = {}` in the `[typescript]` table of bimetal.toml",
-            literal::quoted(declared),
-            literal::quoted(declared)
-        )),
-        Some(_) => {}
+    // `name` is the npm package name, which the application name stands in
+    // for until it is set.
+    if package["name"].as_str().is_none() {
+        problems.push(format!(
+            "must set `\"name\"`, the npm package name, such as `\"name\": {}`",
+            literal::quoted(expected.name)
+        ));
     }
     problems.extend(user_file::version_problem(
         package["version"].as_str(),
@@ -99,22 +94,32 @@ fn validate_package(path: &Path, package: &Value, expected: &Expected<'_>) -> Re
     }
     // A peer dependency shares the application's copy, whose classes the
     // generated code must recognize.
-    let missing: Vec<String> = expected
-        .peer_dependencies
-        .iter()
-        .filter(|dependency| package["peerDependencies"][dependency.name].is_null())
-        .map(|dependency| {
-            format!(
-                "{}: {}",
-                literal::quoted(dependency.name),
-                literal::quoted(dependency.requirement)
-            )
-        })
-        .collect();
+    let mut missing = Vec::new();
+    let mut older = Vec::new();
+    for dependency in expected.peer_dependencies {
+        let entry = format!(
+            "{}: {}",
+            literal::quoted(dependency.name),
+            literal::quoted(dependency.requirement)
+        );
+        match &package["peerDependencies"][dependency.name] {
+            Value::Null => missing.push(entry),
+            Value::String(declared) if dependency.allows_older(Host::TypeScript, declared) => {
+                older.push(format!("{entry} instead of {}", literal::quoted(declared)));
+            }
+            _ => {}
+        }
+    }
     if !missing.is_empty() {
         problems.push(format!(
             "must list the generated code's imports in `peerDependencies`: add {}",
             missing.join(", ")
+        ));
+    }
+    if !older.is_empty() {
+        problems.push(format!(
+            "must not allow versions older than the generated code needs: in `peerDependencies`, set {}",
+            older.join(", and ")
         ));
     }
     problems::report(Subject::File(path), &problems)
@@ -166,23 +171,16 @@ mod tests {
     }
 
     #[test]
-    fn a_wrong_name_says_which_name_to_set_and_where() {
+    fn a_missing_name_says_which_name_to_set() {
         let mut package = scaffolded();
-        package["name"] = json!("other");
-        let error = check(&package, &[])
-            .expect_err("the name differs")
-            .to_string();
-
-        assert_eq!(
-            error,
-            "package.json sets `\"name\": \"other\"`, but the application's npm package is \"my-app\": set `\"name\": \"my-app\"` here, or `package = \"other\"` in the `[typescript]` table of bimetal.toml"
-        );
         package["name"] = json!(null);
         let error = check(&package, &[])
             .expect_err("the name is missing")
             .to_string();
         assert!(
-            error.ends_with("must set `\"name\": \"my-app\"`, the application's npm package name"),
+            error.ends_with(
+                "must set `\"name\"`, the npm package name, such as `\"name\": \"my-app\"`"
+            ),
             "{error}"
         );
     }
@@ -244,5 +242,13 @@ mod tests {
         let mut package = scaffolded();
         package["peerDependencies"] = json!({"apache-arrow": "^21.2.0"});
         check(&package, &[APACHE_ARROW]).expect("the peer dependency is declared");
+        package["peerDependencies"] = json!({"apache-arrow": ">=21"});
+        let error = check(&package, &[APACHE_ARROW])
+            .expect_err("apache-arrow 21.0 lacks what the generated code needs")
+            .to_string();
+        assert!(
+            error.contains("set \"apache-arrow\": \"^21.2.0\" instead of \">=21\""),
+            "{error}"
+        );
     }
 }

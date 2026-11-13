@@ -57,7 +57,7 @@ Bimetal maps each staged `<host>/<file>` to `<project>/<file>`, checks every des
 
 ## 9. Install the native artifacts
 
-`build` and `build-native` copy the libraries of the Python and native builds into the hosts' projects, and record each one's size, modification time and content fingerprint in `.bimetal/native.json`, beside the source fingerprint and the local inputs. A later build hashes an artifact again only when its size or time changed. An artifact is copied beside its destination and renamed into place only when its bytes changed.
+`build` copies the libraries of the Python and native builds into the hosts' projects, and record each one's size, modification time and content fingerprint in `.bimetal/native.json`, beside the source fingerprint and the local inputs. A later build hashes an artifact again only when its size or time changed. An artifact is copied beside its destination and renamed into place only when its bytes changed.
 
 No artifact goes through the staging tree or `[generated]`. `output::native_file` names each platform's artifact from the file that implies it, the Python stub or the TypeScript runtime, so publication deletes every platform's artifacts with a stale one.
 

@@ -7,7 +7,10 @@
 //! never leave the thread, so safe code cannot keep a handle that Node.js
 //! has released.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void};
+use std::fmt::Write as _;
 use std::marker::PhantomData;
 use std::sync::OnceLock;
 use std::{mem, ptr};
@@ -15,6 +18,7 @@ use std::{mem, ptr};
 use bimetal_ir::typescript_names;
 use napi_sys as sys;
 
+use super::courier::Station;
 use super::error::Error;
 use super::value::{Element, Value};
 use crate::runtime::executor;
@@ -118,8 +122,18 @@ pub(super) struct State {
     map: sys::napi_ref,
     map_set: sys::napi_ref,
     symbol: sys::napi_ref,
+    /// The functions that make a frozen array of their arguments, and a
+    /// frozen object of their arguments taken as keys and values in turn.
+    array_of: sys::napi_ref,
+    map_of: sys::napi_ref,
+    /// The function that makes a frozen object with each list of keys, in
+    /// order, from as many arguments, compiled at the first object with the
+    /// list.
+    objects: RefCell<HashMap<Box<[&'static str]>, sys::napi_ref>>,
     /// The constructor of each class.
     pub(super) classes: Vec<DefinedClass>,
+    /// The thread-safe function that carries jobs from other threads here.
+    pub(super) station: Station,
 }
 
 /// A class that the module initializer defined in one environment.
@@ -382,6 +396,64 @@ impl<'env> Env<'env> {
         Ok((map, self.reference(state.map_set)?))
     }
 
+    /// Return the function that makes a frozen array of its arguments.
+    pub(crate) fn array_of(self) -> Result<Value<'env>, Error> {
+        self.reference(self.state()?.array_of)
+    }
+
+    /// Return the function that makes a frozen object of its arguments, taken
+    /// as keys and values in turn. `Object.fromEntries` defines an own
+    /// property for every key, also `__proto__`, which assigning would treat
+    /// as the prototype.
+    pub(crate) fn map_of(self) -> Result<Value<'env>, Error> {
+        self.reference(self.state()?.map_of)
+    }
+
+    /// Return the function that makes a frozen object with `keys`, in order,
+    /// from as many arguments. A literal of fixed keys makes each object in
+    /// one shape, for less than adding its properties one at a time.
+    pub(crate) fn object_of(self, keys: &[&'static str]) -> Result<Value<'env>, Error> {
+        let state = self.state()?;
+        if let Some(&function) = state.objects.borrow().get(keys) {
+            return self.reference(function);
+        }
+        let mut source = String::from("(function (");
+        for index in 0..keys.len() {
+            let _ = write!(source, "{}value{index}", if index == 0 { "" } else { ", " });
+        }
+        source.push_str(") { return Object.freeze({");
+        for (index, key) in keys.iter().enumerate() {
+            let quoted =
+                serde_json::to_string(key).map_err(|error| Error::Message(error.to_string()))?;
+            // A literal's `__proto__` key sets the prototype, and a computed
+            // one defines the property.
+            let key = if *key == "__proto__" {
+                format!("[{quoted}]")
+            } else {
+                quoted
+            };
+            let _ = write!(
+                source,
+                "{}{key}: value{index}",
+                if index == 0 { " " } else { ", " }
+            );
+        }
+        source.push_str(" }); })");
+        let function = self.compile(&source)?;
+        state
+            .objects
+            .borrow_mut()
+            .insert(keys.into(), self.keep(function)?);
+        Ok(function)
+    }
+
+    /// Compile the script `source`, which this module writes, and return its
+    /// value.
+    fn compile(self, source: &str) -> Result<Value<'env>, Error> {
+        let source = self.string(source)?;
+        napi!(self, napi_run_script(source.raw) -> value)
+    }
+
     /// Return whether `value` is a `Map`.
     pub(crate) fn is_map(self, value: Value<'env>) -> Result<bool, Error> {
         value.instance_of(self.reference(self.state()?.map)?)
@@ -430,11 +502,23 @@ impl<'env> Env<'env> {
         let global = self.global()?;
         let map = global.named(c"Map")?;
         let map_set = map.named(c"prototype")?.named(c"set")?;
+        let array_of = self.compile("(function (...values) { return Object.freeze(values); })")?;
+        let map_of = self.compile(
+            "(function (...entries) {\n\
+             \x20 const pairs = [];\n\
+             \x20 for (let index = 0; index < entries.length; index += 2) pairs.push([entries[index], entries[index + 1]]);\n\
+             \x20 return Object.freeze(Object.fromEntries(pairs));\n\
+             })",
+        )?;
         let state = Box::new(State {
             map: self.keep(map)?,
             map_set: self.keep(map_set)?,
             symbol: self.keep(global.named(c"Symbol")?)?,
+            array_of: self.keep(array_of)?,
+            map_of: self.keep(map_of)?,
+            objects: RefCell::default(),
             classes,
+            station: Station::start(self)?,
         });
         let state = Box::into_raw(state);
         let status = napi!(

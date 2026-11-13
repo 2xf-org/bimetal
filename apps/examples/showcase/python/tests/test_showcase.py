@@ -328,6 +328,9 @@ class FunctionTest(unittest.TestCase):
         invalid = [
             lambda: echo_settings({"version": "v2"}),  # type: ignore[arg-type]
             lambda: echo_settings({"version": "v1", "extra": 1}),  # type: ignore[arg-type]
+            # The tag picks the variant, as Serde requires it to.
+            lambda: describe({"recordId": "r-1"}),  # type: ignore[arg-type]
+            lambda: describe({"kind": "renamed", "recordId": "r-1"}),  # type: ignore[arg-type]
             lambda: echo_record({**record().model_dump(), "stars": 9}),  # type: ignore[arg-type]
             lambda: route_length([{"x": 0, "y": "north"}]),  # type: ignore[list-item]
             lambda: count_tags([{**record().model_dump(), "label": ""}]),  # type: ignore[list-item]
@@ -365,6 +368,15 @@ class FunctionTest(unittest.TestCase):
 
     def test_parameters_named_like_keywords_gain_a_suffix(self) -> None:
         self.assertEqual(qualify(package="geometry", class_value="Point"), "geometry.Point")
+
+    def test_a_brief_function_that_passes_values_on_is_the_native_function(self) -> None:
+        self.assertEqual(type(bounds).__name__, "builtin_function_or_method")
+        self.assertEqual((bounds.__name__, bounds.__module__), ("bounds", "showcase.api"))
+        self.assertIn("smallest and largest", bounds.__doc__ or "")
+        self.assertEqual(bounds(values=[2, 5]), (2, 5))
+        with self.assertRaisesRegex(TypeError, r"^bounds\(\) missing 1 required positional"):
+            bounds()  # type: ignore[call-arg]
+        self.assertEqual(type(repeat).__name__, "function")
 
     def test_lists_maps_tuples_and_options(self) -> None:
         self.assertEqual(count_tags([record(), record(tags=["b"])]), {"a": 1, "b": 2})
@@ -471,7 +483,7 @@ class PackageTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ImportError: the native extension showcase._native is missing", result.stderr)
-        self.assertIn("bimetal build-native", result.stderr)
+        self.assertIn("run `bimetal build`", result.stderr)
 
     def test_an_extension_from_other_sources_says_how_to_rebuild_it(self) -> None:
         source = Path(showcase.__file__).parent
@@ -497,7 +509,7 @@ class PackageTest(unittest.TestCase):
             "ImportError: the native extension showcase._native was built from other Rust sources",
             result.stderr,
         )
-        self.assertIn("bimetal build-native", result.stderr)
+        self.assertIn("run `bimetal build`", result.stderr)
 
 
 class NamespaceTest(unittest.TestCase):

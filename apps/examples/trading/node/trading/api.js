@@ -4,6 +4,12 @@ import { checkArgument as $checkArgument, checkNative as $checkNative, native as
 import { arrowFromIpc as $arrowFromIpc } from "./arrow.js";
 import * as api_core from "./core/api.js";
 
+const $spec0 = ["named", "trading::trading::EngineConfig"];
+const $spec1 = ["named", "trading-core::trading_core::OrderRequest"];
+const $spec2 = ["named", "trading-core::trading_core::Order"];
+const $spec3 = ["named", "trading-core::trading_core::Snapshot"];
+const $spec4 = ["list", ["named", "trading-core::trading_core::Quote"]];
+
 export class ConfigError extends globalThis.Error {
   constructor(code, message) {
     super(message);
@@ -28,7 +34,7 @@ export class Engine {
     $checkNative();
     $checkArgument(config, "object", "Engine.connect(): argument `config`");
     try {
-      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_trading_a92d5c129f97bbe8"].connect($prepareHost(config, ["named", "trading::trading::EngineConfig"])));
+      $resource.nativeResource = await $nativePromise($native["__bimetal_resource_trading_a92d5c129f97bbe8"].connect($prepareHost(config, $spec0)));
     } catch ($error) {
       throw $nativeError($error, ConfigError);
     }
@@ -39,7 +45,7 @@ export class Engine {
     $checkNative();
     $checkArgument(order, "object", "Engine.submit(): argument `order`");
     try {
-      return $restoreHost(await $nativePromise(this.nativeResource.submit($prepareHost(order, ["named", "trading-core::trading_core::OrderRequest"]))), ["named", "trading-core::trading_core::Order"]);
+      return $restoreHost(await $nativePromise(this.nativeResource.submit($prepareHost(order, $spec1))), $spec2);
     } catch ($error) {
       throw $nativeError($error, api_core.OrderError);
     }
@@ -48,7 +54,7 @@ export class Engine {
   snapshot() {
     $checkNative();
     try {
-      return $restoreHost(this.nativeResource.snapshot(), ["named", "trading-core::trading_core::Snapshot"]);
+      return $restoreHost(this.nativeResource.snapshot(), $spec3);
     } catch ($error) {
       throw $nativeError($error);
     }
@@ -67,7 +73,7 @@ export class Engine {
     $checkNative();
     $checkArgument(count, "number", "Engine.quotes(): argument `count`");
     try {
-      return $restoreHost(await $nativePromise(this.nativeResource.quotes($prepareHost(count, null))), ["list", ["named", "trading-core::trading_core::Quote"]]);
+      return $restoreHost(await $nativePromise(this.nativeResource.quotes(count)), $spec4);
     } catch ($error) {
       throw $nativeError($error);
     }
@@ -77,7 +83,7 @@ export class Engine {
     $checkNative();
     $checkArgument(amount, "bigint", "Engine.withdraw(): argument `amount`");
     try {
-      return await $nativePromise(this.nativeResource.withdraw($prepareHost(amount, null)));
+      return await $nativePromise(this.nativeResource.withdraw(amount));
     } catch ($error) {
       throw $nativeError($error, api_core.OrderError);
     }

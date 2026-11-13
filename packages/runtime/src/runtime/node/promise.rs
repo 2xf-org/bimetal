@@ -1,21 +1,19 @@
 //! Async calls. Each returns a promise, and runs its future to its first wait
 //! on the JavaScript thread, unless it takes a `Callback` or a stream. A call
 //! that waits goes on the shared runtime of [`executor`], and the worker that
-//! finishes it hands the result back to the JavaScript thread through a
-//! thread-safe function of its own, which converts it and settles the promise.
+//! finishes it hands the result back to the JavaScript thread through the
+//! environment's courier, which converts it and settles the promise.
 //!
 //! A pending call keeps the event loop alive, as a pending timer does. When
 //! the environment tears down first, the result is dropped without calling
 //! Node-API.
 
-use std::ffi::c_void;
 use std::future::Future;
-use std::marker::PhantomData;
 use std::ptr;
-use std::sync::{Arc, Mutex};
 
 use napi_sys as sys;
 
+use super::courier::{Courier, Job};
 use super::env::{self, Env, napi};
 use super::error::Error;
 use super::value::Value;
@@ -70,8 +68,9 @@ enum Hold {
 
 /// Return a promise of `future`'s result. Unless `start` gives the call to a
 /// worker, the future runs to its first wait on this thread, which settles the
-/// promise of a call that finishes there with no thread-safe function. A call
-/// that waits goes on the shared runtime.
+/// promise of a call that finishes there without the courier. A call that
+/// waits goes on the shared runtime, and the worker that finishes it posts
+/// the result to the environment's courier.
 fn promise_of<'env, F, D>(
     env: Env<'env>,
     start: Start,
@@ -95,7 +94,7 @@ where
     // The call may have run up to its first wait, so a failure here rejects
     // its promise, as a failure of the call would, and the call drops
     // unfinished.
-    let sender = match Sender::<D>::start(env, deferred, hold) {
+    let sender = match Sender::start(env, deferred, hold) {
         Ok(sender) => sender,
         Err(error) => {
             resolve::<D>(env, Promise(deferred), Err(error));
@@ -123,22 +122,6 @@ where
 #[must_use]
 pub struct Deferred<D>(D);
 
-/// The reason to expect when locking a [`Slot`]: only a copy of its handle or
-/// an assignment to it runs under the lock, and neither can panic.
-const UNPOISONED: &str = "no code panics while holding a thread-safe function's slot";
-
-/// The thread-safe function of one call while Node.js keeps it, which its
-/// finalizer empties.
-type Slot = Mutex<Option<Function>>;
-
-/// A thread-safe function.
-#[derive(Clone, Copy)]
-struct Function(sys::napi_threadsafe_function);
-
-// SAFETY: Node-API lets any thread call and release a thread-safe function
-// until Node.js finalizes it, which empties its slot under the slot's lock.
-unsafe impl Send for Function {}
-
 /// The promise of one call.
 struct Promise(sys::napi_deferred);
 
@@ -146,151 +129,69 @@ struct Promise(sys::napi_deferred);
 // which alone settles it.
 unsafe impl Send for Promise {}
 
-/// What a finished call hands back to the JavaScript thread.
-struct Completion<D> {
-    promise: Promise,
-    outcome: Result<Deferred<D>, Error>,
-}
-
-/// The worker's end of one call's thread-safe function, which it uses once,
-/// and releases when it drops, whether or not the call's future finished.
-struct Sender<D> {
-    slot: Arc<Slot>,
+/// The worker's end of one call, which hands its outcome to the JavaScript
+/// thread once, and releases the call's hold on the event loop when it drops,
+/// whether or not the call's future finished.
+struct Sender {
+    courier: Courier,
     promise: Option<Promise>,
-    /// Whether Node.js answered the call with `napi_closing`, after which
-    /// this thread must not release the function.
-    closing: bool,
-    conversion: PhantomData<fn() -> D>,
+    hold: Hold,
 }
 
-impl<D> Sender<D>
-where
-    D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error> + Send + 'static,
-{
-    /// Create the thread-safe function that settles `promise`, which keeps
-    /// the event loop alive as `hold` says.
+impl Sender {
+    /// Start sending the outcome that settles `promise`, which keeps the
+    /// event loop alive as `hold` says.
     fn start(env: Env<'_>, promise: sys::napi_deferred, hold: Hold) -> Result<Self, Error> {
-        let slot: Arc<Slot> = Arc::new(Mutex::new(None));
-        let name = env.string("bimetal")?;
-        let finalize_data = Arc::into_raw(Arc::clone(&slot));
-        let mut function = ptr::null_mut();
-        let created = napi!(
-            env,
-            napi_create_threadsafe_function(
-                ptr::null_mut(),
-                ptr::null_mut(),
-                name.raw,
-                0,
-                1,
-                finalize_data.cast_mut().cast::<c_void>(),
-                Some(finalize),
-                ptr::null_mut(),
-                Some(settle::<D>),
-                &mut function
-            )
-        );
-        if let Err(error) = created {
-            // SAFETY: Node-API did not take the reference, which `into_raw`
-            // made.
-            drop(unsafe { Arc::from_raw(finalize_data) });
-            return Err(error);
+        let station = &env.state()?.station;
+        if hold == Hold::EventLoop {
+            station.hold(env)?;
         }
-        // The finalizer runs on this thread, so not before this.
-        *slot.lock().expect(UNPOISONED) = Some(Function(function));
-        let sender = Self {
-            slot,
+        Ok(Self {
+            courier: station.courier(),
             promise: Some(Promise(promise)),
-            closing: false,
-            conversion: PhantomData,
-        };
-        if hold == Hold::Nothing {
-            // The function stays callable; only the event loop stops waiting
-            // for it. On failure, the sender's drop releases the function.
-            napi!(env, napi_unref_threadsafe_function(function))?;
-        }
-        Ok(sender)
+            hold,
+        })
     }
 
     /// Hand the call's outcome to the JavaScript thread, or drop it when the
     /// environment has torn down.
-    fn send(mut self, outcome: Result<Deferred<D>, Error>) {
+    fn send<D>(mut self, outcome: Result<Deferred<D>, Error>)
+    where
+        D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error> + Send + 'static,
+    {
         let promise = self.promise.take().expect("a call sends its outcome once");
-        let completion = Box::into_raw(Box::new(Completion { promise, outcome }));
-        let taken = {
-            let slot = self.slot.lock().expect(UNPOISONED);
-            slot.is_some_and(|function| {
-                // SAFETY: Node.js has not finalized the function, whose slot
-                // is still full, and cannot while this thread holds the
-                // lock. Node.js takes the box only when the call succeeds.
-                let status = unsafe {
-                    sys::napi_call_threadsafe_function(
-                        function.0,
-                        completion.cast::<c_void>(),
-                        sys::ThreadsafeFunctionCallMode::blocking,
-                    )
-                };
-                self.closing = status == sys::Status::napi_closing;
-                status == sys::Status::napi_ok
-            })
-        };
-        if !taken {
-            // SAFETY: Node-API did not take the box, which `into_raw` made.
-            env::discard(unsafe { Box::from_raw(completion) });
+        let hold = self.hold;
+        let job: Job = Box::new(move |env| {
+            resolve(env, promise, outcome);
+            release(env, hold);
+        });
+        if let Err(job) = self.courier.post(job) {
+            env::discard(job);
         }
     }
 }
 
-impl<D> Drop for Sender<D> {
+impl Drop for Sender {
     fn drop(&mut self) {
-        // A call whose future never finished releases the function too, so
-        // that the event loop does not wait for it forever.
-        if self.closing {
+        // A call whose future never finished releases its hold too, so the event loop
+        // doesn't wait for it forever; its promise stays pending.
+        if self.promise.is_none() {
             return;
         }
-        if let Some(function) = *self.slot.lock().expect(UNPOISONED) {
-            // SAFETY: Node.js finalizes the function only once every thread
-            // released it, or when the environment tears down, which empties
-            // the slot first; this thread holds the slot's lock, and
-            // releases its one reference once.
-            unsafe {
-                sys::napi_release_threadsafe_function(
-                    function.0,
-                    sys::ThreadsafeFunctionReleaseMode::release,
-                );
-            }
+        let hold = self.hold;
+        if let Err(job) = self.courier.post(Box::new(move |env| release(env, hold))) {
+            env::discard(job);
         }
     }
 }
 
-/// Empty the slot of a thread-safe function that Node.js finalizes.
-unsafe extern "C" fn finalize(_env: sys::napi_env, data: *mut c_void, _hint: *mut c_void) {
-    // SAFETY: `Sender::start` gave Node.js this reference, which Node.js
-    // returns once.
-    let slot = unsafe { Arc::from_raw(data.cast_const().cast::<Slot>()) };
-    *slot.lock().expect(UNPOISONED) = None;
-}
-
-/// Convert a finished call's result on the JavaScript thread, and settle its
-/// promise. Without an environment, which is tearing down, drop it.
-unsafe extern "C" fn settle<D>(
-    env: sys::napi_env,
-    _callback: sys::napi_value,
-    _context: *mut c_void,
-    data: *mut c_void,
-) where
-    D: for<'call> FnOnce(Env<'call>) -> Result<Value<'call>, Error>,
-{
-    // SAFETY: `Sender::send` passed this box, which Node.js returns once.
-    let completion = unsafe { Box::from_raw(data.cast::<Completion<D>>()) };
-    if env.is_null() {
-        env::discard(completion);
-        return;
+/// Release a finished call's hold on the event loop, if it has one.
+fn release(env: Env<'_>, hold: Hold) {
+    if hold == Hold::EventLoop
+        && let Ok(state) = env.state()
+    {
+        state.station.release(env);
     }
-    // SAFETY: Node.js calls a thread-safe function's callback on the
-    // environment's thread, with a scope open until it returns.
-    let env = unsafe { Env::new(env) };
-    let Completion { promise, outcome } = *completion;
-    resolve(env, promise, outcome);
 }
 
 /// Convert a finished call's result on the JavaScript thread, and settle its

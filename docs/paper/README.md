@@ -10,4 +10,4 @@ The source is LaTeX in the ACM format, with diagrams in TikZ. [Tectonic](https:/
 cd docs/paper && tectonic -X compile bimetal.tex
 ```
 
-The numbers in its section on costs come from `mise run bench`.
+The time per call in its section on costs comes from `mise run lab`, and the memory and build times from `mise run bench`.

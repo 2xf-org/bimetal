@@ -17,6 +17,7 @@ from showcase._runtime import (
     ExternalVariant as _bimetal_ExternalVariant,
     JsonValue as _bimetal_JsonValue,
     external_discriminator as _bimetal_external_discriminator,
+    register_classes as _bimetal_register_classes,
     type_adapter as _bimetal_type_adapter,
     variant_tag as _bimetal_variant_tag,
 )
@@ -101,7 +102,7 @@ class EventDeleted(BaseModel):
 
 
 #: Something that happened to a record.
-Event: TypeAlias = EventCreated | EventMoved | EventDeleted
+Event: TypeAlias = Annotated[EventCreated | EventMoved | EventDeleted, Field(discriminator="kind")]
 
 
 class Holiday(BaseModel):
@@ -368,6 +369,20 @@ StrokeMoveTo.model_rebuild()
 StrokeLineTo.model_rebuild()
 StrokeAgain.model_rebuild()
 StrokePause.model_rebuild()
+
+
+_bimetal_register_classes({
+    "showcase::showcase::Entry": Entry,
+    "showcase::showcase::Event": {"created": EventCreated, "moved": EventMoved, "deleted": EventDeleted},
+    "showcase::showcase::Holiday": Holiday,
+    "showcase::showcase::Numbers": Numbers,
+    "showcase::showcase::Priority": Priority,
+    "showcase::showcase::Record": Record,
+    "showcase::showcase::Retry": Retry,
+    "showcase::showcase::Settings": Settings,
+    "showcase::showcase::Statement": Statement,
+    "showcase::showcase::Stroke": {"lift": StrokeLift, "move_to": StrokeMoveTo, "line_to": StrokeLineTo, "again": StrokeAgain, "pause": StrokePause},
+})
 
 __all__ = [
     "Entry",

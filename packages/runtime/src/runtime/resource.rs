@@ -31,6 +31,10 @@ impl<T> Clone for Resource<T> {
 
 /// A Rust type that `#[bimetal::export]` turned into a resource.
 #[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a resource",
+    note = "a `&mut T` or `Option<&T>` parameter takes a resource, a type whose impl block `#[bimetal::export]` exports; take any other value owned, such as an `Option<String>`"
+)]
 pub trait ResourceType {
     /// Return the identity of the resource's declaration.
     fn identity() -> DefinitionId;
@@ -157,11 +161,31 @@ impl<T> Resource<T> {
 /// twice could wait for itself: on a second borrow when either needs the value
 /// alone, and on a second read when a writer queues between the two, because a
 /// writer goes first.
+///
+/// The first few fit without allocating, so a call that reaches none, or
+/// only its receiver and an argument, costs a few stores.
 #[doc(hidden)]
 #[derive(Default)]
-pub struct ReachedResources(Vec<usize>);
+pub struct ReachedResources {
+    /// The addresses of the first resources, in the order the call reached
+    /// them.
+    first: [usize; 4],
+    /// How many of `first` the call has reached.
+    count: usize,
+    /// The addresses after the first four.
+    rest: Vec<usize>,
+}
 
 impl ReachedResources {
+    /// Start the record of a method's call, which has reached its receiver.
+    #[must_use]
+    pub fn with_receiver<T>(receiver: &Resource<T>) -> Self {
+        let mut reached = Self::default();
+        reached.first[0] = Arc::as_ptr(&receiver.value).addr();
+        reached.count = 1;
+        reached
+    }
+
     /// Note that the call named `callable` reached `resource`.
     ///
     /// # Errors
@@ -173,10 +197,16 @@ impl ReachedResources {
         callable: &'static str,
     ) -> Result<(), ResourceError> {
         let address = Arc::as_ptr(&resource.value).addr();
-        if self.0.contains(&address) {
+        if self.first[..self.count].contains(&address) || self.rest.contains(&address) {
             return Err(ResourceError::Aliased(callable));
         }
-        self.0.push(address);
+        match self.first.get_mut(self.count) {
+            Some(slot) => {
+                *slot = address;
+                self.count += 1;
+            }
+            None => self.rest.push(address),
+        }
         Ok(())
     }
 }
@@ -279,6 +309,34 @@ mod tests {
         );
         clone.close();
         assert!(resource.closed());
+    }
+
+    #[test]
+    fn a_method_has_reached_its_receiver() {
+        let receiver = Resource::new(0_u8);
+        let mut reached = ReachedResources::with_receiver(&receiver);
+
+        assert_eq!(
+            reached.add(&receiver.clone(), "Counter.merge"),
+            Err(ResourceError::Aliased("Counter.merge"))
+        );
+        assert_eq!(reached.add(&Resource::new(1_u8), "Counter.merge"), Ok(()));
+    }
+
+    #[test]
+    fn a_call_tells_apart_more_resources_than_fit_inline() {
+        let resources: Vec<Resource<u8>> = (0..6).map(Resource::new).collect();
+        let mut reached = ReachedResources::default();
+
+        for resource in &resources {
+            assert_eq!(reached.add(resource, "Counter.merge"), Ok(()));
+        }
+        for resource in [&resources[1], &resources[5]] {
+            assert_eq!(
+                reached.add(resource, "Counter.merge"),
+                Err(ResourceError::Aliased("Counter.merge"))
+            );
+        }
     }
 
     #[test]

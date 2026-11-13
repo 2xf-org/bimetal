@@ -18,7 +18,7 @@
     "query"
   ],
   "peerDependencies": {
-    "apache-arrow": ">=21"
+    "apache-arrow": ">=21.2"
   },
   "devDependencies": {
     "apache-arrow": "^21"

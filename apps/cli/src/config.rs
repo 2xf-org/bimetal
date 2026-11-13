@@ -119,9 +119,6 @@ pub(crate) struct PythonSettings {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct TypeScriptSettings {
-    /// Optional npm package-name override.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) package: Option<String>,
     /// Optional project-folder override, relative to `bimetal.toml`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) project: Option<String>,

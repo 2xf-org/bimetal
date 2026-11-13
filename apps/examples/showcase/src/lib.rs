@@ -274,7 +274,10 @@ pub fn describe(event: Event) -> String {
 /// Return the day after `date`, or `None` past the last day a date can be.
 #[bimetal::export]
 #[must_use]
-pub fn next_day(#[bimetal(default = "2028-02-28")] date: NaiveDate) -> Option<NaiveDate> {
+pub fn next_day(
+    #[bimetal(default = NaiveDate::from_ymd_opt(2028, 2, 28).expect("the day exists"))]
+    date: NaiveDate,
+) -> Option<NaiveDate> {
     date.succ_opt()
 }
 
@@ -307,7 +310,10 @@ pub fn observe(holiday: Holiday) -> Holiday {
 /// Return the longer of two waits, the second a second unless given.
 #[bimetal::export]
 #[must_use]
-pub fn longer(first: Duration, #[bimetal(default = 1_000_000_000)] second: Duration) -> Duration {
+pub fn longer(
+    first: Duration,
+    #[bimetal(default = Duration::from_secs(1))] second: Duration,
+) -> Duration {
     first.max(second)
 }
 
@@ -354,7 +360,10 @@ pub fn retrace(mut strokes: Vec<Stroke>) -> Vec<Stroke> {
 /// otherwise.
 #[bimetal::export]
 #[must_use]
-pub fn finish(mut strokes: Vec<Stroke>, #[bimetal(default = "lift")] last: Stroke) -> Vec<Stroke> {
+pub fn finish(
+    mut strokes: Vec<Stroke>,
+    #[bimetal(default = Stroke::Lift)] last: Stroke,
+) -> Vec<Stroke> {
     strokes.push(last);
     strokes
 }
@@ -374,7 +383,11 @@ pub fn parse_priority(text: &str) -> Result<Priority, ParseError> {
 }
 
 /// The smallest and largest value, or nothing for an empty list.
+///
+/// A brief call keeps Python's interpreter lock, and this one, which takes
+/// and returns plain values, is the native function itself in Python.
 #[bimetal::export]
+#[bimetal(brief)]
 #[must_use]
 pub fn bounds(values: Vec<i32>) -> Option<(i32, i32)> {
     let minimum = *values.iter().min()?;
@@ -409,14 +422,16 @@ pub fn ping() {}
 /// A parameter that shares its name with a Python builtin, such as `bytes`,
 /// gains a trailing underscore in Python: `bytes_`.
 #[bimetal::export]
-#[bimetal(returns(bytes))]
 #[must_use]
-pub fn reverse(#[bimetal(bytes)] bytes: &[u8]) -> Vec<u8> {
+pub fn reverse(bytes: &[u8]) -> Vec<u8> {
     bytes.iter().rev().copied().collect()
 }
 
 /// Repeat a text. Its Python parameters are `str_` and `int_`.
+///
+/// It is brief, but its Python function renames its parameters, so it stays.
 #[bimetal::export]
+#[bimetal(brief)]
 #[must_use]
 pub fn repeat(str: &str, int: u32) -> String {
     str.repeat(int.try_into().unwrap_or(usize::MAX))
@@ -424,9 +439,8 @@ pub fn repeat(str: &str, int: u32) -> String {
 
 /// A 4-byte fingerprint of some data.
 #[bimetal::export]
-#[bimetal(returns(bytes))]
 #[must_use]
-pub fn fingerprint(#[bimetal(bytes)] data: &[u8]) -> [u8; 4] {
+pub fn fingerprint(data: &[u8]) -> [u8; 4] {
     let mut digest = [0_u8; 4];
     for (index, byte) in data.iter().enumerate() {
         digest[index % 4] ^= byte;

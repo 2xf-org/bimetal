@@ -46,6 +46,9 @@ struct Imports {
     namespaces: BTreeSet<Namespace>,
     /// Whether the declarations name apache-arrow's types.
     apache_arrow: bool,
+    /// The schemas that the JavaScript passes to the adapters, which the
+    /// module defines once as constants, in the order of first use.
+    specs: Vec<String>,
 }
 
 /// Shared contract and namespace state for one generated TypeScript module.
@@ -105,6 +108,20 @@ impl<'emit> TypeScriptContext<'emit> {
         self.alias(API_ALIAS_PREFIX, namespace)
     }
 
+    /// Spell the constant that holds the schema `literal`, which the module
+    /// defines once below its imports, so that a call allocates no schema.
+    pub(super) fn spec(&self, literal: String) -> String {
+        let mut imports = self.imports.borrow_mut();
+        let index = match imports.specs.iter().position(|spec| *spec == literal) {
+            Some(index) => index,
+            None => {
+                imports.specs.push(literal);
+                imports.specs.len() - 1
+            }
+        };
+        format!("$spec{index}")
+    }
+
     /// Spell the namespace of apache-arrow's types.
     pub(super) fn apache_arrow(&self) -> &'static str {
         self.imports.borrow_mut().apache_arrow = true;
@@ -142,6 +159,12 @@ impl<'emit> TypeScriptContext<'emit> {
                 self.alias(API_ALIAS_PREFIX, namespace),
                 self.path(namespace, API_MODULE)
             );
+        }
+        if !imports.specs.is_empty() {
+            source.push('\n');
+            for (index, spec) in imports.specs.iter().enumerate() {
+                let _ = writeln!(source, "const $spec{index} = {spec};");
+            }
         }
         module(source, body)
     }

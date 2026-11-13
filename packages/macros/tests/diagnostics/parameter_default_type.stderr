@@ -1,0 +1,7 @@
+error[E0308]: mismatched types
+ --> tests/diagnostics/parameter_default_type.rs:6:35
+  |
+6 | pub fn repeat(#[bimetal(default = 1.5)] times: u32) -> u32 {
+  |                                   ^^^          --- expected due to this
+  |                                   |
+  |                                   expected `u32`, found floating-point number

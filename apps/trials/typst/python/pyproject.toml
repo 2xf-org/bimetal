@@ -11,7 +11,7 @@ classifiers = ["Private :: Do Not Upload"]
 # Add "numpy>=2,<3" when the contract uses buffers, and "pyarrow>=16" when it
 # uses Arrow values.
 dependencies = [
-    "pydantic>=2,<3",
+    "pydantic>=2.7,<3",
 ]
 
 [tool.pdm.build]

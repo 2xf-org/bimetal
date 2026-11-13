@@ -128,7 +128,7 @@ impl Frame {
     /// Read CSV text.
     #[bimetal(constructor)]
     pub fn read_csv(
-        #[bimetal(bytes)] data: Vec<u8>,
+        data: Vec<u8>,
         #[bimetal(default = true)] has_header: bool,
     ) -> Result<Self, FrameError> {
         let frame = CsvReadOptions::default()
@@ -219,7 +219,7 @@ impl Frame {
 
     /// Whether two frames hold the same values.
     #[bimetal(eq)]
-    pub fn equals(&self, #[bimetal(resource)] other: &Frame) -> bool {
+    pub fn equals(&self, other: &Frame) -> bool {
         self.frame.equals_missing(&other.frame)
     }
 
@@ -252,7 +252,6 @@ impl Frame {
     }
 
     /// The first rows.
-    #[bimetal(returns(resource))]
     pub fn head(&self, #[bimetal(default = 5)] count: u32) -> Frame {
         Frame {
             frame: self.frame.head(Some(count as usize)),
@@ -260,7 +259,6 @@ impl Frame {
     }
 
     /// Start a query over the frame, which runs when it collects.
-    #[bimetal(returns(resource))]
     pub fn lazy(&self) -> Query {
         Query {
             query: self.frame.clone().lazy(),
@@ -268,7 +266,6 @@ impl Frame {
     }
 
     /// Run SQL over the frame, which the query calls `self`.
-    #[bimetal(returns(resource))]
     pub fn sql(&self, query: &str) -> Result<Frame, FrameError> {
         let mut context = SQLContext::new();
         context.register("self", self.frame.clone().lazy());
@@ -278,10 +275,9 @@ impl Frame {
     }
 
     /// Join another frame on columns that both have.
-    #[bimetal(returns(resource))]
     pub fn join(
         &self,
-        #[bimetal(resource)] other: &Frame,
+        other: &Frame,
         on: Vec<String>,
         #[bimetal(default = "inner")] how: &str,
     ) -> Result<Frame, FrameError> {
@@ -306,7 +302,6 @@ impl Frame {
     }
 
     /// Add a column of what `function` returns for each value of a float column.
-    #[bimetal(returns(resource))]
     pub fn map_column(
         &self,
         column: &str,
@@ -328,7 +323,6 @@ impl Frame {
     }
 
     /// Walk the frame in Arrow batches of at most `size` rows.
-    #[bimetal(returns(resource))]
     pub fn batches(&self, #[bimetal(default = 1000)] size: u32) -> Result<Batches, FrameError> {
         let mut pending = VecDeque::new();
         let height = self.frame.height();
@@ -345,8 +339,7 @@ impl Frame {
     }
 
     /// Stack frames of the same columns.
-    #[bimetal(returns(resource))]
-    pub fn stack(&self, #[bimetal(resource)] other: &Frame) -> Result<Frame, FrameError> {
+    pub fn stack(&self, other: &Frame) -> Result<Frame, FrameError> {
         let frame = concat(
             [self.frame.clone().lazy(), other.frame.clone().lazy()],
             UnionArgs::default(),
@@ -385,7 +378,6 @@ pub struct Query {
 #[bimetal::export]
 impl Query {
     /// Keep the rows where a SQL expression is true.
-    #[bimetal(returns(resource))]
     pub fn filter(&self, predicate: &str) -> Result<Query, FrameError> {
         Ok(Query {
             query: self.query.clone().filter(sql_expr(predicate)?),
@@ -393,7 +385,6 @@ impl Query {
     }
 
     /// Keep these columns or SQL expressions.
-    #[bimetal(returns(resource))]
     pub fn select(&self, columns: Vec<String>) -> Result<Query, FrameError> {
         Ok(Query {
             query: self.query.clone().select(expressions(&columns)?),
@@ -401,7 +392,6 @@ impl Query {
     }
 
     /// Add these SQL expressions as columns.
-    #[bimetal(returns(resource))]
     pub fn with_columns(&self, columns: Vec<String>) -> Result<Query, FrameError> {
         Ok(Query {
             query: self.query.clone().with_columns(expressions(&columns)?),
@@ -410,7 +400,6 @@ impl Query {
 
     /// Group by `keys`, and compute `aggregates`, SQL expressions such as
     /// `sum(size) AS volume`.
-    #[bimetal(returns(resource))]
     pub fn group_by(
         &self,
         keys: Vec<String>,
@@ -427,7 +416,6 @@ impl Query {
     }
 
     /// Sort by a column.
-    #[bimetal(returns(resource))]
     pub fn sort(&self, by: &str, #[bimetal(default = false)] descending: bool) -> Query {
         Query {
             query: self.query.clone().sort([by], sort_options(descending)),
@@ -435,7 +423,6 @@ impl Query {
     }
 
     /// Keep at most `count` rows.
-    #[bimetal(returns(resource))]
     pub fn limit(&self, count: u32) -> Query {
         Query {
             query: self.query.clone().limit(count),
@@ -448,7 +435,6 @@ impl Query {
     }
 
     /// Run the query.
-    #[bimetal(returns(resource))]
     pub fn collect(&self) -> Result<Frame, FrameError> {
         Ok(Frame {
             frame: self.query.clone().collect()?,
@@ -456,7 +442,6 @@ impl Query {
     }
 
     /// Run the query without blocking the host's event loop on native hosts.
-    #[bimetal(returns(resource))]
     pub async fn collect_async(&self) -> Result<Frame, FrameError> {
         let query = self.query.clone();
         Ok(Frame {
@@ -513,12 +498,11 @@ impl Session {
     }
 
     /// Make a frame available to queries under a name.
-    pub fn register(&mut self, name: &str, #[bimetal(resource)] frame: &Frame) {
+    pub fn register(&mut self, name: &str, frame: &Frame) {
         self.context.register(name, frame.frame.clone().lazy());
     }
 
     /// Run a SQL query.
-    #[bimetal(returns(resource))]
     pub fn sql(&mut self, query: &str) -> Result<Frame, FrameError> {
         Ok(Frame {
             frame: self.context.execute(query)?.collect()?,

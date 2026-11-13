@@ -1,0 +1,26 @@
+{
+  "name": "probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": true,
+  "exports": {
+    ".": {
+      "types": "./probe/index.d.ts",
+      "default": "./probe/index.js"
+    },
+    "./*": {
+      "types": "./probe/*/index.d.ts",
+      "default": "./probe/*/index.js"
+    }
+  },
+  "files": [
+    "probe"
+  ],
+  "engines": {
+    "node": ">=20.16"
+  },
+  "peerDependencies": {
+    "apache-arrow": "^21.2.0"
+  }
+}

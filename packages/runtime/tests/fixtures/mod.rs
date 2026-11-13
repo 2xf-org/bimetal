@@ -179,7 +179,7 @@ pub enum JobError {
 #[bimetal::export]
 pub fn execute_job(
     request: &JobRequest,
-    #[bimetal(bytes)] payload: &[u8],
+    payload: &[u8],
     #[bimetal(buffer)] samples: &[f64],
 ) -> Result<JobResult, JobError> {
     if !(1..=100).contains(&request.count) {
@@ -230,8 +230,7 @@ pub fn file_name(path: &Path) -> Option<String> {
 
 /// Reverse a byte sequence without changing its host boundary type.
 #[bimetal::export]
-#[bimetal(returns(bytes))]
-pub fn reverse_bytes(#[bimetal(bytes)] input: &[u8]) -> Vec<u8> {
+pub fn reverse_bytes(input: &[u8]) -> Vec<u8> {
     input.iter().rev().copied().collect()
 }
 

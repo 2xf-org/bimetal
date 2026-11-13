@@ -46,7 +46,7 @@ A build that fails or dies midway leaves some new files beside old ones. `check`
 
 ## `.bimetal/`
 
-Bimetal keeps its lock, staging directories and a record of the installed native artifacts, `native.json`, in `.bimetal/` beside `bimetal.toml`. That record lets `build` and `build-native` replace an artifact that came from other sources or was changed, and holds what else this machine's last build read. The directory contains a `.gitignore` that ignores everything in it.
+Bimetal keeps its lock, staging directories and a record of the installed native artifacts, `native.json`, in `.bimetal/` beside `bimetal.toml`. That record lets `build` replace an artifact that came from other sources or was changed, and holds what else this machine's last build read. The directory contains a `.gitignore` that ignores everything in it.
 
 ## The compiled files
 

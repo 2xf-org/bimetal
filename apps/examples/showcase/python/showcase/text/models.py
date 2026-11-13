@@ -6,6 +6,10 @@ import builtins as _bimetal_builtins
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from showcase._runtime import (
+    register_classes as _bimetal_register_classes,
+)
+
 
 class Phrase(BaseModel):
     """
@@ -47,6 +51,12 @@ class Words(BaseModel):
 
 Phrase.model_rebuild()
 Words.model_rebuild()
+
+
+_bimetal_register_classes({
+    "showcase::showcase::text::Phrase": Phrase,
+    "showcase::showcase::text::Words": Words,
+})
 
 __all__ = [
     "Phrase",

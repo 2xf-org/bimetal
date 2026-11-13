@@ -11,8 +11,7 @@ use quote::quote;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 use syn::{
-    Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, Ident, TypePath,
-    Variant,
+    Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, Ident, Variant,
 };
 
 use crate::attributes::{self, SerdeContainer, SerdeRenameRule};
@@ -41,6 +40,8 @@ pub(super) fn expand_type(input: &DeriveInput) -> TokenStream2 {
         quote! {
             #error
             impl #impl_generics ::bimetal::ContractType for #ident #type_generics #where_clause {
+                type Crossing = ::bimetal::crossing::Serde;
+
                 fn type_ref() -> ::bimetal::ir::TypeRef {
                     ::core::unreachable!("the `Model` derive failed to compile")
                 }
@@ -62,7 +63,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     // The registration renders the field types outside the type's `impl`,
     // where `Self` names nothing, so a recursive type names itself.
     let mut data = input.data.clone();
-    SelfToName(ident).visit_data_mut(&mut data);
+    types::SelfToPath(&ident.clone().into()).visit_data_mut(&mut data);
     let ModelShape { shape, check } = match &data {
         Data::Struct(data) => struct_shape(&input.attrs, ident, data)?,
         Data::Enum(data) => enum_shape(&input.attrs, data)?,
@@ -87,6 +88,8 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let registration = registration::submit_type(&type_name, &id, &id, &docs, &shape);
     Ok(quote! {
         impl ::bimetal::ContractType for #ident {
+            type Crossing = ::bimetal::crossing::Serde;
+
             fn type_ref() -> ::bimetal::ir::TypeRef {
                 ::bimetal::ir::TypeRef::Named {
                     identity: ::bimetal::ir::DefinitionId::new(
@@ -101,18 +104,6 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
         #registration
     })
-}
-
-/// Replaces `Self` in types with the name of the type being derived.
-struct SelfToName<'name>(&'name Ident);
-
-impl VisitMut for SelfToName<'_> {
-    fn visit_type_path_mut(&mut self, path: &mut TypePath) {
-        if path.qself.is_none() && path.path.is_ident("Self") {
-            path.path = self.0.clone().into();
-        }
-        syn::visit_mut::visit_type_path_mut(self, path);
-    }
 }
 
 /// Analyze one supported struct shape and render its contract
@@ -161,14 +152,17 @@ fn struct_shape(attrs: &[Attribute], ident: &Ident, data: &DataStruct) -> syn::R
                 .expect("the match guard checked for exactly one field");
             let options = FieldOptions::parse(&field.attrs)?;
             options.validate_alias(field)?;
-            let target = types::type_ref_tokens(&field.ty, options.boundary)?;
+            let boundary = options
+                .boundary
+                .or_else(|| types::bytes_boundary(&field.ty));
+            let target = types::type_ref_tokens(&field.ty, boundary)?;
             Ok(ModelShape {
                 shape: quote!(::bimetal::ir::TypeShape::Alias {
                     target: #target,
                 }),
                 // The alias is its value on the wire, so the path stays. Bytes
                 // and buffers hold no models.
-                check: options.boundary.is_none().then(|| {
+                check: boundary.is_none().then(|| {
                     quote! {
                         ::bimetal::ContractType::check_rules(&self.0)?;
                     }

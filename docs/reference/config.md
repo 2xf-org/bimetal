@@ -13,7 +13,6 @@ package = "greeter"
 project = "python"
 
 [typescript]
-package = "greeter"
 project = "typescript"
 backend = "wasm"
 
@@ -55,8 +54,7 @@ Each host table turns its host on, even when it's empty, and Bimetal needs at le
 | --- | --- | --- | --- |
 | `[python]` | `package` | `name`, with `-` replaced by `_` | The Python import package, such as `greeter` or `acme.tools` |
 | | `project` | `"python"` | The Python project, which holds `pyproject.toml` |
-| `[typescript]` | `package` | `name` | The npm package name, which must match `package.json` |
-| | `project` | `"typescript"` | The npm project, which holds `package.json` |
+| `[typescript]` | `project` | `"typescript"` | The npm project, which holds `package.json`, whose `name` is the npm package name |
 | | `backend` | `"wasm"` | `"wasm"` runs the Rust code as a WebAssembly module, and `"node"` as a native Node.js addon, which only Node.js and Electron load |
 
 A `project` is a folder relative to `bimetal.toml`, and can climb out of it with `..`, as in `project = "../python"`. Bimetal stops when a project is the directory of `bimetal.toml` or one of its parents, lies inside Cargo's target directory, or is the same folder as another host's project, or inside it.

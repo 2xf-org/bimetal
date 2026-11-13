@@ -5,11 +5,10 @@
 | `bimetal new <directory>` | Create an application |
 | `bimetal build` | Compile the application and write the package of each host that `bimetal.toml` turns on |
 | `bimetal check` | Make sure the committed generated files match the Rust sources |
-| `bimetal build-native` | Compile only this platform's native artifacts, such as the Python extension |
 
 ## What every command does
 
-`build`, `check` and `build-native` read the `bimetal.toml` of the current directory, or of the nearest parent directory that has one, the way Cargo finds `Cargo.toml`. Pass `--config <path>` to use another one: the file, or its directory.
+`build` and `check` read the `bimetal.toml` of the current directory, or of the nearest parent directory that has one, the way Cargo finds `Cargo.toml`. Pass `--config <path>` to use another one: the file, or its directory.
 
 Each command prints its result as text. Add `--json` to print it as one JSON object for scripts. While it compiles, a command prints progress to stderr, and says when it waits for another `bimetal` command building the same application, or for another Cargo command, such as rust-analyzer or `cargo test`, that holds the lock of a build directory.
 
@@ -19,7 +18,7 @@ On failure, a command prints `error: ...` to stderr and exits with status 1. Wit
 
 Cargo runs in the directory of `bimetal.toml`, so the `.cargo/config.toml` files there and in its parents apply wherever you start `bimetal`. Your `rustflags`, `RUSTFLAGS` and `RUSTC_WRAPPER`, such as sccache, apply as they do for `cargo build`. `--locked`, `--offline` and `--frozen` pass on to Cargo as they are, and `CARGO_NET_OFFLINE` works as it does for Cargo.
 
-A configured `build.target` or `CARGO_BUILD_TARGET` changes none of the builds, which name their targets. `build` and `build-native` may update `Cargo.lock`, as `cargo build` does. `check` never does, as if you passed `--locked`, and says so when `Cargo.lock` is missing or out of date.
+A configured `build.target` or `CARGO_BUILD_TARGET` changes none of the builds, which name their targets. `build` may update `Cargo.lock`, as `cargo build` does. `check` never does, as if you passed `--locked`, and says so when `Cargo.lock` is missing or out of date.
 
 A command shows the compiler's warnings about your code once each, though each build compiles it, in colour when stderr is a terminal. Warnings and errors show your files' real paths.
 
@@ -112,9 +111,9 @@ After the WebAssembly build, it stops if the module lacks a function, resource o
 Every build checks the files you own, even one that compiles nothing, and reports every problem in one error, together with any problem in the contract. It does so before it writes any file, and only for the enabled hosts:
 
 - `Cargo.toml`, `pyproject.toml` and `package.json` declare the same version.
-- `package.json` declares `package` of `[typescript]` as its `name`, and `"type": "module"`. Its root export points into `<name>/`, and `files`, if present, includes `<name>`, so `npm pack` contains the generated package.
-- `pyproject.toml` depends on `pydantic`, also on `numpy` if the contract uses buffers, and on `pyarrow` if it uses Arrow values. With `pdm-backend`, `[tool.pdm.build]` sets `is-purelib = false`, and its `includes` cover the Python package, so wheels are platform-specific and contain it.
-- `package.json` lists `apache-arrow` in `peerDependencies` if the contract uses Arrow values.
+- `package.json` declares a `name`, the npm package name, and `"type": "module"`. Its root export points into `<name>/`, and `files`, if present, includes `<name>`, so `npm pack` contains the generated package.
+- `pyproject.toml` depends on `pydantic` 2.7 or later, also on `numpy` 2 or later if the contract uses buffers, and on `pyarrow` 16 or later if it uses Arrow values, and allows no older version. With `pdm-backend`, `[tool.pdm.build]` sets `is-purelib = false`, and its `includes` cover the Python package, so wheels are platform-specific and contain it.
+- `package.json` lists `apache-arrow` 21.2 or later in `peerDependencies` if the contract uses Arrow values, and allows no older version.
 
 ## `bimetal check`
 
@@ -141,24 +140,5 @@ With `--json`, a passing check prints `"status": "ok"` and the same `application
   "missing": [],
   "changed": ["python/greeter/api.py"],
   "stale": []
-}
-```
-
-## `bimetal build-native`
-
-`build-native` compiles only this platform's native artifacts, and installs them in the hosts' projects: for `[python]`, the extension in the generated package, as `_native.abi3.so`, or `_native.pyd` on Windows, beside the `_native.pyi` stub; and for the Node.js backend, the addon in the npm package, as `<name>/native/native.node`. It doesn't discover the contract, write sources or compile Wasm.
-
-It stops if the source fingerprint changed since `bimetal build` generated the packages, and if `bimetal.toml` has no `[generated]` tables to build for. An application without native artifacts, such as one with only a `[typescript]` table and the Wasm backend, has nothing to build: the command says so and succeeds.
-
-With `--json`, where `artifacts` is empty when there's nothing to build:
-
-```json
-{
-  "status": "ok",
-  "application": "greeter",
-  "artifacts": [
-    "/path/to/greeter/python/greeter/_native.abi3.so",
-    "/path/to/greeter/typescript/greeter/native/native.node"
-  ]
 }
 ```

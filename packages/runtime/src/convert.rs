@@ -28,6 +28,16 @@ pub(crate) mod parameter;
 pub mod python;
 #[cfg(all(feature = "python", feature = "arrow-api", not(target_arch = "wasm32")))]
 mod python_arrow;
+#[cfg(all(feature = "python", not(target_arch = "wasm32")))]
+pub(crate) mod python_deserializer;
+#[cfg(all(feature = "python", not(target_arch = "wasm32")))]
+pub(crate) mod python_plan;
+#[cfg(all(feature = "python", not(target_arch = "wasm32")))]
+mod python_serializer;
+#[cfg(all(feature = "python", not(target_arch = "wasm32")))]
+mod python_time;
+#[cfg(all(any(feature = "python", feature = "node"), not(target_arch = "wasm32")))]
+mod short_text;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 #[cfg(all(target_arch = "wasm32", feature = "arrow-api"))]

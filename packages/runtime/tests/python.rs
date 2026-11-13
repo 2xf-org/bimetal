@@ -81,6 +81,21 @@ mod spawning {
     }
 }
 
+/// An async export whose calls work as long as they ask, and never wait.
+mod pacing {
+    use std::time::{Duration, Instant};
+
+    /// Keep the thread busy for `micros` microseconds, and return them.
+    #[bimetal::export]
+    pub async fn busy_for(micros: u64) -> u64 {
+        let deadline = Instant::now() + Duration::from_micros(micros);
+        while Instant::now() < deadline {
+            std::hint::spin_loop();
+        }
+        micros
+    }
+}
+
 /// Exports that only this suite calls.
 mod sequences {
     /// Join labels with commas.
@@ -364,7 +379,10 @@ async def main():
         callers.append(threading.get_ident())
         return total * 2
 
-    called = till.settleWith(doubled)
+    # A function crosses with the adapter of its result, as the generated
+    # code passes it. These need none, since Rust reads their results as
+    # they are.
+    called = till.settleWith((doubled, None))
     assert not called.done(), "a call that takes a function starts on a worker"
     assert await asyncio.wait_for(called, 5) == 14
     assert callers != [threading.get_ident()], callers
@@ -788,7 +806,7 @@ async def main():
         callers.append(threading.get_ident())
         return value * 3
 
-    called = call_at_once(tripled, 4)
+    called = call_at_once((tripled, None), 4)
     assert not called.done(), "a call that takes a function starts on a worker"
     assert await asyncio.wait_for(called, 5) == 12
     assert callers != [threading.get_ident()], callers
@@ -801,7 +819,7 @@ async def main():
     def through_the_loop(value):
         return asyncio.run_coroutine_threadsafe(doubled(value), loop).result(timeout=5)
 
-    assert await asyncio.wait_for(call_at_once(through_the_loop, 4), 10) == 8
+    assert await asyncio.wait_for(call_at_once((through_the_loop, None), 4), 10) == 8
 
     # A call that is done has no task to abort.
     cancelled = double_at_once(1)
@@ -900,9 +918,129 @@ fn async_calls_need_a_loop_and_drop_results_that_no_one_awaits() -> PyResult<()>
     python::run_scenario(ASYNC_EDGE_SCENARIO, &["doubleLater"], &[])
 }
 
+/// The results of calls that wait reach their own loop: many at once, on a
+/// loop that has no readers and is woken through `call_soon_threadsafe`, on
+/// two loops of two threads at once, and while another thread competes for
+/// the interpreter lock. A loop that closes takes its mailbox's socket with
+/// it, so many loops in turn hold no more descriptors than one.
+const MAILBOX_SCENARIO: &CStr = cr#"
+import asyncio
+import os
+import sys
+import threading
+
+
+class NoReaders(asyncio.SelectorEventLoop):
+    def add_reader(self, *arguments):
+        raise NotImplementedError
+
+
+async def many(offset):
+    values = range(offset, offset + 64)
+    results = await asyncio.wait_for(asyncio.gather(*(double_later(value) for value in values)), 10)
+    assert results == [value * 2 for value in values], results
+    # A call that the caller cancels while its result is on its way drops it.
+    cancelled = double_later(1)
+    cancelled.cancel()
+    assert await asyncio.wait_for(double_later(offset), 5) == offset * 2
+    assert cancelled.cancelled()
+
+
+for make in (asyncio.new_event_loop, NoReaders):
+    loop = make()
+    try:
+        loop.run_until_complete(many(0))
+    finally:
+        loop.close()
+
+failures = []
+
+
+def in_thread(offset):
+    try:
+        asyncio.run(many(offset))
+    except BaseException as error:
+        failures.append(error)
+
+
+threads = [threading.Thread(target=in_thread, args=(offset,)) for offset in (100, 200)]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join(30)
+assert failures == [], failures
+
+
+stopped = False
+
+
+def compete():
+    count = 0
+    while not stopped:
+        count += 1
+
+
+contender = threading.Thread(target=compete)
+contender.start()
+try:
+    asyncio.run(many(300))
+finally:
+    stopped = True
+    contender.join()
+
+if sys.platform != "win32":
+    descriptors = "/dev/fd" if os.path.isdir("/dev/fd") else "/proc/self/fd"
+    asyncio.run(many(0))
+    before = len(os.listdir(descriptors))
+    for _ in range(20):
+        asyncio.run(many(0))
+    assert len(os.listdir(descriptors)) <= before, (before, len(os.listdir(descriptors)))
+"#;
+
+/// An async export that works briefly finishes on the caller's thread. Once
+/// one of its calls works much longer than a hand-off to a worker costs, its
+/// later calls start on workers, so they leave the event loop free, and they
+/// come back once its calls work briefly again. A call of an export times
+/// itself one time in eight while the export works briefly, and an export of
+/// 2 ms calls moves after two of them in a row.
+const PACE_SCENARIO: &CStr = cr#"
+import asyncio
+
+
+async def main():
+    assert busy_for(0).done()
+    for _ in range(12):
+        moved = busy_for(2000)
+        if not moved.done():
+            break
+    else:
+        raise AssertionError("an export that works long moves within twelve calls")
+    assert await asyncio.wait_for(moved, 5) == 2000
+    later = busy_for(2000)
+    assert not later.done(), "a call of an export that works long starts on a worker"
+    assert await asyncio.wait_for(later, 5) == 2000
+    for _ in range(40):
+        assert await asyncio.wait_for(busy_for(0), 5) == 0
+    assert busy_for(0).done(), "calls that work briefly again finish where they start"
+
+
+asyncio.run(main())
+"#;
+
+#[test]
+fn async_calls_that_work_long_start_on_workers() -> PyResult<()> {
+    python::run_scenario(PACE_SCENARIO, &["busyFor"], &[])
+}
+
+#[test]
+fn waiting_calls_reach_their_own_loop() -> PyResult<()> {
+    python::run_scenario(MAILBOX_SCENARIO, &["doubleLater"], &[])
+}
+
 /// An async `&mut self` call holds the value from when it is made, before
-/// the event loop runs again, until its result has converted. A synchronous
-/// call made right after it waits for it, and sees what it did.
+/// the event loop runs again, until the Rust call returns. A synchronous call
+/// made right after it waits for it, and sees what it did, though the loop
+/// that would convert the async call's result is the one that waits.
 const LOCK_SCENARIO: &CStr = cr#"
 import asyncio
 
@@ -1048,13 +1186,13 @@ assert run(lambda: sum_on_worker(counted(3, 2))) == 15
 assert live_streams() == 0
 
 for source in (generate, generate_blocking):
-    assert sum(source(tens)) == 30, source
-    assert run(lambda: sum_later(source(tens))) == 30, source
-    assert run(lambda: sum_on_worker(source(tens))) == 30, source
-    assert run_on_worker(lambda: sum_at_once(source(tens))) == 30, source
-    assert summarize_table(source(tens))["rows"] == 3, source
+    assert sum(source((tens, None))) == 30, source
+    assert run(lambda: sum_later(source((tens, None)))) == 30, source
+    assert run(lambda: sum_on_worker(source((tens, None)))) == 30, source
+    assert run_on_worker(lambda: sum_at_once(source((tens, None)))) == 30, source
+    assert summarize_table(source((tens, None)))["rows"] == 3, source
     try:
-        sum(source(fails))
+        sum(source((fails, None)))
     except RuntimeError as error:
         assert error.args[0] == "read_error", error.args
         assert "no second value" in error.args[1], error.args

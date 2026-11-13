@@ -2,6 +2,10 @@
 
 import { checkArgument as $checkArgument, checkNative as $checkNative, native as $native, nativeError as $nativeError, nativeUsable as $nativeUsable, prepareHost as $prepareHost, restoreHost as $restoreHost } from "./runtime.js";
 
+const $spec0 = ["named", "greeter::greeter::GreetingRequest"];
+const $spec1 = ["named", "greeter::greeter::Greeting"];
+const $spec2 = ["list", null];
+
 export class GreeterError extends globalThis.Error {
   constructor(code, message) {
     super(message);
@@ -14,7 +18,7 @@ export function greet(request) {
   $checkNative();
   $checkArgument(request, "object", "greet(): argument `request`");
   try {
-    return $restoreHost($native["__bimetal_function_greeter_fb54ba6c799a7247"]($prepareHost(request, ["named", "greeter::greeter::GreetingRequest"])), ["named", "greeter::greeter::Greeting"]);
+    return $restoreHost($native["__bimetal_function_greeter_fb54ba6c799a7247"]($prepareHost(request, $spec0)), $spec1);
   } catch ($error) {
     throw $nativeError($error, GreeterError);
   }
@@ -25,7 +29,7 @@ export class Guestbook {
     $checkNative();
     $checkArgument(event, "string", "new Guestbook(): argument `event`");
     try {
-      this.nativeResource = new $native["__bimetal_resource_greeter_bb07b219c73441c9"]($prepareHost(event, null));
+      this.nativeResource = new $native["__bimetal_resource_greeter_bb07b219c73441c9"](event);
     } catch ($error) {
       throw $nativeError($error);
     }
@@ -41,7 +45,7 @@ export class Guestbook {
     $checkNative();
     $checkArgument(name, "string", "Guestbook.sign(): argument `name`");
     try {
-      this.nativeResource.sign($prepareHost(name, null));
+      this.nativeResource.sign(name);
     } catch ($error) {
       throw $nativeError($error, GreeterError);
     }
@@ -59,7 +63,7 @@ export class Guestbook {
   names() {
     $checkNative();
     try {
-      return $restoreHost(this.nativeResource.names(), ["list", null]);
+      return $restoreHost(this.nativeResource.names(), $spec2);
     } catch ($error) {
       throw $nativeError($error);
     }

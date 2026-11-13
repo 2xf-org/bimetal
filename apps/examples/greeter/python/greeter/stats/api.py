@@ -6,23 +6,21 @@ from .models import (
     Float64Buffer,
 )
 from greeter._runtime import (
+    Adapter as _bimetal_Adapter,
     native as _bimetal_native,
     restore_host as _bimetal_restore_host,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_greeter_0445639d576b2c6c")
+_bimetal_adapter_1 = _bimetal_Adapter(lambda: Float64Buffer, arbitrary_types=True)
 
 
 def normalize(samples: Float64Buffer) -> Float64Buffer:
     """
     Scale samples so that the largest magnitude becomes 1.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_greeter_0445639d576b2c6c")(
-        samples,
-    )
-    __bimetal_result: Float64Buffer = _bimetal_type_adapter(Float64Buffer, arbitrary_types=True).validate_python(
-        _bimetal_restore_host(__bimetal_native, ["buffer", "float64"]),
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_0(samples)
+    __bimetal_result: Float64Buffer = _bimetal_adapter_1.validate(_bimetal_restore_host(__bimetal_native, ["buffer", "float64"]))
     return __bimetal_result
 
 __all__ = [

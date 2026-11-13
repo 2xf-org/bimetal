@@ -6,7 +6,7 @@ Bimetal has been run on five large projects, with [DataFusion, Oxc, Polars, Tant
 
 Write the API a user of that project would want from Python, before you check what Bimetal allows. Then write the wrapper as a crate of its own, with `bimetal` and the project as dependencies. You won't export the project's types directly, because a `Model` must be a type of your crate, so mirror the ones you expose, such as `Diagnostic` and `Hit`.
 
-Resources usually come in chains: a session makes a query, a query makes a stream. Mark each with `#[bimetal(returns(resource))]`, and give a resource no constructor if only other exports should make it.
+Resources usually come in chains: a session makes a query, a query makes a stream. A method that returns a resource's type returns a new object of its class, so give a resource no constructor if only other exports should make it.
 
 ## Fitting `Send` and `Sync`
 

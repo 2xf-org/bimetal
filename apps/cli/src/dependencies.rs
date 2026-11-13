@@ -1,15 +1,34 @@
 //! The host packages that generated code imports, which the user's
 //! manifests must declare and `bimetal.toml` records.
 
+mod floor;
+
+use floor::Floor;
+
 use crate::config::Host;
 use crate::contract::Contract;
 
 /// A host package that generated code imports, with the requirement that a
-/// new project declares for it.
+/// new project declares for it, whose lowest version the generated code
+/// needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HostDependency {
     pub(crate) name: &'static str,
     pub(crate) requirement: &'static str,
+}
+
+impl HostDependency {
+    /// Return whether `declared`, the requirement for this package in the
+    /// manifest of `host`'s package, allows a version older than the
+    /// generated code needs.
+    #[must_use]
+    pub(crate) fn allows_older(&self, host: Host, declared: &str) -> bool {
+        let floor = match host {
+            Host::Python => Floor::python,
+            Host::TypeScript => Floor::npm,
+        };
+        floor(declared).below(&floor(self.requirement))
+    }
 }
 
 pub(crate) const PYDANTIC: HostDependency = HostDependency {

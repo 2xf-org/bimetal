@@ -574,12 +574,13 @@ pub(super) fn spec(reference: &TypeRef) -> Value {
         TypeRef::Duration => json!(["duration"]),
         TypeRef::Buffer { element } => json!(["buffer", element.numpy_name()]),
         TypeRef::Json => json!(["json"]),
+        // A date-time argument may be a JavaScript `Date`.
+        TypeRef::DateTime => json!(["date"]),
         TypeRef::Unit
         | TypeRef::Bool
         | TypeRef::Int { .. }
         | TypeRef::Float { .. }
         | TypeRef::String
-        | TypeRef::DateTime
         | TypeRef::Date
         | TypeRef::Arrow { .. }
         | TypeRef::Resource { .. }
@@ -612,6 +613,11 @@ pub(super) fn property_name(setter: &str) -> &str {
 /// Return the schema of a model: its fields' schemas by wire name, by
 /// variant for a tagged enum, the schema of what each variant of an
 /// externally tagged enum carries, or the schema of an alias's target.
+///
+/// A struct's schema, and a tagged enum's by variant, also lists the
+/// `required` fields of an `Option` type, if any, which the TypeScript
+/// runtime checks are present, because Serde reads a missing `Option` as
+/// `None`. Serde requires every other required field itself.
 #[must_use]
 pub(super) fn named_spec(definition: &TypeDef) -> Value {
     let fields = |fields: &[FieldDef]| -> Value {
@@ -620,14 +626,33 @@ pub(super) fn named_spec(definition: &TypeDef) -> Value {
             .map(|field| (field.wire_name.clone(), spec(&field.ty)))
             .collect()
     };
+    let structure = |members: &[FieldDef]| -> Value {
+        let required = required_options(members);
+        if required.is_empty() {
+            json!(["struct", fields(members)])
+        } else {
+            json!(["struct", fields(members), required])
+        }
+    };
     match &definition.shape {
-        TypeShape::Struct { fields: members } => json!(["struct", fields(members)]),
+        TypeShape::Struct { fields: members } => structure(members),
         TypeShape::TaggedEnum { tag, variants } => {
+            let required: serde_json::Map<String, Value> = variants
+                .iter()
+                .filter_map(|variant| {
+                    let required = required_options(&variant.fields);
+                    (!required.is_empty()).then(|| (variant.wire_name.clone(), json!(required)))
+                })
+                .collect();
             let variants: Value = variants
                 .iter()
                 .map(|variant| (variant.wire_name.clone(), fields(&variant.fields)))
                 .collect();
-            json!(["tagged", tag, variants])
+            if required.is_empty() {
+                json!(["tagged", tag, variants])
+            } else {
+                json!(["tagged", tag, variants, required])
+            }
         }
         TypeShape::ExternalEnum { variants } => {
             let variants: Value = variants
@@ -636,9 +661,7 @@ pub(super) fn named_spec(definition: &TypeDef) -> Value {
                     let payload = match &variant.payload {
                         VariantPayload::Unit => Value::Null,
                         VariantPayload::Value { ty } => spec(ty),
-                        VariantPayload::Fields { fields: members } => {
-                            json!(["struct", fields(members)])
-                        }
+                        VariantPayload::Fields { fields: members } => structure(members),
                     };
                     (variant.wire_name.clone(), payload)
                 })
@@ -650,11 +673,20 @@ pub(super) fn named_spec(definition: &TypeDef) -> Value {
     }
 }
 
+/// Return the wire names of the `required` fields of an `Option` type.
+fn required_options(fields: &[FieldDef]) -> Vec<&str> {
+    fields
+        .iter()
+        .filter(|field| field.required && matches!(field.ty, TypeRef::Option { .. }))
+        .map(|field| field.wire_name.as_str())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use bimetal_ir::BufferElement;
+    use bimetal_ir::{BufferElement, EnumVariantDef};
 
     use super::*;
     use crate::fixtures;
@@ -738,6 +770,60 @@ mod tests {
                 "external",
                 {"empty": null, "label": null, "circle": ["struct", {"radius": null}]}
             ])
+        );
+    }
+
+    #[test]
+    fn schemas_list_the_required_options_that_serde_would_read_as_none() {
+        let optional = |name: &str| FieldDef {
+            required: false,
+            ..fixtures::typed_field(
+                name,
+                TypeRef::Option {
+                    item: Box::new(TypeRef::String),
+                },
+            )
+        };
+        let required = |name: &str| FieldDef {
+            required: true,
+            ..optional(name)
+        };
+        let fields = vec![
+            required("note"),
+            optional("hint"),
+            fixtures::typed_field("label", TypeRef::String),
+        ];
+        let review = fixtures::model("Review", fields.clone());
+        assert_eq!(
+            named_spec(&review),
+            json!(["struct", {"note": null, "hint": null, "label": null}, ["note"]])
+        );
+
+        let variant = |name: &str, fields: Vec<FieldDef>| EnumVariantDef {
+            rust_name: name.to_owned(),
+            wire_name: name.to_lowercase(),
+            docs: None,
+            fields,
+        };
+        let event = TypeDef {
+            shape: TypeShape::TaggedEnum {
+                tag: "kind".to_owned(),
+                variants: vec![variant("Noted", fields), variant("Plain", Vec::new())],
+            },
+            ..fixtures::model("Event", Vec::new())
+        };
+        assert_eq!(
+            named_spec(&event),
+            json!([
+                "tagged",
+                "kind",
+                {"noted": {"note": null, "hint": null, "label": null}, "plain": {}},
+                {"noted": ["note"]}
+            ])
+        );
+        assert_eq!(
+            named_spec(&fixtures::model("Plain", vec![optional("hint")])),
+            json!(["struct", {"hint": null}])
         );
     }
 

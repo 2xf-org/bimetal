@@ -17,7 +17,7 @@ try {
   native = createRequire(import.meta.url)("./native/native.node");
 } catch (error) {
   throw new Error(
-    `The Node.js addon native/native.node is missing, was built for another platform, or failed to load; run \`bimetal build-native\` (or \`bimetal build\`) to build it: ${error?.message ?? error}`,
+    `The Node.js addon native/native.node is missing, was built for another platform, or failed to load; run \`bimetal build\` to build it: ${error?.message ?? error}`,
     { cause: error },
   );
 }
@@ -28,7 +28,7 @@ const nativeReady = Promise.resolve();
 function requireContract(contract) {
   if (native.__bimetal_contract__ !== contract) {
     throw new Error(
-      "The Node.js addon native/native.node was built from other Rust sources than this package; run `bimetal build-native` (or `bimetal build`) to rebuild it.",
+      "The Node.js addon native/native.node was built from other Rust sources than this package; run `bimetal build` to rebuild it.",
     );
   }
 }
@@ -48,11 +48,16 @@ export function nativePromise(promise) {
 }
 
 export { native, nativeReady };
-requireContract("3d80cac2db1f77a0");
+requireContract("2f7a20277c6fb1e7");
 
 // The adapters. `prepareHost` and `restoreHost` walk a value with its schema,
 // `[kind, ...]` or null, and a `named` schema names a model's schema in
 // `nativeSchemas`.
+//
+// `prepareHost` returns the caller's value itself where nothing in it
+// changes, and copies an array or an object only once one of its items
+// changes, or when an object is not a plain one. `restoreHost` changes the
+// value that Rust made, which nothing else holds, in place, and freezes it.
 
 // A number crosses as a float unless it is a safe integer; a wider integer
 // that must stay exact is a bigint.
@@ -62,8 +67,8 @@ function prepareJson(value) {
     return value;
   }
   if (typeof value === "bigint" || value == null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(prepareJson);
-  return prepareEntries(value, (item) => prepareJson(item));
+  if (Array.isArray(value)) return prepareItems(value, prepareJson);
+  return prepareEntries(value, prepareJson);
 }
 
 // A `Map` or `Set` keeps its entries where `Object.entries` cannot see them,
@@ -72,51 +77,146 @@ function isCollection(value) {
   return value instanceof Map || value instanceof Set;
 }
 
-// Rebuild an object as a plain one, preparing each value by its key.
+// Prepare each item of an array, which is copied once an item changes.
+function prepareItems(value, prepare) {
+  let prepared;
+  for (let index = 0; index < value.length; index++) {
+    const item = value[index];
+    const next = prepare(item, index);
+    if (prepared === undefined && next !== item) prepared = value.slice(0, index);
+    if (prepared !== undefined) prepared.push(next);
+  }
+  return prepared ?? value;
+}
+
+// Prepare each value of an object by its key, copying a plain object once a value
+// changes, and rebuilding any other as a plain one of its enumerable string keys.
 function prepareEntries(value, prepare) {
   if (isCollection(value)) {
     throw new TypeError(`${typeName(value)} values cannot cross as objects; pass a plain object`);
   }
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, prepare(item, key)]));
+  const prototype = Object.getPrototypeOf(value);
+  const plain = prototype === Object.prototype || prototype === null;
+  const keys = Object.keys(value);
+  let prepared = plain ? undefined : {};
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index];
+    const item = value[key];
+    const next = prepare(item, key);
+    if (prepared === undefined && next !== item) {
+      prepared = {};
+      for (let earlier = 0; earlier < index; earlier++) defineEntry(prepared, keys[earlier], value[keys[earlier]]);
+    }
+    if (prepared !== undefined) defineEntry(prepared, key, next);
+  }
+  return prepared ?? value;
+}
+
+// Assigning `__proto__` would set the prototype, so that key is defined.
+function defineEntry(target, key, item) {
+  if (key === "__proto__") {
+    Object.defineProperty(target, key, { value: item, writable: true, enumerable: true, configurable: true });
+  } else {
+    target[key] = item;
+  }
 }
 
 export function prepareHost(value, spec = null) {
-  if (value == null) return value;
+  // A scalar crosses as it is, and Rust names a value of the wrong type.
+  if (value == null || spec == null) return value;
   if (value instanceof Date) return value.toISOString();
   if (ArrayBuffer.isView(value)) return value;
-  if (spec != null) {
-    const [kind, detail, variants] = spec;
-    if (kind === "json") return prepareJson(value);
-    // A duration is its nanoseconds here, and Serde reads `{secs, nanos}`.
-    // Rust names the argument that holds anything else.
-    if (kind === "duration" && (typeof value === "bigint" || Number.isSafeInteger(value)) && value >= 0) {
-      const nanoseconds = BigInt(value);
-      return { secs: nanoseconds / 1_000_000_000n, nanos: Number(nanoseconds % 1_000_000_000n) };
-    }
-    if (kind === "named") return prepareHost(value, nativeSchemas[detail]);
-    if (kind === "alias") return prepareHost(value, detail);
-    // A value of the wrong shape crosses as it is, and Rust names what it
-    // expected there.
-    if (typeof value !== "object") return value;
-    if (kind === "list" || kind === "tuple") {
-      if (typeof value[Symbol.iterator] !== "function") return value;
-      return Array.from(value, (item, index) => prepareHost(item, kind === "list" ? detail : detail[index]));
-    }
-    if (kind === "map") return prepareEntries(value, (item) => prepareHost(item, detail));
-    // Field and variant specs have no prototype, so a key such as
-    // `constructor` finds no spec.
-    if (kind === "struct") return prepareEntries(value, (item, key) => prepareHost(item, detail[key]));
-    if (kind === "tagged") {
-      const fields = variants[value[detail]];
-      return prepareEntries(value, (item, key) => prepareHost(item, fields?.[key]));
-    }
-    // A variant with data is an object whose only key is its name; one
-    // without data is its name, which crossed above as it is.
-    if (kind === "external") return prepareEntries(value, (item, key) => prepareHost(item, detail[key]));
+  const kind = spec[0];
+  if (kind === "json") return prepareJson(value);
+  // A duration is its nanoseconds here, and Serde reads `{secs, nanos}`.
+  // Rust names the argument that holds anything else.
+  if (kind === "duration" && (typeof value === "bigint" || Number.isSafeInteger(value)) && value >= 0) {
+    const nanoseconds = BigInt(value);
+    return { secs: nanoseconds / 1_000_000_000n, nanos: Number(nanoseconds % 1_000_000_000n) };
   }
-  if (Array.isArray(value)) return value.map((item) => prepareHost(item));
-  if (typeof value === "object") return prepareEntries(value, (item) => prepareHost(item));
+  if (kind === "named") return prepareHost(value, nativeSchemas[spec[1]]);
+  if (kind === "alias") return prepareHost(value, spec[1]);
+  // A value of the wrong shape crosses as it is, and Rust names what it
+  // expected there.
+  if (typeof value !== "object") return value;
+  if (kind === "list" || kind === "tuple") {
+    const detail = spec[1];
+    // A list of scalars needs nothing but to be an array.
+    if (kind === "list" && detail == null) {
+      if (Array.isArray(value) || typeof value[Symbol.iterator] !== "function") return value;
+      return Array.from(value);
+    }
+    const prepare = kind === "list" ? (item) => prepareHost(item, detail) : (item, index) => prepareHost(item, detail[index]);
+    if (Array.isArray(value)) return prepareItems(value, prepare);
+    if (typeof value[Symbol.iterator] !== "function") return value;
+    return Array.from(value, prepare);
+  }
+  if (kind === "map") {
+    const detail = spec[1];
+    return prepareEntries(value, (item) => prepareHost(item, detail));
+  }
+  if (kind === "struct") return prepareFields(value, spec[1], spec[2]);
+  if (kind === "tagged") {
+    const variant = value[spec[1]];
+    requirePresent(value, spec[3]?.[variant]);
+    const fields = spec[2][variant];
+    return prepareEntries(value, (item, key) => prepareHost(item, fields?.[key]));
+  }
+  // A variant with data is an object whose only key is its name; one
+  // without data is its name, which crossed above as it is.
+  if (kind === "external") {
+    const variants = spec[1];
+    return prepareEntries(value, (item, key) => prepareHost(item, variants[key]));
+  }
   return value;
+}
+
+// The `[key, spec]` pairs of the fields whose specs do anything, by the object of field specs,
+// which has no prototype, so V8 keeps it in slow mode, where each `for...in` sorts its keys.
+const specifiedFields = new WeakMap();
+
+function specified(fields) {
+  let entries = specifiedFields.get(fields);
+  if (entries === undefined) {
+    entries = Object.entries(fields).filter(([, spec]) => spec != null);
+    specifiedFields.set(fields, entries);
+  }
+  return entries;
+}
+
+// Serde reads a missing `Option` field as `None`, so each `Option` field
+// that its model marks `required`, which `required` lists, must be present.
+function requirePresent(value, required) {
+  if (required === undefined) return;
+  for (const key of required) {
+    if (value[key] === undefined) throw new TypeError(`missing field \`${key}\``);
+  }
+}
+
+// Prepare the fields of a struct by their specs once its `required` fields are
+// present, copying or rebuilding the object as `prepareEntries` does.
+function prepareFields(value, fields, required) {
+  if (isCollection(value)) {
+    throw new TypeError(`${typeName(value)} values cannot cross as objects; pass a plain object`);
+  }
+  requirePresent(value, required);
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return prepareEntries(value, (item, key) => prepareHost(item, fields[key]));
+  }
+  let prepared;
+  for (const [key, spec] of specified(fields)) {
+    if (!Object.hasOwn(value, key)) continue;
+    const item = value[key];
+    const next = prepareHost(item, spec);
+    if (next === item) continue;
+    if (prepared === undefined) {
+      prepared = {};
+      for (const each of Object.keys(value)) defineEntry(prepared, each, value[each]);
+    }
+    defineEntry(prepared, key, next);
+  }
+  return prepared ?? value;
 }
 
 // The typed array of each buffer element type, by NumPy's name for it.
@@ -134,39 +234,109 @@ function restoreEntries(value, restore) {
   return Object.freeze(Object.fromEntries(Array.from(entries, ([key, item]) => [key, restore(item)])));
 }
 
+// Restore the items of an array that Rust made, in place unless it is frozen,
+// and freeze it.
+function restoreItems(value, restore) {
+  const items = Object.isFrozen(value) ? Array.from(value) : value;
+  for (let index = 0; index < items.length; index++) items[index] = restore(items[index], index);
+  return Object.freeze(items);
+}
+
+// Restore the values of an object that Rust made by their specs, in place
+// unless it is frozen, and freeze it.
+function restoreFields(value, fields) {
+  let target = value;
+  if (fields != null) {
+    const restored = specified(fields);
+    if (restored.length > 0 && Object.isFrozen(value)) {
+      target = {};
+      for (const key of Object.keys(value)) defineEntry(target, key, value[key]);
+    }
+    for (const [key, spec] of restored) {
+      if (Object.hasOwn(target, key)) target[key] = restoreHost(target[key], spec);
+    }
+  }
+  return Object.freeze(target);
+}
+
+// Whether a spec restores nothing but freezing, by the spec.
+const onlyFreezes = new WeakMap();
+
+// The addon makes frozen objects, arrays and maps, so nothing is left to restore
+// where the spec only freezes; the Wasm module's values arrive unfrozen.
+function freezesOnly(spec) {
+  let known = onlyFreezes.get(spec);
+  if (known === undefined) {
+    known = specFreezesOnly(spec, new Set());
+    onlyFreezes.set(spec, known);
+  }
+  return known;
+}
+
+// A spec that the walk has seen adds nothing that it does not check already.
+function specFreezesOnly(spec, seen) {
+  if (spec == null || seen.has(spec)) return true;
+  seen.add(spec);
+  const every = (specs) => specs.every((item) => specFreezesOnly(item, seen));
+  switch (spec[0]) {
+    case "date":
+      return true;
+    case "list":
+    case "map":
+    case "alias":
+      return specFreezesOnly(spec[1], seen);
+    case "tuple":
+      return every(spec[1]);
+    case "named":
+      return specFreezesOnly(nativeSchemas[spec[1]], seen);
+    case "struct":
+    case "external":
+      return every(Object.values(spec[1]));
+    case "tagged":
+      return Object.values(spec[2]).every((fields) => every(Object.values(fields)));
+    default:
+      return false;
+  }
+}
+
 function restoreJson(value) {
   if (typeof value === "bigint") {
     const number = Number(value);
     return Number.isSafeInteger(number) && BigInt(number) === value ? number : value;
   }
-  if (Array.isArray(value)) return Object.freeze(value.map(restoreJson));
+  if (Array.isArray(value)) return restoreItems(value, restoreJson);
   if (value !== null && typeof value === "object") return restoreEntries(value, restoreJson);
   return value;
 }
 
 export function restoreHost(value, spec) {
   if (value == null || spec == null) return value;
-  const [kind, detail, variants] = spec;
+  if (typeof value === "object" && Object.isFrozen(value) && freezesOnly(spec)) return value;
+  const kind = spec[0];
   if (kind === "bytes") return value instanceof Uint8Array ? value : new Uint8Array(value);
   if (kind === "buffer") {
-    const BufferType = bufferConstructors[detail];
+    const BufferType = bufferConstructors[spec[1]];
     return value instanceof BufferType ? value : new BufferType(value);
   }
   if (kind === "json") return restoreJson(value);
   if (kind === "duration") return BigInt(value.secs) * 1_000_000_000n + BigInt(value.nanos);
-  if (kind === "list") return Object.freeze(Array.from(value, (item) => restoreHost(item, detail)));
-  if (kind === "map") return restoreEntries(value, (item) => restoreHost(item, detail));
-  if (kind === "tuple") return Object.freeze(value.map((item, index) => restoreHost(item, detail[index])));
-  if (kind === "named") return restoreHost(value, nativeSchemas[detail]);
-  if (kind === "alias") return restoreHost(value, detail);
-  if (kind === "struct") return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restoreHost(item, detail[key])])));
-  if (kind === "tagged") {
-    const fields = variants[value[detail]];
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restoreHost(item, fields?.[key])])));
+  if (kind === "list") {
+    const detail = spec[1];
+    return detail == null ? Object.freeze(value) : restoreItems(value, (item) => restoreHost(item, detail));
   }
-  if (kind === "external" && typeof value === "object") {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restoreHost(item, detail[key])])));
+  if (kind === "map") {
+    const detail = spec[1];
+    return restoreEntries(value, (item) => restoreHost(item, detail));
   }
+  if (kind === "tuple") {
+    const detail = spec[1];
+    return restoreItems(value, (item, index) => restoreHost(item, detail[index]));
+  }
+  if (kind === "named") return restoreHost(value, nativeSchemas[spec[1]]);
+  if (kind === "alias") return restoreHost(value, spec[1]);
+  if (kind === "struct") return restoreFields(value, spec[1]);
+  if (kind === "tagged") return restoreFields(value, spec[2][value[spec[1]]]);
+  if (kind === "external" && typeof value === "object") return restoreFields(value, spec[1]);
   return value;
 }
 

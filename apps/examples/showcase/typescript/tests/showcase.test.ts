@@ -434,6 +434,10 @@ suite("errors", () => {
       () => echoRecord(record({ counters: new Map([["views", 3]]) as never })),
       wrongType("Map values cannot cross as objects; pass a plain object"),
     );
+    // Serde would read a missing `Option` as `None`, but `note` is required.
+    const { note: _, ...withoutNote } = record();
+    assert.throws(() => echoRecord(withoutNote as never), wrongType("missing field `note`"));
+    assert.throws(() => countTags([record(), withoutNote as never]), wrongType("missing field `note`"));
   });
 
   it("read only a model's own fields, whatever their names", () => {

@@ -1,8 +1,9 @@
-//! Direct boundaries carry only the shapes that they name.
+//! Direct boundaries carry only the shapes that they name, and bytes need no
+//! attribute.
 
 #[bimetal::export]
 #[must_use]
-pub fn checksum(#[bimetal(bytes)] payload: Vec<u16>) -> u32 {
+pub fn checksum(#[bimetal(bytes)] payload: Vec<u8>) -> u32 {
     payload.len() as u32
 }
 
@@ -13,7 +14,7 @@ pub fn total(#[bimetal(buffer)] samples: &[String]) -> u32 {
 }
 
 #[bimetal::export]
-#[bimetal(returns(bytes))]
+#[bimetal(returns(buffer))]
 pub fn nothing() {}
 
 fn main() {}

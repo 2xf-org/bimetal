@@ -225,8 +225,8 @@ mod tests {
     #[test]
     fn model_binary_fields_are_rejected() {
         let field = named_field(quote!(
-            #[bimetal(bytes)]
-            payload: Vec<u8>
+            #[bimetal(buffer)]
+            payload: Vec<f64>
         ));
         let error = field_tokens(&field, None, None).expect_err("nested bytes must be rejected");
 

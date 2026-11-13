@@ -33,11 +33,13 @@ const RUNTIME_SOURCE: &str = include_str!("runtime.py");
 /// The extension's stub. Its exports are wrapper targets whose names are
 /// hashes, which the generated API reaches with `getattr` and types itself, so
 /// the stub declares only the names that the runtime imports or reads.
-/// `PanicException` is pyo3's, which the extension registers.
+/// `PanicException` is pyo3's, which the extension registers, and so are
+/// `Revalidate` and `Dumped`, with which the generated code calls again with
+/// Pydantic's dump of an argument that the extension cannot read as it is.
 #[must_use]
 fn python_native_stub() -> String {
     format!(
-        "class {}(BaseException):\n    \"\"\"Raised when the Rust implementation panics.\"\"\"\n\n\n{}: str\n",
+        "class {}(BaseException):\n    \"\"\"Raised when the Rust implementation panics.\"\"\"\n\n\nclass Revalidate(Exception):\n    \"\"\"Raised for an argument that the extension reads only after Pydantic's dump.\"\"\"\n\n\nclass Dumped:\n    def __init__(self, value: object) -> None: ...\n\n\n{}: str\n",
         python_names::PANIC_EXCEPTION,
         discovery::CONTRACT_HASH_ATTRIBUTE
     )
@@ -71,7 +73,7 @@ pub(crate) fn emit(
     )?;
     output::write(
         &package.join(format!("{RUNTIME_MODULE}.py")),
-        &generated_python(&python_runtime(contract, contract_hash)),
+        &generated_python(&python_runtime(contract, python_package, contract_hash)),
     )?;
     output::write(&package.join("py.typed"), &output::banner("#", ""))?;
 
@@ -106,9 +108,10 @@ pub(crate) fn emit(
 }
 
 /// Render the private runtime: [`RUNTIME_SOURCE`], then the call that checks the
-/// extension's contract hash, and the schema of each model.
+/// extension's contract hash, the schema of each model, and the module and
+/// class of each error, inside `python_package`.
 #[must_use]
-fn python_runtime(contract: &Contract<'_>, contract_hash: &str) -> String {
+fn python_runtime(contract: &Contract<'_>, python_package: &str, contract_hash: &str) -> String {
     let mut source = format!(
         "{RUNTIME_SOURCE}\n\nrequire_contract({})\n\nnative_schemas = {{\n",
         literal::quoted(contract_hash)
@@ -119,6 +122,21 @@ fn python_runtime(contract: &Contract<'_>, contract_hash: &str) -> String {
             "    {}: {},",
             literal::quoted(&definition.identity().to_string()),
             render::python_json(&contract::named_spec(definition))
+        );
+    }
+    source.push_str("}\n\nnative_errors = {\n");
+    for error in &contract.manifest.errors {
+        let namespace = contract.namespace(&error.owner, &error.rust_module);
+        let module = format!(
+            "{}.{API_MODULE}",
+            render::python_namespace_module(python_package, &namespace)
+        );
+        let _ = writeln!(
+            source,
+            "    {}: ({}, {}),",
+            literal::quoted(&error.identity().to_string()),
+            literal::quoted(&module),
+            literal::quoted(&error.name)
         );
     }
     source.push_str("}\n");
@@ -210,7 +228,7 @@ mod tests {
     #[test]
     fn the_runtime_imports_the_exception_that_the_extension_registers() {
         assert!(RUNTIME_SOURCE.contains(&format!(
-            "from .{} import {}\n",
+            "from .{} import Dumped, {}, Revalidate\n",
             python_names::NATIVE_MODULE,
             python_names::PANIC_EXCEPTION
         )));

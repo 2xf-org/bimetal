@@ -20,15 +20,13 @@ pub(super) enum Boundary {
     Arrow,
     /// A numeric buffer (`buffer`).
     Buffer,
-    /// Bytes (`bytes`).
+    /// Bytes, which a byte sequence that is a whole value crosses as.
     Bytes,
-    /// A resource (`resource`).
-    Resource,
 }
 
 impl Boundary {
-    /// Every boundary.
-    const ALL: [Self; 4] = [Self::Arrow, Self::Buffer, Self::Bytes, Self::Resource];
+    /// Every boundary that an attribute declares.
+    const ALL: [Self; 2] = [Self::Arrow, Self::Buffer];
 
     /// Return the boundary that an attribute path names, if any.
     fn from_path(path: &Path) -> Option<Self> {
@@ -43,7 +41,6 @@ impl Boundary {
             Self::Arrow => "arrow",
             Self::Buffer => "buffer",
             Self::Bytes => "bytes",
-            Self::Resource => "resource",
         }
     }
 }
@@ -66,6 +63,16 @@ pub(super) fn declare_boundary(
     slot: &mut Option<Boundary>,
     allowed: &[Boundary],
 ) -> syn::Result<bool> {
+    if meta.path.is_ident("bytes") {
+        return Err(meta.error(
+            "`bytes` needs no attribute: a `Vec<u8>`, `&[u8]` or `[u8; N]` that is a whole parameter, return value or alias crosses as bytes",
+        ));
+    }
+    if meta.path.is_ident("resource") {
+        return Err(meta.error(
+            "`resource` needs no attribute: a parameter or return value of a resource's type crosses as the resource",
+        ));
+    }
     let Some(boundary) = Boundary::from_path(&meta.path).filter(|found| allowed.contains(found))
     else {
         return Ok(false);
@@ -430,8 +437,8 @@ pub(super) struct ParameterOptions {
     pub(super) default: Option<Expr>,
 }
 
-/// Parse an exported parameter's attributes: a direct boundary, `arrow`,
-/// `buffer`, `bytes`, or `resource`, and `default = <literal>`.
+/// Parse an exported parameter's attributes: a direct boundary, `arrow` or
+/// `buffer`, and `default = <expression>`.
 pub(super) fn parameter_options(attrs: &[Attribute]) -> syn::Result<ParameterOptions> {
     let mut options = ParameterOptions::default();
     let bimetal_attrs = attrs.iter().filter(|attr| attr.path().is_ident("bimetal"));
@@ -439,44 +446,16 @@ pub(super) fn parameter_options(attrs: &[Attribute]) -> syn::Result<ParameterOpt
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("default") {
                 declare_once(&meta, options.default.is_some())?;
-                let value: Expr = meta.value()?.parse()?;
-                if !is_literal(&value) {
-                    return Err(meta.error(
-                        "`default` takes a boolean, number, or string literal, which hosts write in their signatures",
-                    ));
-                }
-                options.default = Some(value);
+                options.default = Some(meta.value()?.parse()?);
                 Ok(())
             } else if declare_boundary(&meta, &mut options.boundary, &Boundary::ALL)? {
                 Ok(())
             } else {
-                Err(meta.error(
-                    "parameter attributes are arrow, buffer, bytes, resource, or default = <literal>",
-                ))
+                Err(meta.error("parameter attributes are arrow, buffer, or default = <expression>"))
             }
         })?;
     }
     Ok(options)
-}
-
-/// Return whether `value` is a literal, or a negated number.
-fn is_literal(value: &Expr) -> bool {
-    match value {
-        Expr::Lit(literal) => matches!(
-            literal.lit,
-            Lit::Bool(_) | Lit::Int(_) | Lit::Float(_) | Lit::Str(_)
-        ),
-        Expr::Unary(unary) if matches!(unary.op, syn::UnOp::Neg(_)) => {
-            matches!(
-                unary.expr.as_ref(),
-                Expr::Lit(ExprLit {
-                    lit: Lit::Int(_) | Lit::Float(_),
-                    ..
-                })
-            )
-        }
-        _ => false,
-    }
 }
 
 /// Remove Bimetal attributes from a callable and its parameters before the
@@ -503,11 +482,13 @@ pub(super) struct ExportOptions {
     pub(super) constructor: bool,
     /// Whether a resource method is omitted from the host API.
     pub(super) skip: bool,
-    /// Optional direct return boundary (`arrow`, `bytes`, `buffer`, or
-    /// `resource`).
+    /// Optional direct return boundary (`arrow` or `buffer`).
     pub(super) returns: Option<Boundary>,
     /// The host language feature that a resource method implements.
     pub(super) protocol: Option<Protocol>,
+    /// Whether a synchronous call is brief and never waits, so Python keeps
+    /// its interpreter lock through it.
+    pub(super) brief: bool,
 }
 
 /// The kind of exported callable whose options are parsed, which decides the
@@ -537,13 +518,15 @@ pub(super) fn export_options(
             } else if method && meta.path.is_ident("skip") {
                 declare_once(&meta, options.skip)?;
                 options.skip = true;
+            } else if meta.path.is_ident("brief") {
+                declare_once(&meta, options.brief)?;
+                options.brief = true;
             } else if meta.path.is_ident("returns") {
                 meta.parse_nested_meta(|boundary| {
                     if declare_boundary(&boundary, &mut options.returns, &Boundary::ALL)? {
                         Ok(())
                     } else {
-                        Err(boundary
-                            .error("return boundary must be arrow, buffer, bytes, or resource"))
+                        Err(boundary.error("return boundary must be arrow or buffer"))
                     }
                 })?;
             } else if method
@@ -556,11 +539,11 @@ pub(super) fn export_options(
                 }
             } else if method {
                 return Err(meta.error(
-                    "method attributes are constructor, skip, returns(arrow|buffer|bytes|resource), or a protocol: enter, exit, next, getter, setter, len, repr, display, getitem, setitem, delitem, contains, eq, hash, bool, or call",
+                    "method attributes are constructor, skip, brief, returns(arrow|buffer), or a protocol: enter, exit, next, getter, setter, len, repr, display, getitem, setitem, delitem, contains, eq, hash, bool, or call",
                 ));
             } else {
                 return Err(meta.error(
-                    "function attributes are returns(arrow|buffer|bytes|resource)",
+                    "function attributes are brief and returns(arrow|buffer)",
                 ));
             }
             Ok(())
@@ -584,7 +567,7 @@ pub(super) fn docs_tokens(attrs: &[Attribute]) -> TokenStream2 {
 /// Every line break of Python or JavaScript source ends a line here, a lone
 /// `\r` and the Unicode line and paragraph separators included, so that the
 /// generators can put each line in a comment.
-fn docs_text(attrs: &[Attribute]) -> Option<String> {
+pub(super) fn docs_text(attrs: &[Attribute]) -> Option<String> {
     let mut lines: Vec<String> = Vec::new();
     for text in attrs.iter().filter_map(doc_text) {
         let text = text.replace("\r\n", "\n");

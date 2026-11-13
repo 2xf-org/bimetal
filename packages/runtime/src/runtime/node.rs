@@ -9,10 +9,11 @@
 //! futures on other threads keep running.
 //!
 //! Every `unsafe` call of Node-API is in `env`, `value`, `error`, `class`,
-//! `promise`, and `callback`.
+//! `promise`, `callback`, and `courier`.
 
 mod callback;
 mod class;
+mod courier;
 mod env;
 mod error;
 mod promise;
@@ -25,5 +26,5 @@ pub use error::Error;
 #[doc(hidden)]
 pub use napi_sys::{napi_env, napi_value};
 pub use promise::{Deferred, awaitable, deferred, unref_awaitable};
-pub(crate) use value::Kind;
 pub use value::{Element, Value};
+pub(crate) use value::{Gathered, Kind};

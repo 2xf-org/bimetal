@@ -37,7 +37,7 @@ Before you hand off, run all four:
 | `mise run example` | Every example from end to end, as [the examples](#the-examples) describes |
 | `mise run check-examples` | The same, but it verifies the committed outputs instead of rewriting them |
 
-`check-examples` compares against what git holds, so stage or commit first. `mise run bench` measures build times, per-call time, peak memory and artifact sizes on this machine, and writes them to `target/bench/report.md`. CI doesn't run it.
+`check-examples` compares against what git holds, so stage or commit first. `mise run lab` times every crossing on each host, as [the crossing lab](#the-crossing-lab) says. `mise run bench` measures build times, peak memory and artifact sizes on this machine, and writes them to `target/bench/report.md`. CI doesn't run it.
 
 ## The layers
 
@@ -48,7 +48,8 @@ Before you hand off, run all four:
 | The runtime's tests | `packages/runtime/tests/contract.rs`, `python.rs` and `fork.rs` | Discovery, and the Python boundary, embedding CPython and driving async calls with asyncio |
 | Examples | `mise run example` | Every feature, called from Python, Wasm and the addon |
 | The check | `mise run check-examples` | Each machine rebuilds the committed output, byte for byte |
-| Benchmarks | `mise run bench` | Rough numbers, and copies against what each boundary should make |
+| The crossing lab | `mise run lab` | The time of each crossing, against another version of Bimetal or against the gate's limits |
+| Benchmarks | `mise run bench` | Build times, and copies against what each boundary should make |
 
 `fork.rs` is alone in its binary because `fork` copies only the calling thread.
 
@@ -66,6 +67,20 @@ The tutorial and the guides' samples are in those tests, in `test_tutorial.py`, 
 
 A new feature goes in `apps/examples/showcase`, with tests on every host. A bug gets a test in the showcase, so that it stays found.
 
+## The crossing lab
+
+`apps/benchmark/lab.py` times each kind of crossing on each host, so that a change to the runtime, the macros or the CLI can be measured against the version before it. It copies the probe (`apps/benchmark/probe`), an application with one export for each kind of value and call, into `target/lab`, builds it there with this checkout's CLI, and runs `lab_python.py` on the Python package and `lab_node.mjs` on the npm package, once on the Wasm module and once on the addon. No generated file lands in the checkout.
+
+```bash
+mise run lab -- --hosts python,node --base main
+```
+
+With `--base`, the lab extracts that git ref into `target/lab/base`, builds it as well, and runs the two builds in turns, one process of each per round, in an order that alternates. A change in the machine's load then reaches both, and the report gives each case's ratio between them with its spread across rounds. A later run against the same commit reuses the base's builds.
+
+Each case is the median, over rounds, of the median time per call of its samples. A case named `<name>-raw` calls the native function that the wrapper of `<name>` calls, with the arguments that the wrapper passes, so the difference is the wrapper's share, and a case named `floor-*` makes no call into Rust: it is the least that the same kind of crossing costs in the host itself, such as handing a future to a Python thread and back. `wait-32` makes 32 calls that wait at once, `wait-32-contended` does so while another Python thread competes for the interpreter lock, and `spin-async-32` makes 32 calls at once that each work for about 170 µs without waiting.
+
+CI runs the gate on Linux x86_64: `--gate apps/benchmark/lab-gate.json` fails when a case exceeds its limit, which is a multiple of `noop-raw` in the same process, or of another case for a key such as `spin-async-32/spin`. A multiple holds across machines better than a time does, and each limit leaves two to three times the room that a run on an Apple M5 needs, and four to five times for calls that wait, whose time varies most between machines, so the gate catches a lost optimization rather than noise.
+
 ## The docs
 
 `apps/cli/tests/docs.rs` holds the docs to what they describe: every Rust, Python and TypeScript sample in the README and in `docs/` has its lines, in order, in a program in `apps/examples/` or `apps/trials/`, every relative link goes somewhere, and the prose has none of the dashes the style rules out.
@@ -81,7 +96,7 @@ A new feature goes in `apps/examples/showcase`, with tests on every host. A bug 
 | macOS arm64 (`macos-latest`) | | Yes | `check-examples` | Yes |
 | Windows x86_64 (`windows-latest`) | | Yes | `example`, on `main` only | Reported, on `main` only |
 
-Pull requests run Linux x86_64 and macOS, and on Windows only the tests, while `main` runs every row in full. A final step loads greeter's Python package on Python 3.13, and on the oldest Node.js allowed, greeter's npm package, which uses the addon, and the showcase's, which uses the Wasm module. Every job starts with the setup steps in `.github/actions/setup`. No job of this workflow reads a secret, and its token can only read the repository, so a pull request from a fork has nothing to take. Each action is named by a commit, which Dependabot updates.
+Pull requests run Linux x86_64 and macOS, and on Windows only the tests, while `main` runs every row in full. Linux x86_64 also runs [the crossing lab's gate](#the-crossing-lab). A final step loads greeter's Python package on Python 3.13, and on the oldest Node.js allowed, greeter's npm package, which uses the addon, and the showcase's, which uses the Wasm module. Every job starts with the setup steps in `.github/actions/setup`. No job of this workflow reads a secret, and its token can only read the repository, so a pull request from a fork has nothing to take. Each action is named by a commit, which Dependabot updates.
 
 On Windows, mise runs a task through `cmd.exe`, so the `test` task has plain commands for it, and Git Bash runs `apps/examples/run`. On `main`, before it builds anything, it runs `bimetal check` on each example in the fresh clone, which fails the job if the committed fingerprints don't hold there, and then `bimetal check --rebuild`. That comparison doesn't stop the job, because the Wasm module can differ there, as [Reproducible output](reproducible.md#windows) says. Then it runs `example` rather than `check-examples`.
 
@@ -98,6 +113,8 @@ The Python boundary tests need the `python` feature, and the test binary must fi
 | An interrupt while reading arguments isn't lost | `interrupts_while_reading_arguments_propagate` |
 | The extension records its contract's hash | `the_module_records_the_hash_of_its_contract` |
 | An async call keeps its value from the call until it finishes | `async_calls_hold_the_value_from_the_call_until_they_finish` |
+| A waiting call's result reaches its own loop, also on a loop without readers, on two loops at once and while another thread competes for the interpreter lock, and a closed loop leaves no socket open | `waiting_calls_reach_their_own_loop` |
+| An async export that works long starts its calls on workers, and comes back once it works briefly | `async_calls_that_work_long_start_on_workers`, and the unit tests of `bimetal/src/runtime/pace.rs` |
 | An async call takes its lock when it's made | `async_calls_take_the_lock_when_they_are_made` |
 | Taking a value fails while a call holds it | `taking_a_value_closes_the_resource_unless_a_call_holds_it` |
 | Arrow crosses through the PyCapsule interface | `arrow_values_cross_through_the_pycapsule_interface` |
@@ -123,7 +140,7 @@ The Python boundary tests need the `python` feature, and the test binary must fi
 This list is as of 10 November 2026, and should shrink.
 
 - **Windows and Linux arm64, for the newest features.** Resources across calls, callbacks, protocols, error details and Arrow streams have run on macOS arm64 and Linux x86_64 only, and the five trials on macOS arm64 only, with Python 3.11 and Node.js 24. The matrix above covers the other two platforms from its first run on the public repository.
-- **The addon's thread-safe function during shutdown.** A review found a use-after-free window, and the fix has no regression test. It was checked by reading.
+- **The addon's courier during shutdown.** Its slot closes the use-after-free window that a review found in the thread-safe functions it replaced, and it has no regression test. It was checked by reading.
 - **The Polars bridge.** It uses `transmute` between two versions of `repr(C)` structs. Tests exercise it, and nobody has reviewed it independently.
 - **Memory.** No test runs under a sanitizer or Miri, or checks for leaks across long runs.
 - **Bundlers other than Vite, and browsers other than headless Chrome.**

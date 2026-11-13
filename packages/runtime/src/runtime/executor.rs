@@ -21,6 +21,9 @@ use std::task::{Context, Poll, Waker};
 use std::{mem, ptr};
 
 use tokio::runtime::{Builder, EnterGuard, Runtime};
+
+pub use crate::runtime::pace::Pace;
+use crate::runtime::pace::Paced;
 #[cfg(feature = "python")]
 use tokio::task::AbortHandle;
 use tokio::task::JoinHandle;
@@ -57,11 +60,12 @@ where
 /// Where an async call makes its first poll. The macros choose it from the
 /// call's parameters.
 #[doc(hidden)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Start {
     /// On the caller's thread, so that a call that does not wait needs no
-    /// worker.
-    Caller,
+    /// worker, unless its export's [`Pace`] says that it works too long for
+    /// that thread.
+    Caller(&'static Pace),
     /// On a worker, for a call that takes a `Callback` or a stream that the
     /// host writes: before its first wait, it could wait for the host's event
     /// loop, which runs on the caller's thread.
@@ -74,7 +78,7 @@ pub(crate) enum Started<F: Future> {
     Ready(F::Output),
     /// It waits, or its first poll is a worker's. A worker polls it from
     /// here on.
-    Pending(Pin<Box<F>>),
+    Pending(Paced<F>),
 }
 
 #[cfg(all(feature = "node", feature = "arrow-api"))]
@@ -111,26 +115,28 @@ pub(crate) fn leave_first_poll() -> Mark {
 }
 
 /// Poll `future` once on this thread, inside the current process's runtime,
-/// unless `start` leaves the first poll to a worker.
+/// unless `start` leaves the first poll to a worker, or the export's pace
+/// says that the call works too long for this thread.
 ///
 /// A call that finishes without a wait, as a read from memory does, then
 /// costs no thread: only a call that waits goes to a worker, which polls it
 /// again and so replaces the waker of this poll, which wakes no one. A
 /// future must therefore register its waker on every poll.
 pub(crate) fn first_poll<F: Future>(future: F, start: Start) -> Started<F> {
-    let mut future = Box::pin(future);
-    if start == Start::Runtime {
-        return Started::Pending(future);
+    let pace = match start {
+        Start::Caller(pace) => pace,
+        Start::Runtime => return Started::Pending(Paced::new(future, None)),
+    };
+    let mut call = Paced::new(future, Some(pace));
+    if call.hands_off() {
+        return Started::Pending(call);
     }
     let _runtime = enter();
     #[cfg(all(feature = "node", feature = "arrow-api"))]
     let _mark = Mark(FIRST_POLL.replace(true));
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
+    match Pin::new(&mut call).poll(&mut Context::from_waker(Waker::noop())) {
         Poll::Ready(output) => Started::Ready(output),
-        Poll::Pending => Started::Pending(future),
+        Poll::Pending => Started::Pending(call),
     }
 }
 
@@ -432,12 +438,13 @@ mod tests {
     #[cfg(all(feature = "node", feature = "arrow-api"))]
     #[test]
     fn a_first_poll_marks_its_thread_only_while_it_polls() {
+        static PACE: Pace = Pace::new();
         let nested = first_poll(
             async {
-                let inner = first_poll(async { in_first_poll() }, Start::Caller);
+                let inner = first_poll(async { in_first_poll() }, Start::Caller(&PACE));
                 matches!(inner, Started::Ready(true)) && in_first_poll()
             },
-            Start::Caller,
+            Start::Caller(&PACE),
         );
         assert!(matches!(nested, Started::Ready(true)));
         assert!(!in_first_poll());
@@ -446,7 +453,7 @@ mod tests {
             Started::Pending(_)
         ));
 
-        let panicked = catch(|| first_poll(async { fail() }, Start::Caller));
+        let panicked = catch(|| first_poll(async { fail() }, Start::Caller(&PACE)));
         assert!(panicked.is_err(), "the poll panics");
         assert!(!in_first_poll(), "the panic clears the mark");
     }
@@ -457,6 +464,7 @@ mod tests {
     #[cfg(all(feature = "node", feature = "arrow-api"))]
     #[test]
     fn a_blocking_read_clears_the_mark_until_it_ends() {
+        static PACE: Pace = Pace::new();
         let read = first_poll(
             async {
                 let inside = {
@@ -469,7 +477,7 @@ mod tests {
                 });
                 (inside, panicked.is_err(), in_first_poll())
             },
-            Start::Caller,
+            Start::Caller(&PACE),
         );
         assert!(matches!(read, Started::Ready((false, true, true))));
     }

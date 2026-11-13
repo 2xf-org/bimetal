@@ -16,9 +16,7 @@ use crate::cargo::Resolution;
 use crate::cli::{Cli, Command, ProjectArgs};
 use crate::config::{Config, Host};
 use crate::output::OutOfSync;
-use crate::project::{
-    self, BuildReport, BuildStatus, CheckReport, HostReport, NativeBuildReport, Project,
-};
+use crate::project::{self, BuildReport, BuildStatus, CheckReport, HostReport, Project};
 use crate::scaffold::{self, NewReport};
 
 /// Run one parsed command, and with `--json` also print a failure on
@@ -41,10 +39,6 @@ fn execute(cli: Cli, stdout: &mut dyn Write) -> Result<()> {
         Command::Build(args) => {
             let application = read_project(&args.project, resolution(&args.project))?;
             report(stdout, json, &project::build(&application, args.force)?)
-        }
-        Command::BuildNative(args) => {
-            let application = read_project(&args, resolution(&args))?;
-            report(stdout, json, &project::build_native(&application)?)
         }
         Command::Check(args) => {
             // A check writes nothing, Cargo.lock included.
@@ -107,27 +101,6 @@ impl fmt::Display for BuildReport<'_> {
                 write_hosts(formatter, &self.hosts)
             }
         }
-    }
-}
-
-impl fmt::Display for NativeBuildReport<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.artifacts.is_empty() {
-            return write!(
-                formatter,
-                "{} has no native artifacts to build.",
-                self.application
-            );
-        }
-        write!(
-            formatter,
-            "Built the native artifacts of {}:",
-            self.application
-        )?;
-        for artifact in &self.artifacts {
-            write!(formatter, "\n  {}", display_path(artifact))?;
-        }
-        Ok(())
     }
 }
 
@@ -314,20 +287,6 @@ mod tests {
         assert_eq!(
             check.to_string(),
             format!("The generated files of app 1.0.0 match the Rust sources.{lines}")
-        );
-    }
-
-    #[test]
-    fn a_native_build_without_artifacts_says_so() {
-        let report = NativeBuildReport {
-            application: "app",
-            artifacts: Vec::new(),
-        };
-
-        assert_eq!(report.to_string(), "app has no native artifacts to build.");
-        assert_eq!(
-            serde_json::to_value(&report).unwrap(),
-            serde_json::json!({"status": "ok", "application": "app", "artifacts": []})
         );
     }
 

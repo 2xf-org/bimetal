@@ -166,7 +166,10 @@ fn generate(
 /// Report every syntax and semantic problem of a source text.
 #[bimetal::export]
 #[must_use]
-pub fn check(source: &str, #[bimetal(default = "js")] language: Language) -> Vec<Diagnostic> {
+pub fn check(
+    source: &str,
+    #[bimetal(default = Language::Js)] language: Language,
+) -> Vec<Diagnostic> {
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, language.source_type()).parse();
     if !parsed.errors.is_empty() {
@@ -182,7 +185,7 @@ pub fn check(source: &str, #[bimetal(default = "js")] language: Language) -> Vec
 #[bimetal::export]
 pub fn transform(
     source: &str,
-    #[bimetal(default = "ts")] language: Language,
+    #[bimetal(default = Language::Ts)] language: Language,
     options: Option<OutputOptions>,
 ) -> Result<Output, OxcError> {
     let options = options.unwrap_or_default();
@@ -216,7 +219,7 @@ pub fn transform(
 #[bimetal::export]
 pub fn minify(
     source: &str,
-    #[bimetal(default = "js")] language: Language,
+    #[bimetal(default = Language::Js)] language: Language,
     options: Option<OutputOptions>,
 ) -> Result<Output, OxcError> {
     let options = options.unwrap_or_default();
@@ -315,7 +318,7 @@ impl Module {
     #[bimetal(constructor)]
     pub fn new(
         source: String,
-        #[bimetal(default = "js")] language: Language,
+        #[bimetal(default = Language::Js)] language: Language,
     ) -> Result<Self, OxcError> {
         parse(&Allocator::default(), &source, language)?;
         Ok(Self { source, language })
@@ -386,7 +389,6 @@ impl Module {
     }
 
     /// Walk the top-level statements.
-    #[bimetal(returns(resource))]
     pub fn statements(&self) -> Statements {
         let allocator = Allocator::default();
         let program = parse(&allocator, &self.source, self.language)

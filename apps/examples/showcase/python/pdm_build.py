@@ -36,8 +36,7 @@ def pdm_build_update_files(context, files):
     extensions = [path for name, path in files.items() if name.endswith(EXTENSION_SUFFIXES)]
     if not extensions:
         raise RuntimeError(
-            "the native extension is missing: run `bimetal build` or "
-            "`bimetal build-native` before building a wheel"
+            "the native extension is missing: run `bimetal build` before building a wheel"
         )
     if sys.platform == "darwin":
         # pdm-backend reads the tag only after this hook.

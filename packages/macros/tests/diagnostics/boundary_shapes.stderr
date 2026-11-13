@@ -1,17 +1,17 @@
-error: `bytes` requires `Vec<u8>`, `&[u8]`, `[u8; N]`, or `&[u8; N]`
- --> tests/diagnostics/boundary_shapes.rs:5:44
+error: `bytes` needs no attribute: a `Vec<u8>`, `&[u8]` or `[u8; N]` that is a whole parameter, return value or alias crosses as bytes
+ --> tests/diagnostics/boundary_shapes.rs:6:27
   |
-5 | pub fn checksum(#[bimetal(bytes)] payload: Vec<u16>) -> u32 {
-  |                                            ^^^^^^^^
+6 | pub fn checksum(#[bimetal(bytes)] payload: Vec<u8>) -> u32 {
+  |                           ^^^^^
 
 error: `buffer` requires `Vec<T>`, `&Vec<T>`, or `&[T]` of a numeric type, from `u8` to `f64`
-  --> tests/diagnostics/boundary_shapes.rs:11:42
+  --> tests/diagnostics/boundary_shapes.rs:12:42
    |
-11 | pub fn total(#[bimetal(buffer)] samples: &[String]) -> u32 {
+12 | pub fn total(#[bimetal(buffer)] samples: &[String]) -> u32 {
    |                                          ^^^^^^^^^
 
-error: `returns(bytes)` requires a return value
-  --> tests/diagnostics/boundary_shapes.rs:17:5
+error: `returns(buffer)` requires a return value
+  --> tests/diagnostics/boundary_shapes.rs:18:5
    |
-17 | pub fn nothing() {}
+18 | pub fn nothing() {}
    |     ^^^^^^^^^^^^

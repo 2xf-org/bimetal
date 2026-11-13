@@ -12,7 +12,8 @@ UV_PYTHON = "3.11.14"
 [tasks]
 example = { description = "Build every example with the local CLI, test each host package, and install the packages into new projects; docs/internals/testing.md lists every step", run = "apps/examples/run" }
 check-examples = { description = "Rebuild every example and verify that it and its lockfiles match what is committed, without rewriting them, as CI does", run = "apps/examples/run --check" }
-bench = { description = "Measure build times, per-call time, peak memory, and artifact sizes on this machine, and write them to target/bench/report.md", run = "python3 apps/benchmark/run.py" }
+bench = { description = "Measure build times, peak memory, and artifact sizes on this machine, and write them to target/bench/report.md", run = "python3 apps/benchmark/run.py" }
+lab = { description = "Build the probe and time every crossing on each host; `-- --base <ref>` compares with another version in turns, and `-- --gate <file>` checks the limits", run = "python3 apps/benchmark/lab.py" }
 
 [tasks.test]
 description = "Run the Rust tests, including the embedded-Python tests and the runtime's unit tests with the Node.js boundary"
@@ -65,8 +66,9 @@ for features in "" arrow arrow-59; do
   cargo clippy --locked -p bimetal --target wasm32-unknown-unknown --features "$features" -- -D warnings
 done
 
-# The examples are separate workspaces, so check them one by one.
-for example in apps/examples/*/; do
+# The examples and the lab's probe are separate workspaces, so check them one
+# by one.
+for example in apps/examples/*/ apps/benchmark/probe/; do
   cargo fmt --manifest-path "$example/Cargo.toml" --all --check
   cargo clippy --locked --manifest-path "$example/Cargo.toml" --workspace --all-targets -- -D warnings
 done

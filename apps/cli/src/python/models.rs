@@ -72,7 +72,58 @@ pub(super) fn python_models(
             let _ = writeln!(source, "{name}.model_rebuild()");
         }
     }
+    emit_class_registration(&mut source, items, context);
     Ok(context.module(MODELS_MODULE, &source))
+}
+
+/// Register the namespace's classes by their keys, which the extension
+/// makes its results of: each model and string enum, and for an enum with
+/// data, the class of each variant by its wire name.
+fn emit_class_registration(
+    source: &mut String,
+    items: &NamespaceItems<'_>,
+    context: &PythonContext<'_>,
+) {
+    let mut entries = Vec::new();
+    for definition in &items.types {
+        let key = literal::quoted(&definition.identity().to_string());
+        let variants: Vec<(&str, &str)> = match &definition.shape {
+            TypeShape::Struct { .. } | TypeShape::StringEnum { .. } => {
+                entries.push(format!("    {key}: {},", definition.name));
+                continue;
+            }
+            TypeShape::Alias { .. } => continue,
+            TypeShape::TaggedEnum { variants, .. } => variants
+                .iter()
+                .map(|variant| (variant.rust_name.as_str(), variant.wire_name.as_str()))
+                .collect(),
+            TypeShape::ExternalEnum { variants } => variants
+                .iter()
+                .map(|variant| (variant.rust_name.as_str(), variant.wire_name.as_str()))
+                .collect(),
+        };
+        let classes: Vec<String> = variants
+            .iter()
+            .map(|(rust_name, wire_name)| {
+                format!(
+                    "{}: {}",
+                    literal::quoted(wire_name),
+                    contract::tagged_variant_name(&definition.name, rust_name)
+                )
+            })
+            .collect();
+        entries.push(format!("    {key}: {{{}}},", classes.join(", ")));
+    }
+    if entries.is_empty() {
+        return;
+    }
+    render::begin_python_top_level(source);
+    let _ = writeln!(
+        source,
+        "{}({{\n{}\n}})",
+        context.runtime("register_classes"),
+        entries.join("\n")
+    );
 }
 
 /// Order local aliases after the local declarations on which they depend.
@@ -239,13 +290,18 @@ fn emit_python_tagged_enum(
         .map(|variant| contract::tagged_variant_name(&definition.name, &variant.rust_name))
         .collect::<Vec<_>>()
         .join(" | ");
+    // Pydantic picks the variant by its tag, which a value must carry, as for
+    // Serde; a variant's model fills it in only when it is built directly.
     render::begin_python_top_level(source);
     render::emit_python_comment_docs(source, definition.docs.as_deref(), "#: ");
     let _ = writeln!(
         source,
-        "{}: {} = {names}",
+        "{}: {} = {}[{names}, {}(discriminator={})]",
         definition.name,
-        context.import("TypeAlias")
+        context.import("TypeAlias"),
+        context.import("Annotated"),
+        context.import("Field"),
+        literal::quoted(&tag_name),
     );
     Ok(())
 }
@@ -586,9 +642,7 @@ mod tests {
 
         // Only a module whose code reaches a hidden builtin imports
         // `builtins`, beside what the models use.
-        assert!(source.starts_with(
-            "from __future__ import annotations\n\nimport builtins as _bimetal_builtins\n\nfrom pydantic import BaseModel, ConfigDict, Field\n\n\nclass Listing(BaseModel):\n"
-        ));
+        assert!(source.starts_with("from __future__ import annotations\n\nimport builtins as _bimetal_builtins\n\nfrom pydantic import BaseModel, ConfigDict, Field\n\nfrom test._runtime import (\n    register_classes as _bimetal_register_classes,\n)\n\n\nclass Listing(BaseModel):\n"), "{source}");
         // The field `list` hides the builtin in its class, before and after.
         assert!(source.contains("    list: _bimetal_builtins.list[str] = Field(default=...)\n"));
         assert!(source.contains("    counts: _bimetal_builtins.list[int] = Field(default=...)\n"));
@@ -614,7 +668,9 @@ mod tests {
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
 
-        assert!(source.contains("from test._runtime import (\n    ExternalVariant as _bimetal_ExternalVariant,\n    external_discriminator as _bimetal_external_discriminator,\n    variant_tag as _bimetal_variant_tag,\n)\n"));
+        assert!(source.contains("from test._runtime import (\n    ExternalVariant as _bimetal_ExternalVariant,\n    external_discriminator as _bimetal_external_discriminator,\n    register_classes as _bimetal_register_classes,\n    variant_tag as _bimetal_variant_tag,\n)\n"));
+        // The extension makes each variant of its class, by its wire name.
+        assert!(source.contains("_bimetal_register_classes({\n    \"test::test::Shape\": {\"empty\": ShapeEmpty, \"label\": ShapeLabel, \"circle\": ShapeCircle},\n})\n"), "{source}");
         assert!(source.contains("class ShapeEmpty(_bimetal_ExternalVariant):\n    __bimetal_variant__ = \"empty\"\n    __bimetal_form__ = \"unit\"\n    model_config = ConfigDict("));
         assert!(
             source.contains(
@@ -628,6 +684,43 @@ mod tests {
         assert!(source.contains(
             "ShapeEmpty.model_rebuild()\nShapeLabel.model_rebuild()\nShapeCircle.model_rebuild()\n"
         ));
+    }
+
+    #[test]
+    fn internally_tagged_enums_are_unions_that_their_tag_discriminates() {
+        let variant = |name: &str, wire_name: &str| EnumVariantDef {
+            rust_name: name.to_owned(),
+            wire_name: wire_name.to_owned(),
+            docs: None,
+            fields: vec![fixtures::field("id", "id")],
+        };
+        let event = definition(
+            "Event",
+            TypeShape::TaggedEnum {
+                tag: "kind".to_owned(),
+                variants: vec![variant("Created", "created"), variant("Moved", "moved")],
+            },
+        );
+        let manifest = Manifest {
+            types: vec![event],
+            ..fixtures::manifest()
+        };
+        let namespace = Namespace::root();
+        let contract = fixtures::contract(&manifest);
+        let imports = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+
+        let source =
+            python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
+
+        assert!(
+            source.contains("    kind: Literal[\"moved\"] = Field(default=\"moved\")\n"),
+            "{source}"
+        );
+        assert!(
+            source.contains("Event: TypeAlias = Annotated[EventCreated | EventMoved, Field(discriminator=\"kind\")]\n"),
+            "{source}"
+        );
     }
 
     #[test]

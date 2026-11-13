@@ -593,6 +593,11 @@ pub struct CallableDef {
     pub error: Option<DefinitionId>,
     /// Whether the callable is an `async fn`, which hosts await.
     pub is_async: bool,
+    /// Whether a synchronous call is brief, as `#[bimetal(brief)]` says:
+    /// Python keeps its interpreter lock through it, and calls the native
+    /// function itself where the generated one would only pass its
+    /// arguments on.
+    pub brief: bool,
 }
 
 impl CallableDef {

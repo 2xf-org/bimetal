@@ -133,9 +133,14 @@ impl Project {
             .typescript
             .as_ref()
             .map(|typescript| {
-                let package = typescript.package.as_deref();
                 let project = typescript.project.as_deref();
-                host(Host::TypeScript, package, project, &package_name)
+                let mut package = host(Host::TypeScript, None, project, &package_name)?;
+                if let Some(name) = npm_name(&package.project) {
+                    validation::validate_typescript_package(&name)
+                        .context("invalid `name` in the npm project's package.json")?;
+                    package.package = name;
+                }
+                Ok::<_, anyhow::Error>(package)
             })
             .transpose()?;
         let enabled: Vec<&HostPackage> = [&python, &typescript].into_iter().flatten().collect();
@@ -265,6 +270,15 @@ fn host_package(
         package: package.to_owned(),
         project,
     })
+}
+
+/// The npm package name that the `package.json` of `project` declares, if it
+/// declares one. The application name stands in until it does, and the
+/// validation of `package.json` reports a missing or unreadable file.
+fn npm_name(project: &Path) -> Option<String> {
+    let source = std::fs::read_to_string(project.join("package.json")).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&source).ok()?;
+    manifest["name"].as_str().map(str::to_owned)
 }
 
 /// Reject hosts whose projects are the same folder or one inside the other,

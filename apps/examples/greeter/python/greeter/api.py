@@ -9,12 +9,16 @@ from .models import (
     GreetingRequest,
 )
 from greeter._runtime import (
+    Adapter as _bimetal_Adapter,
+    Dumped as _bimetal_Dumped,
     PanicException,
-    dump_host as _bimetal_dump_host,
+    Revalidate as _bimetal_Revalidate,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_greeter_fb54ba6c799a7247")
+_bimetal_adapter_1 = _bimetal_Adapter(lambda: GreetingRequest)
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_resource_greeter_bb07b219c73441c9")
 
 
 GreeterErrorCode: TypeAlias = Literal[
@@ -45,15 +49,12 @@ def greet(request: GreetingRequest) -> Greeting:
         GreeterError
     """
     try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_greeter_fb54ba6c799a7247")(
-            _bimetal_dump_host(GreetingRequest, request),
+        __bimetal_native = _bimetal_native_0(request)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_0(
+            _bimetal_Dumped(_bimetal_adapter_1.dump(request)),
         )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, GreeterError) from None
-    __bimetal_result: Greeting = _bimetal_type_adapter(Greeting).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: Greeting = __bimetal_native
     return __bimetal_result
 
 
@@ -64,9 +65,7 @@ class Guestbook:
         """
         Open an empty guestbook.
         """
-        self.native_resource = getattr(_bimetal_native, "__bimetal_resource_greeter_bb07b219c73441c9")(
-            event,
-        )
+        self.native_resource = _bimetal_native_2(event)
 
     @classmethod
     def __bimetal_wrap__(cls, native: Any) -> Guestbook:
@@ -81,10 +80,7 @@ class Guestbook:
         Raises:
             GreeterError
         """
-        try:
-            self.native_resource.sign(name)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, GreeterError) from None
+        self.native_resource.sign(name)
         return None
 
     def event(self) -> str:
@@ -100,10 +96,7 @@ class Guestbook:
         The names signed so far, in signing order.
         """
         __bimetal_native = self.native_resource.names()
-        __bimetal_result: list[str] = _bimetal_type_adapter(list[str]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[str] = __bimetal_native
         return __bimetal_result
 
     def close(self) -> None:

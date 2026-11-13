@@ -1,10 +1,10 @@
 # Bytes and buffers
 
-A plain `Vec<T>` becomes a host list, with one host object per element. If the representation matters, annotate a top-level parameter with `bytes` or `buffer`, or the export with `returns(bytes)` or `returns(buffer)`. [How values cross](../concepts/crossing.md) says what this saves.
+A plain `Vec<T>` becomes a host list, with one host object per element. A byte sequence that is a whole parameter or return value crosses as bytes instead, and a numeric one as a buffer when the parameter says `buffer`, or the export `returns(buffer)`. [How values cross](../concepts/crossing.md) says what this saves.
 
 ## Bytes
 
-Bytes become Python `bytes` and a `Uint8Array`:
+A `Vec<u8>`, `&[u8]` or `[u8; N]` parameter or return value becomes Python `bytes` and a `Uint8Array`:
 
 ```rust
 /// Reverse bytes. Large payloads use the `bytes` boundary instead of a list.
@@ -12,9 +12,8 @@ Bytes become Python `bytes` and a `Uint8Array`:
 /// A parameter that shares its name with a Python builtin, such as `bytes`,
 /// gains a trailing underscore in Python: `bytes_`.
 #[bimetal::export]
-#[bimetal(returns(bytes))]
 #[must_use]
-pub fn reverse(#[bimetal(bytes)] bytes: &[u8]) -> Vec<u8> {
+pub fn reverse(bytes: &[u8]) -> Vec<u8> {
 ```
 
 ```python
@@ -25,7 +24,7 @@ self.assertEqual(reverse(b"abc"), b"cba")
 assert.deepEqual(reverse(new Uint8Array([1, 2, 3])), new Uint8Array([3, 2, 1]));
 ```
 
-A fixed-size `[u8; N]` also works, and an argument of the wrong length is a `ValueError` in Python and a `TypeError` in TypeScript. Without `bytes`, an array crosses as a tuple of its items, as Serde writes it, just as a `Vec<u8>` crosses as a list of integers. Serde writes and reads arrays of up to 32 items. Python refuses a tuple of the wrong length; TypeScript refuses one that is too short and leaves out extra items.
+For a fixed-size `[u8; N]`, an argument of the wrong length is a `ValueError` in Python and a `TypeError` in TypeScript. Inside a model, an array crosses as a tuple of its items, as Serde writes it, just as a `Vec<u8>` there crosses as a list of integers. Serde writes and reads arrays of up to 32 items. Python refuses a tuple of the wrong length; TypeScript refuses one that is too short and leaves out extra items.
 
 ## Buffers
 
@@ -57,10 +56,9 @@ A return can be an `Option` of bytes or a buffer, for a method that may have not
 
 ```rust
 /// The first title as bytes, if there is one.
-#[bimetal(returns(bytes))]
 pub fn first_bytes(&self) -> Option<Vec<u8>> {
 ```
 
 ## In models
 
-Models can't contain `bytes` or `buffer` fields. A `Vec<u8>` field is a list of integers, so send large payloads as separate parameters.
+A model's `Vec<u8>` field is a list of integers, and a model can't hold buffers, so send large payloads as separate parameters.

@@ -17,10 +17,10 @@ backend = "node"
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "237107826afbc710d7e9aa1f97b6359a"
+source_fingerprint = "cc04bfb55ee18c13a9f5f5f31bebc8de"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "eee465022ba63b731bb4d10aed26bc63"
+output_fingerprint = "93072de472478aae8938b7b6e03b5c21"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -66,7 +66,6 @@ inputs = [
     "../../../packages/runtime/src/contract_type.rs",
     "../../../packages/runtime/src/convert.rs",
     "../../../packages/runtime/src/lib.rs",
-    "../../../packages/runtime/src/owned.rs",
     "../../../packages/runtime/src/registry.rs",
     "../../../packages/runtime/src/registry/finite.rs",
     "../../../packages/runtime/src/runtime.rs",

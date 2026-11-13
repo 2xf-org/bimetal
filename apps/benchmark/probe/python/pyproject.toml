@@ -1,0 +1,20 @@
+[build-system]
+requires = ["pdm-backend>=2.4.9,<3"]
+build-backend = "pdm.backend"
+
+[project]
+name = "probe"
+version = "0.1.0"
+requires-python = ">=3.11"
+# PyPI rejects any upload with this classifier; remove it to publish.
+classifiers = ["Private :: Do Not Upload"]
+dependencies = [
+    "pyarrow>=16",
+    "pydantic>=2.7,<3",
+]
+
+[tool.pdm.build]
+includes = ["probe"]
+# The package ships a native extension, so wheels are platform-specific;
+# pdm_build.py tags them for the stable ABI and the extension's platform.
+is-purelib = false

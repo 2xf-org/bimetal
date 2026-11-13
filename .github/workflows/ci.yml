@@ -45,6 +45,11 @@ jobs:
       # docs/internals/testing.md#ci describes this step and the byte check.
       - name: Verify and test the examples
         run: mise run check-examples
+      # The crossing lab's gate, which docs/internals/testing.md#the-crossing-lab
+      # describes: each case as a multiple of the cheapest native call.
+      - name: Gate the time of each crossing
+        if: matrix.platform == 'Linux x86_64'
+        run: mise run lab -- --hosts python,node --rounds 3 --samples 10 --cases noop --gate apps/benchmark/lab-gate.json
       # The Wasm loader is what needs Node.js 20.16, so the showcase's
       # package loads here beside greeter's Node.js addon.
       - name: Load the packages on a newer Python and the oldest supported Node.js

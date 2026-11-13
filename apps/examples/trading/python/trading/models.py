@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from trading._runtime import (
+    register_classes as _bimetal_register_classes,
+)
+
 
 class EngineConfig(BaseModel):
     """
@@ -46,6 +50,12 @@ class Listing(BaseModel):
 
 EngineConfig.model_rebuild()
 Listing.model_rebuild()
+
+
+_bimetal_register_classes({
+    "trading::trading::EngineConfig": EngineConfig,
+    "trading::trading::Listing": Listing,
+})
 
 __all__ = [
     "EngineConfig",

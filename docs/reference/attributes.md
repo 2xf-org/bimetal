@@ -14,7 +14,7 @@ Every `#[bimetal(...)]`, by where it goes.
 
 | Attribute | Does |
 | --- | --- |
-| `required` | The field must be present, also when its type is `Option<T>` |
+| `required` | The `Option<T>` field must be present, even as `None` |
 | `literal = <literal>` | The field must have this boolean, integer or string value |
 | `min_length = <n>`, `max_length = <n>` | Limits a string's or a list's length |
 | `ge = <n>`, `le = <n>` | Limits an integer |
@@ -29,20 +29,17 @@ Every `#[bimetal(...)]`, by where it goes.
 
 | Attribute | Does |
 | --- | --- |
-| `returns(bytes)` | Returns `Vec<u8>` or `[u8; N]` as bytes, also in an `Option` |
+| `brief` | Keeps Python's interpreter lock through a synchronous call that never waits. [Functions](../guides/functions.md#brief-calls) says when |
 | `returns(buffer)` | Returns a numeric `Vec<T>` as a NumPy array or typed array, also in an `Option` |
 | `returns(arrow)` | Returns an Arrow value, also in an `Option`. Needs the `arrow` or `arrow-59` feature |
-| `returns(resource)` | Returns a resource, also in an `Option` or a `Vec` |
 
 ## On a parameter
 
 | Attribute | Does |
 | --- | --- |
-| `bytes` | Takes `&[u8]`, `Vec<u8>` or `[u8; N]` as bytes |
 | `buffer` | Takes a numeric slice or `Vec<T>` as a NumPy array or typed array |
 | `arrow` | Takes an Arrow value by value or by reference, or a `RecordBatchStream` by value |
-| `resource` | Takes a resource as `&T`, `&mut T`, `Option<&T>` or `T` |
-| `default = <literal>` | Lets a caller omit it |
+| `default = <expression>` | Lets a caller omit it, and passes the value of an expression of its type |
 
 ## On a resource's method
 

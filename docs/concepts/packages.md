@@ -32,7 +32,7 @@ The public API is the package root and its namespaces. In Python, the underscore
 | The Wasm module | Yes | One file serves every platform, so a clone needs no Rust to use it |
 | The Python extension and the Node.js addon | No | Each platform builds its own |
 
-Committing generated code is a choice with a cost: more files, and larger diffs. It pays for itself in `bimetal check`, which compares what the Rust would generate with what's committed, byte for byte. A fresh clone then only compiles the native artifacts.
+Committing generated code is a choice with a cost: more files, and larger diffs. It pays for itself in `bimetal check`, which fails when what's committed doesn't match what the Rust would generate: by fingerprints, or byte for byte with `--rebuild`. A fresh clone then only compiles the native artifacts.
 
 You can leave generated packages out of git, as [`apps/trials/`](../../apps/trials/.gitignore) does for its large Wasm modules. `bimetal build` then has to run before anything imports, and `bimetal check` fails on a fresh checkout, since the files it compares are missing.
 
@@ -44,4 +44,4 @@ What only this machine read, such as environment variables and files git ignores
 
 ## What a package checks at load
 
-The generated code and the compiled code have to agree, and they can drift apart: a local extension older than a `git pull`, for example. So the extension and the addon carry a hash of their contract, and the package compares it at import. A mismatch raises an error that says to run `bimetal build-native` or `bimetal build`.
+The generated code and the compiled code have to agree, and they can drift apart: a local extension older than a `git pull`, for example. So the extension and the addon carry a hash of their contract, and the package compares it at import. A mismatch raises an error that says to run `bimetal build`.

@@ -11,11 +11,13 @@ use crate::export::resource::{ResourcePlan, Role};
 use crate::export::wrapper::{self, Wrapper};
 use crate::types::Signature;
 
-/// Emit the PyO3 wrapper and inventory registration for a free function.
+/// Emit the PyO3 wrapper and inventory registration for a free function,
+/// documented by `docs`.
 pub(super) fn function(
     signature: &Signature<'_>,
     function_ident: &Ident,
     native_name: &str,
+    docs: Option<&str>,
 ) -> TokenStream2 {
     let backend = HostBackend::Python;
     let wrapper_ident = format_ident!("__bimetal_python_{}", function_ident);
@@ -27,10 +29,19 @@ pub(super) fn function(
         return_ty,
         body,
     } = wrapper::plan_free(signature, backend, &quote!(self::#function_ident));
+    // The module may bind a brief function as its own, so that one carries its
+    // Rust name and docs; the extension's attribute is the native name either way.
+    let (name, docs) = if signature.brief {
+        let docs = docs.map(|docs| quote!(#[doc = #docs]));
+        (signature.rust_name.as_str(), docs)
+    } else {
+        (native_name, None)
+    };
     quote! {
         ::bimetal::__python_items! {
-            #[::bimetal::__private::pyo3::pyfunction(name = #native_name)]
+            #[::bimetal::__private::pyo3::pyfunction(name = #name)]
             #[pyo3(crate = "::bimetal::__private::pyo3")]
+            #docs
             #[allow(
                 clippy::too_many_arguments,
                 reason = "the generated Python wrapper adds one host-context argument"
@@ -45,8 +56,9 @@ pub(super) fn function(
             fn #register_ident(
                 __bimetal_module: &::bimetal::__private::pyo3::Bound<'_, ::bimetal::__private::pyo3::types::PyModule>,
             ) -> ::bimetal::__private::pyo3::PyResult<()> {
-                ::bimetal::__private::pyo3::types::PyModuleMethods::add_function(
+                ::bimetal::__private::pyo3::types::PyModuleMethods::add(
                     __bimetal_module,
+                    #native_name,
                     ::bimetal::__private::pyo3::wrap_pyfunction!(#wrapper_ident, __bimetal_module)?,
                 )?;
                 Ok(())

@@ -11,13 +11,12 @@ Steps, all by default:
   samples how many rustc and cargo processes run at once.
 - sizes: the size of every native artifact and Wasm module that the examples
   install, and of the showcase's Node.js addon.
-- calls: the time per call into the showcase from Python, and from TypeScript
-  on the Wasm module and on the Node.js addon (calls.py and calls.mjs), at the
-  median and the 90th percentile. Each host times the cases of CALL_CASES that
-  it defines, and prints the time of each batch.
 - memory: the peak resident size of one process per host and case, through
   `/usr/bin/time` (`-l` on macOS, `-v` on Linux), less that of the same
-  process making no call.
+  process making no call, which memory.py and memory.mjs make on the
+  showcase.
+
+The time per call is the crossing lab's: apps/benchmark/lab.py.
 
 The showcase on the Node.js backend is the copy that
 apps/examples/showcase_node.py builds, as apps/examples/run uses it. Everything
@@ -28,7 +27,6 @@ The raw numbers go beside the report, in a file of the same name ending in
 
 import argparse
 import json
-import math
 import os
 import platform
 import re
@@ -53,25 +51,9 @@ WORK = ROOT / "target" / "bench"
 BIMETAL = ROOT / "target" / "release" / "bimetal"
 SHOWCASE = ROOT / "apps" / "examples" / "showcase"
 NODE_COPY = showcase_node.COPY
-STEPS = ("builds", "sizes", "calls", "memory")
+STEPS = ("builds", "sizes", "memory")
 ARTIFACTS = (".wasm", ".node", ".so", ".pyd")
 MIB = 1 << 20
-# The per-call cases, in the report's order: the calls that a sample times,
-# and the samples.
-CALL_CASES = {
-    "ping": (1000, 200),
-    "ping-raw": (1000, 200),
-    "bytes-1mb": (1, 200),
-    "models-in-10k": (1, 30),
-    "models-in-10k-raw": (1, 30),
-    "models-out-10k": (1, 30),
-    "models-out-10k-raw": (1, 30),
-    "arrow-1m": (1, 30),
-    "stream-out-1m": (1, 30),
-    "async": (100, 100),
-    "async-ready": (1000, 200),
-    "stream-through-1m": (1, 30),
-}
 # The memory cases: the calls each makes, and the bytes its input holds. The
 # 1M-row batch has a float64 and an int64 column.
 MEMORY_CASES = {"bytes-1mb": (100, MIB), "bytes-100mb": (1, 100 * MIB), "arrow-1m": (1, 16_000_000)}
@@ -238,7 +220,7 @@ def measure_builds(examples: list[str], warm_runs: int, noop_runs: int, max_load
 def prepare_showcase() -> dict[str, list[str | Path]]:
     """Build the showcase for every host, and return the command that runs
     each host's benchmark."""
-    print("calls: building the showcase", flush=True)
+    print("memory: building the showcase", flush=True)
     bimetal(["build", "--locked", "--config", SHOWCASE / "bimetal.toml"], "showcase")
     run(["uv", "sync", "--locked", "--quiet", "--project", SHOWCASE / "python"])
     if not (SHOWCASE / "typescript" / "node_modules").is_dir():
@@ -246,51 +228,10 @@ def prepare_showcase() -> dict[str, list[str | Path]]:
     showcase_node.build()
     node = shutil.which("node") or "node"
     return {
-        "python": [SHOWCASE / "python" / ".venv" / "bin" / "python", BENCH / "calls.py", SHOWCASE / "python"],
-        "wasm": [node, BENCH / "calls.mjs", SHOWCASE / "typescript"],
-        "node": [node, BENCH / "calls.mjs", NODE_COPY / "typescript"],
+        "python": [SHOWCASE / "python" / ".venv" / "bin" / "python", BENCH / "memory.py", SHOWCASE / "python"],
+        "wasm": [node, BENCH / "memory.mjs", SHOWCASE / "typescript"],
+        "node": [node, BENCH / "memory.mjs", NODE_COPY / "typescript"],
     }
-
-
-def warmup(samples: int) -> int:
-    """The samples that a case times first and drops, a tenth as many."""
-    return samples // 10 + 1
-
-
-def percentile(ordered: list[float], quantile: float) -> float:
-    """The nearest-rank percentile of sorted samples."""
-    return ordered[max(1, math.ceil(quantile * len(ordered))) - 1]
-
-
-def measure_calls(hosts: dict[str, list[str | Path]], max_load: float) -> dict[str, Any]:
-    """Time every case on each host, and reduce its batch times, without the
-    warm-up, to the time per call at the median and the 90th percentile."""
-    counts = [
-        str(value) for name, (batch, samples) in CALL_CASES.items() for value in (name, batch, warmup(samples) + samples)
-    ]
-    results: dict[str, Any] = {}
-    for host, command in hosts.items():
-        settle(max_load)
-        print(f"calls: {host}", flush=True)
-        load = load_average()
-        cases = []
-        for line in run([*command, "time", *counts]).splitlines():
-            if not line.startswith("{"):
-                continue
-            timed = json.loads(line)
-            batch, samples = CALL_CASES[timed["case"]]
-            ordered = sorted(timed["batch_ns"][warmup(samples):])
-            cases.append(
-                {
-                    "case": timed["case"],
-                    "batch": batch,
-                    "samples": samples,
-                    "median_ns": round(percentile(ordered, 0.5) / batch, 1),
-                    "p90_ns": round(percentile(ordered, 0.9) / batch, 1),
-                }
-            )
-        results[host] = {"load": load, "cases": cases}
-    return results
 
 
 def peak_rss(command: list[str | Path]) -> int:
@@ -340,14 +281,6 @@ def measure_sizes(examples: list[str]) -> list[dict[str, Any]]:
     return found
 
 
-def duration(nanoseconds: float) -> str:
-    if nanoseconds < 1e3:
-        return f"{nanoseconds:.0f} ns"
-    if nanoseconds < 1e6:
-        return f"{nanoseconds / 1e3:.1f} µs"
-    return f"{nanoseconds / 1e6:.2f} ms"
-
-
 def render(results: dict[str, Any]) -> str:
     info = results["context"]
     lines = [
@@ -368,9 +301,8 @@ def render(results: dict[str, Any]) -> str:
         "",
         "`mise run bench` (apps/benchmark/run.py) produced every number below. Before each example's builds",
         "and each host's measurements, it waits up to ten minutes for the 1-minute load average to fall below",
-        f"{results['max_load']}; the load it started at sits beside the numbers. The per-call cases call the showcase",
-        "example's exports. A sample times a batch of calls, after a warm-up of a tenth as many samples, and",
-        "the table gives the time per call at the median and the 90th percentile (nearest rank) of the samples.",
+        f"{results['max_load']}; the load it started at sits beside the numbers. The memory cases call the showcase",
+        "example's exports. `mise run lab` (apps/benchmark/lab.py) measures the time per call.",
         "Peak memory is the maximum resident set size that `/usr/bin/time` reports for one process, the median",
         "of three runs, less that of the same process making no call.",
         "",
@@ -405,44 +337,6 @@ def render(results: dict[str, Any]) -> str:
                 walls = [entry["wall_s"] * 1000 for entry in runs[key]]
                 cells.append(f"{statistics.median(walls):.0f} ms ({min(walls):.0f} to {max(walls):.0f})")
             lines.append(f"| {example} | {cells[0]} | {cells[1]} | {len(runs['noop'])} | {runs['noop'][0]['load']} |")
-        lines.append("")
-    if "calls" in results:
-        hosts = list(results["calls"])
-        cases: dict[str, dict[str, Any]] = {}
-        for host in hosts:
-            for case in results["calls"][host]["cases"]:
-                cases.setdefault(case["case"], {})[host] = case
-        descriptions = {
-            "ping": "`ping()`, a sync call with no arguments or result",
-            "bytes-1mb": "`reverse(bytes)` of 1 MiB",
-            "models-in-10k": "`count_tags(records)` of 10,000 `Record` models",
-            "models-out-10k": "`Ledger.history()` returning 10,000 `Entry` models",
-            "arrow-1m": "`columns.split(batch, 1000000)`: a 1,000,000-row batch in, a one-batch table out",
-            "stream-out-1m": "`columns.batches(table)` read to its end: a table of 100 batches of 10,000 rows in, a stream of them out",
-            "stream-through-1m": "`await columns.sum_column(columns.batches(table), \"price\")`: that stream back into Rust, one batch at a time",
-            "async": "`await count_words(\"a b c\")`, one at a time",
-            "async-ready": "`await count_words_at_once(\"a b c\")`, an async call that does not wait",
-        }
-        header = " | ".join(f"{host} median / p90" for host in hosts)
-        lines += [
-            "## Per-call time",
-            "",
-            "Iterations are batch × samples per host. The load average before each host's run: "
-            + ", ".join(f"{host} {results['calls'][host]['load']}" for host in hosts)
-            + ".",
-            "",
-            f"| Case | Iterations | {header} |",
-            "| --- | --- | " + " | ".join("---" for _ in hosts) + " |",
-        ]
-        for name, by_host in cases.items():
-            sample = next(iter(by_host.values()))
-            cells = [
-                f"{duration(by_host[host]['median_ns'])} / {duration(by_host[host]['p90_ns'])}" if host in by_host else "n/a"
-                for host in hosts
-            ]
-            base = name.removesuffix("-raw")
-            description = descriptions.get(base, base) + (", native function only" if name != base else "")
-            lines.append(f"| {description} | {sample['batch']} × {sample['samples']} | " + " | ".join(cells) + " |")
         lines.append("")
     if "memory" in results:
         tool = "`/usr/bin/time -l`" if sys.platform == "darwin" else "`/usr/bin/time -v`"
@@ -502,12 +396,8 @@ def main() -> None:
     results: dict[str, Any] = {"context": context(), "max_load": options.max_load}
     if "builds" in steps:
         results["builds"] = measure_builds(examples, options.warm_runs, options.noop_runs, options.max_load)
-    if "calls" in steps or "memory" in steps:
-        hosts = prepare_showcase()
-        if "calls" in steps:
-            results["calls"] = measure_calls(hosts, options.max_load)
-        if "memory" in steps:
-            results["memory"] = measure_memory(hosts, options.max_load)
+    if "memory" in steps:
+        results["memory"] = measure_memory(prepare_showcase(), options.max_load)
     if "sizes" in steps:
         results["sizes"] = measure_sizes(examples)
     raw = options.output.with_suffix(".json")

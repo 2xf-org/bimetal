@@ -191,7 +191,6 @@ impl Index {
     /// Open a writer, which commits when a `with` block ends and rolls back
     /// when one raises. It needs threads, which a browser does not have, so
     /// use [`BulkWriter`] there.
-    #[bimetal(returns(resource))]
     pub fn writer(
         &self,
         #[bimetal(default = 50000000)] heap_bytes: u64,
@@ -203,7 +202,6 @@ impl Index {
     }
 
     /// Open a searcher over what is committed now.
-    #[bimetal(returns(resource))]
     pub fn searcher(&self) -> Result<Searcher, SearchError> {
         let reader = self
             .index
@@ -305,7 +303,6 @@ impl BulkWriter {
     }
 
     /// Finish the index. The writer is closed afterwards.
-    #[bimetal(returns(resource))]
     pub fn finish(self) -> Result<Index, SearchError> {
         let writer = self
             .writer
@@ -370,7 +367,6 @@ impl Searcher {
     }
 
     /// Walk every match of a query, best first, without holding them all.
-    #[bimetal(returns(resource))]
     pub fn hits(
         &self,
         query: &str,

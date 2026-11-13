@@ -3,105 +3,105 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export function __bimetal_function_showcase_01c69597c4a04f88(bytes: Uint8Array): Uint8Array;
+export function __bimetal_function_showcase_0728f9493973744c(holiday: any): any;
 
-export function __bimetal_function_showcase_03f2cacb8b12c640(strokes: any): any;
+export function __bimetal_function_showcase_10c2fad8652be154(value: any): any;
 
-export function __bimetal_function_showcase_0a5b8dc99e7ea50a(text: any): any;
+export function __bimetal_function_showcase_136c6d6e579b9c16(value: any, by: any, scale: any): any;
 
-export function __bimetal_function_showcase_0bc4c674b6f56018(depth: any): any;
-
-export function __bimetal_function_showcase_198644f9547c8a96(data: Uint8Array): Uint8Array;
-
-export function __bimetal_function_showcase_1be36274c9fdd3dc(waits: any): any;
+export function __bimetal_function_showcase_19d28473e10f484f(first: any, second: any): any;
 
 export function __bimetal_function_showcase_1bf8386665337577(values: any, factor: any): any;
 
-export function __bimetal_function_showcase_1ca0bb4470f0c22f(values: BigInt64Array): BigInt64Array;
+export function __bimetal_function_showcase_1c8ac8b1b7860d02(values: BigInt64Array): BigInt64Array;
 
-export function __bimetal_function_showcase_2263cd433ee8fffb(point: any, origin: any): any;
+export function __bimetal_function_showcase_1f201a625951f028(samples: Float32Array, factor: any): Float32Array;
 
-export function __bimetal_function_showcase_262bf7f24b0f17ab(values: any): any;
+export function __bimetal_function_showcase_26468ee95f534500(values: any): any;
 
 export function __bimetal_function_showcase_2739c2dbfb04ad77(settings: any): any;
 
-export function __bimetal_function_showcase_2a6bee71574c3a98(depth: any): any;
+export function __bimetal_function_showcase_2755b39851461819(items: any, index: any): any;
+
+export function __bimetal_function_showcase_2889a661045b720a(): any;
 
 export function __bimetal_function_showcase_2adbd68385e21351(record: any, at: any): any;
 
 export function __bimetal_function_showcase_2c816d1c66866c00(records: any): any;
 
-export function __bimetal_function_showcase_30476b1ac363617b(text: any): any;
+export function __bimetal_function_showcase_2ca01b6c2d0bc39f(strokes: any): any;
 
-export function __bimetal_function_showcase_3201d8cbb416e76d(items: any, index: any): any;
+export function __bimetal_function_showcase_2dde32006fcffed4(point: any, origin: any): any;
+
+export function __bimetal_function_showcase_33b794fc2164d568(items: any, index: any): any;
 
 export function __bimetal_function_showcase_3695ae6e7c7cdabe(event: any): any;
-
-export function __bimetal_function_showcase_39592d3ec6c56886(items: any, index: any): any;
-
-export function __bimetal_function_showcase_3b45a06439ab33a1(strokes: any, last: any): any;
 
 export function __bimetal_function_showcase_44a32a9489b2ee19(record: any): any;
 
 export function __bimetal_function_showcase_4771162941742abf(rows: any): any;
 
+export function __bimetal_function_showcase_49b04c62bb462bdd(text: any): any;
+
+export function __bimetal_function_showcase_4bb5b0f933ad7376(strokes: any, last: any): any;
+
 export function __bimetal_function_showcase_4ceaf7968fc03fea(batch: any): any;
 
-export function __bimetal_function_showcase_67b1d7f519d15636(first: any, second: any): any;
+export function __bimetal_function_showcase_4f65fb4eda2ef03d(str: any, int: any): any;
+
+export function __bimetal_function_showcase_656c2307959ffa30(first: any, second: any): any;
 
 export function __bimetal_function_showcase_683a2b9f700db74a(rows: any, name: any): any;
 
 export function __bimetal_function_showcase_6e743049e47a9120(rows: any, name: any): any;
 
-export function __bimetal_function_showcase_6efd7cef83047da7(_package: any, _class: any): any;
-
-export function __bimetal_function_showcase_6fdc93b9512db748(): any;
-
 export function __bimetal_function_showcase_700f5e6376beea9e(table: any): any;
-
-export function __bimetal_function_showcase_719dff07119bdca5(samples: Float32Array, factor: any): Float32Array;
 
 export function __bimetal_function_showcase_71d2001ce562e00e(text: any): any;
 
-export function __bimetal_function_showcase_72e2369bca69bcf0(value: any): any;
+export function __bimetal_function_showcase_753df9fc6ff9f074(_package: any, _class: any): any;
 
 export function __bimetal_function_showcase_769d13851752fc98(date: any): any;
 
+export function __bimetal_function_showcase_799abc456a4ee505(waits: any): any;
+
 export function __bimetal_function_showcase_7ecf66e38a5236a0(text: any): any;
 
-export function __bimetal_function_showcase_8546963c2edfa3c1(str: any, int: any): any;
+export function __bimetal_function_showcase_973415b394613f28(depth: any): any;
 
-export function __bimetal_function_showcase_8946f1f0e3e7192c(first: any, second: any): any;
-
-export function __bimetal_function_showcase_89ea7bf7ee267f8e(value: any, by: any, scale: any): any;
-
-export function __bimetal_function_showcase_8b204e93bcda0c63(route: any): any;
-
-export function __bimetal_function_showcase_922910167a7b640a(size: any): any;
+export function __bimetal_function_showcase_99afcd0e5863f838(size: any): any;
 
 export function __bimetal_function_showcase_a8c4807be3c5b36f(schema: any): any;
 
-export function __bimetal_function_showcase_ad1cb8e475b4a36b(settings: any): any;
+export function __bimetal_function_showcase_acf984cc050cd9cc(route: any): any;
 
-export function __bimetal_function_showcase_afb8e3df00a8099d(entries: any): any;
+export function __bimetal_function_showcase_ad1cb8e475b4a36b(settings: any): any;
 
 export function __bimetal_function_showcase_b295a1ff3715f93a(table: any): any;
 
 export function __bimetal_function_showcase_b312b9ab4d477737(batch: any, size: any): any;
 
-export function __bimetal_function_showcase_b776db2fe43c44f0(text: any): any;
+export function __bimetal_function_showcase_bc6c11225303a76b(): any;
 
-export function __bimetal_function_showcase_c0461ca573a3faed(holiday: any): any;
+export function __bimetal_function_showcase_c0f094c49784e99b(bytes: Uint8Array): Uint8Array;
+
+export function __bimetal_function_showcase_c35ae62fc8021d6b(items: any, index: any): any;
+
+export function __bimetal_function_showcase_c41f69f9c90f957c(depth: any): any;
 
 export function __bimetal_function_showcase_cd0763b3819104ed(schema: any, note: any): any;
 
-export function __bimetal_function_showcase_d25e2a68a43c7cf5(): any;
+export function __bimetal_function_showcase_d30b7d529c9e1bc7(entries: any): any;
 
-export function __bimetal_function_showcase_d69ea4a5e7919268(text: any): any;
+export function __bimetal_function_showcase_d687fc53129df29f(text: any): any;
 
-export function __bimetal_function_showcase_e0c13e567662d4a3(size: any): any;
+export function __bimetal_function_showcase_d71636c80a9e7b82(text: any): any;
 
-export function __bimetal_function_showcase_f20afd3d87bee6c4(items: any, index: any): any;
+export function __bimetal_function_showcase_e236eb67bc198ae4(text: any): any;
+
+export function __bimetal_function_showcase_ee81e93c330546ba(data: Uint8Array): Uint8Array;
+
+export function __bimetal_function_showcase_faf0faa02b839d11(size: any): any;
 
 export function __bimetal_function_showcase_fe4fdfc43028f39d(numbers: any): any;
 
@@ -109,7 +109,7 @@ export function __bimetal_function_showcase_geometry_454d48bb338e5d76(from: any,
 
 export function __bimetal_function_showcase_geometry_72526f9c125cc1b5(from: any, to: any): any;
 
-export class __bimetal_resource_showcase_0025cd8a71a31a39 {
+export class __bimetal_resource_showcase_0c183a113e0877c9 {
     free(): void;
     [Symbol.dispose](): void;
     constructor(owner: any);
@@ -124,27 +124,19 @@ export class __bimetal_resource_showcase_0025cd8a71a31a39 {
     lock(): any;
     owner(): any;
     statement(): any;
-    static withBalance(owner: any, balance: any): __bimetal_resource_showcase_0025cd8a71a31a39;
+    static withBalance(owner: any, balance: any): __bimetal_resource_showcase_0c183a113e0877c9;
 }
 
-export class __bimetal_resource_showcase_199b5947b95e915b {
+export class __bimetal_resource_showcase_381b5e9f55b555df {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
     __bimetal_share(): void;
+    add(title: any): any;
     close(): void;
     closed(): boolean;
-    nextTitle(): any;
-}
-
-export class __bimetal_resource_showcase_1efe9ed373be7a0f {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    __bimetal_share(): void;
-    close(): void;
-    closed(): boolean;
-    nextTitle(): any;
+    commit(): any;
+    finish(failed: any): any;
 }
 
 export class __bimetal_resource_showcase_4c5f82ea59c0edd9 {
@@ -190,16 +182,34 @@ export class __bimetal_resource_showcase_4c5f82ea59c0edd9 {
     visit(visitor: any): any;
 }
 
-export class __bimetal_resource_showcase_518547a337376331 {
+export class __bimetal_resource_showcase_65f9606bb46ae485 {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
     __bimetal_share(): void;
-    add(title: any): any;
     close(): void;
     closed(): boolean;
-    commit(): any;
-    finish(failed: any): any;
+    nextTitle(): any;
+}
+
+export class __bimetal_resource_showcase_76e8f87db51658db {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    __bimetal_share(): void;
+    close(): void;
+    closed(): boolean;
+    nextTitle(): any;
+}
+
+export class __bimetal_resource_showcase_95bc35db3e109a61 {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    __bimetal_share(): void;
+    close(): void;
+    closed(): boolean;
+    label(name: any): any;
 }
 
 export class __bimetal_resource_showcase_9d1d12f09cfc33f6 {
@@ -215,7 +225,7 @@ export class __bimetal_resource_showcase_9d1d12f09cfc33f6 {
     sumNow(name: any): any;
 }
 
-export class __bimetal_resource_showcase_a88183c4115d6a49 {
+export class __bimetal_resource_showcase_a86681b694c8eb6c {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -229,17 +239,7 @@ export class __bimetal_resource_showcase_a88183c4115d6a49 {
     search(word: any): any;
 }
 
-export class __bimetal_resource_showcase_c05363ebeacda3a4 {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    __bimetal_share(): void;
-    close(): void;
-    closed(): boolean;
-    label(name: any): any;
-}
-
-export class __bimetal_resource_showcase_f88d25838fe07e33 {
+export class __bimetal_resource_showcase_a8bdea895f38cf72 {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -261,76 +261,76 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly bimetal_initialize: () => void;
     readonly bimetal_on_panic: (a: any) => void;
-    readonly __bimetal_function_showcase_01c69597c4a04f88: (a: number, b: number) => [number, number, number, number];
-    readonly __bimetal_function_showcase_03f2cacb8b12c640: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_0a5b8dc99e7ea50a: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_0bc4c674b6f56018: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_198644f9547c8a96: (a: number, b: number) => [number, number, number, number];
-    readonly __bimetal_function_showcase_1be36274c9fdd3dc: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_0728f9493973744c: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_10c2fad8652be154: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_136c6d6e579b9c16: (a: any, b: any, c: any) => [number, number, number];
+    readonly __bimetal_function_showcase_19d28473e10f484f: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_1bf8386665337577: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_1ca0bb4470f0c22f: (a: number, b: number) => [number, number, number, number];
-    readonly __bimetal_function_showcase_2263cd433ee8fffb: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_262bf7f24b0f17ab: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_1c8ac8b1b7860d02: (a: number, b: number) => [number, number, number, number];
+    readonly __bimetal_function_showcase_1f201a625951f028: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly __bimetal_function_showcase_26468ee95f534500: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_2739c2dbfb04ad77: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_2a6bee71574c3a98: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_2755b39851461819: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_2889a661045b720a: () => [number, number, number];
     readonly __bimetal_function_showcase_2adbd68385e21351: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_2c816d1c66866c00: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_30476b1ac363617b: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_3201d8cbb416e76d: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_2ca01b6c2d0bc39f: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_2dde32006fcffed4: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_33b794fc2164d568: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_3695ae6e7c7cdabe: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_39592d3ec6c56886: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_3b45a06439ab33a1: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_44a32a9489b2ee19: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_4771162941742abf: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_49b04c62bb462bdd: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_4bb5b0f933ad7376: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_4ceaf7968fc03fea: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_67b1d7f519d15636: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_4f65fb4eda2ef03d: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_656c2307959ffa30: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_683a2b9f700db74a: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_6e743049e47a9120: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_6efd7cef83047da7: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_6fdc93b9512db748: () => [number, number, number];
     readonly __bimetal_function_showcase_700f5e6376beea9e: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_719dff07119bdca5: (a: number, b: number, c: any) => [number, number, number, number];
     readonly __bimetal_function_showcase_71d2001ce562e00e: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_72e2369bca69bcf0: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_753df9fc6ff9f074: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_769d13851752fc98: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_799abc456a4ee505: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_7ecf66e38a5236a0: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_8546963c2edfa3c1: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_8946f1f0e3e7192c: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_89ea7bf7ee267f8e: (a: any, b: any, c: any) => [number, number, number];
-    readonly __bimetal_function_showcase_8b204e93bcda0c63: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_922910167a7b640a: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_973415b394613f28: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_99afcd0e5863f838: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_a8c4807be3c5b36f: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_acf984cc050cd9cc: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_ad1cb8e475b4a36b: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_afb8e3df00a8099d: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_b295a1ff3715f93a: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_b312b9ab4d477737: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_b776db2fe43c44f0: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_c0461ca573a3faed: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_bc6c11225303a76b: () => [number, number, number];
+    readonly __bimetal_function_showcase_c0f094c49784e99b: (a: number, b: number) => [number, number, number, number];
+    readonly __bimetal_function_showcase_c35ae62fc8021d6b: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_c41f69f9c90f957c: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_cd0763b3819104ed: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_function_showcase_d25e2a68a43c7cf5: () => [number, number, number];
-    readonly __bimetal_function_showcase_d69ea4a5e7919268: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_e0c13e567662d4a3: (a: any) => [number, number, number];
-    readonly __bimetal_function_showcase_f20afd3d87bee6c4: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_function_showcase_d30b7d529c9e1bc7: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_d687fc53129df29f: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_d71636c80a9e7b82: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_e236eb67bc198ae4: (a: any) => [number, number, number];
+    readonly __bimetal_function_showcase_ee81e93c330546ba: (a: number, b: number) => [number, number, number, number];
+    readonly __bimetal_function_showcase_faf0faa02b839d11: (a: any) => [number, number, number];
     readonly __bimetal_function_showcase_fe4fdfc43028f39d: (a: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39___bimetal_constructor_new: (a: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_balance: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_close: (a: number) => void;
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_countEntriesAtOnce: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_deposit: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_history: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_labelOwnerAtOnce: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_lock: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_owner: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_statement: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_0025cd8a71a31a39_withBalance: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_199b5947b95e915b___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_199b5947b95e915b_close: (a: number) => void;
-    readonly __bimetal_resource_showcase_199b5947b95e915b_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_199b5947b95e915b_nextTitle: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_1efe9ed373be7a0f___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_1efe9ed373be7a0f_nextTitle: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9___bimetal_constructor_new: (a: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_balance: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_close: (a: number) => void;
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_countEntriesAtOnce: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_deposit: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_history: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_labelOwnerAtOnce: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_lock: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_owner: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_statement: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_0c183a113e0877c9_withBalance: (a: any, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_381b5e9f55b555df___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_381b5e9f55b555df_add: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_381b5e9f55b555df_close: (a: number) => void;
+    readonly __bimetal_resource_showcase_381b5e9f55b555df_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_381b5e9f55b555df_commit: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_381b5e9f55b555df_finish: (a: number, b: any) => [number, number, number];
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9___bimetal_constructor_new: (a: any, b: any) => [number, number, number];
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9___bimetal_share: (a: number) => void;
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9_absorb: (a: number, b: any) => [number, number, number];
@@ -369,12 +369,16 @@ export interface InitOutput {
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9_titles: (a: number) => [number, number, number];
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9_trySession: (a: number) => [number, number, number];
     readonly __bimetal_resource_showcase_4c5f82ea59c0edd9_visit: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_518547a337376331___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_518547a337376331_add: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_518547a337376331_close: (a: number) => void;
-    readonly __bimetal_resource_showcase_518547a337376331_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_518547a337376331_commit: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_518547a337376331_finish: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_65f9606bb46ae485___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_65f9606bb46ae485_close: (a: number) => void;
+    readonly __bimetal_resource_showcase_65f9606bb46ae485_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_65f9606bb46ae485_nextTitle: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_76e8f87db51658db___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_76e8f87db51658db_nextTitle: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_95bc35db3e109a61___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_95bc35db3e109a61_close: (a: number) => void;
+    readonly __bimetal_resource_showcase_95bc35db3e109a61_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_95bc35db3e109a61_label: (a: number, b: any) => [number, number, number];
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6___bimetal_share: (a: number) => void;
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6_close: (a: number) => void;
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6_closed: (a: number) => number;
@@ -382,39 +386,35 @@ export interface InitOutput {
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6_sum: (a: number, b: any) => [number, number, number];
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6_sumAtOnce: (a: number, b: any) => [number, number, number];
     readonly __bimetal_resource_showcase_9d1d12f09cfc33f6_sumNow: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_a88183c4115d6a49___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_close: (a: number) => void;
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_count: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_deliver: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_open: (a: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_recipient: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_a88183c4115d6a49_search: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_c05363ebeacda3a4___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_c05363ebeacda3a4_close: (a: number) => void;
-    readonly __bimetal_resource_showcase_c05363ebeacda3a4_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_c05363ebeacda3a4_label: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_f88d25838fe07e33___bimetal_share: (a: number) => void;
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_add: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_commit: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_finish: (a: number, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_open: (a: number) => [number, number, number];
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_opened: (a: number) => [number, number, number];
-    readonly __wbg___bimetal_resource_showcase_0025cd8a71a31a39_free: (a: number, b: number) => void;
-    readonly __wbg___bimetal_resource_showcase_199b5947b95e915b_free: (a: number, b: number) => void;
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_close: (a: number) => void;
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_count: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_deliver: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_open: (a: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_recipient: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_a86681b694c8eb6c_search: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72___bimetal_share: (a: number) => void;
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_add: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_commit: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_finish: (a: number, b: any) => [number, number, number];
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_open: (a: number) => [number, number, number];
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_opened: (a: number) => [number, number, number];
+    readonly __wbg___bimetal_resource_showcase_0c183a113e0877c9_free: (a: number, b: number) => void;
+    readonly __wbg___bimetal_resource_showcase_381b5e9f55b555df_free: (a: number, b: number) => void;
     readonly __wbg___bimetal_resource_showcase_4c5f82ea59c0edd9_free: (a: number, b: number) => void;
-    readonly __wbg___bimetal_resource_showcase_518547a337376331_free: (a: number, b: number) => void;
+    readonly __wbg___bimetal_resource_showcase_65f9606bb46ae485_free: (a: number, b: number) => void;
+    readonly __wbg___bimetal_resource_showcase_95bc35db3e109a61_free: (a: number, b: number) => void;
     readonly __wbg___bimetal_resource_showcase_9d1d12f09cfc33f6_free: (a: number, b: number) => void;
-    readonly __wbg___bimetal_resource_showcase_a88183c4115d6a49_free: (a: number, b: number) => void;
-    readonly __wbg___bimetal_resource_showcase_c05363ebeacda3a4_free: (a: number, b: number) => void;
+    readonly __wbg___bimetal_resource_showcase_a86681b694c8eb6c_free: (a: number, b: number) => void;
     readonly __bimetal_function_showcase_geometry_454d48bb338e5d76: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_geometry_72526f9c125cc1b5: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_1efe9ed373be7a0f_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_1efe9ed373be7a0f_close: (a: number) => void;
-    readonly __wbg___bimetal_resource_showcase_1efe9ed373be7a0f_free: (a: number, b: number) => void;
-    readonly __bimetal_resource_showcase_f88d25838fe07e33_close: (a: number) => void;
-    readonly __wbg___bimetal_resource_showcase_f88d25838fe07e33_free: (a: number, b: number) => void;
+    readonly __bimetal_resource_showcase_76e8f87db51658db_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_76e8f87db51658db_close: (a: number) => void;
+    readonly __wbg___bimetal_resource_showcase_76e8f87db51658db_free: (a: number, b: number) => void;
+    readonly __bimetal_resource_showcase_a8bdea895f38cf72_close: (a: number) => void;
+    readonly __wbg___bimetal_resource_showcase_a8bdea895f38cf72_free: (a: number, b: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h01ad6b11ca7c2435: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h553eeb1212a902f5: (a: number, b: number, c: number, d: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h993efb0ef89c6d51: (a: number, b: number, c: any, d: any) => void;

@@ -187,8 +187,7 @@ pub(super) fn configuration(name: &str, underscored: &str) -> String {
 # project = "python"
 
 [typescript]
-# The npm package name; defaults to the name.
-# package = {name}
+# The npm package takes the name that package.json declares.
 # project = "typescript"
 # "wasm" runs the Rust code as a WebAssembly module, "node" as a native
 # Node.js addon.

@@ -18,8 +18,8 @@
 //! - `exports` checks that the Wasm module exports what the contract describes;
 //! - `validation` checks names for every enabled host, and the hosts'
 //!   manifests;
-//! - `pipeline` runs the build, `check`, and `build-native` steps, and
-//!   `reports` holds what they return.
+//! - `pipeline` runs the build and `check` steps, and `reports` holds what
+//!   they return.
 
 mod checkout;
 mod compile;
@@ -33,8 +33,8 @@ mod snapshot;
 mod validation;
 
 pub(crate) use packages::{BimetalDependency, GitReference, SourceRoot};
-pub(crate) use pipeline::{build, build_native, check};
-pub(crate) use reports::{BuildReport, BuildStatus, CheckReport, HostReport, NativeBuildReport};
+pub(crate) use pipeline::{build, check};
+pub(crate) use reports::{BuildReport, BuildStatus, CheckReport, HostReport};
 pub(crate) use snapshot::Project;
 pub(crate) use validation::{
     validate_application_name, validate_python_package, validate_typescript_package,
