@@ -17,8 +17,7 @@
 # project = "python"
 
 [typescript]
-# The npm package name; defaults to the name.
-# package = "typeset"
+# The npm package takes the name that package.json declares.
 # project = "typescript"
 # "wasm" runs the Rust code as a WebAssembly module, "node" as a native
 # Node.js addon.

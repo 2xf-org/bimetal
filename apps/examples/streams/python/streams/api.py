@@ -12,8 +12,14 @@ from streams._runtime import (
     ArrowStreamExportable,
     PanicException,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_streams_0edf7e5419d436eb")
+_bimetal_arrow_1 = getattr(pa, "RecordBatchReader").from_stream
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_function_streams_42805d39a81c74dc")
+_bimetal_native_3 = getattr(_bimetal_native, "__bimetal_function_streams_fa6b8e21abe4eb80")
+_bimetal_native_4 = getattr(_bimetal_native, "__bimetal_function_streams_b7605faa482d5366")
+_bimetal_native_5 = getattr(_bimetal_native, "__bimetal_function_streams_b7d220eacd260037")
 
 
 StreamErrorCode: TypeAlias = Literal[
@@ -44,12 +50,8 @@ def count(batches: int, size: int, fail_at: int | None = None) -> pa.RecordBatch
     batch is made when the reader asks for it. The stream fails at batch `fail_at`,
     if one is given.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_streams_0edf7e5419d436eb")(
-        batches,
-        size,
-        fail_at,
-    )
-    __bimetal_result: pa.RecordBatchReader = getattr(pa, "RecordBatchReader").from_stream(__bimetal_native)
+    __bimetal_native = _bimetal_native_0(batches, size, fail_at)
+    __bimetal_result: pa.RecordBatchReader = _bimetal_arrow_1(__bimetal_native)
     return __bimetal_result
 
 
@@ -58,8 +60,7 @@ def open_streams() -> int:
     Return how many streams of `count` have not dropped. A stream drops when it ends
     or fails, or when Python closes or deletes its reader.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_streams_42805d39a81c74dc")(
-    )
+    __bimetal_native = _bimetal_native_2()
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -69,11 +70,8 @@ async def scale(rows: ArrowStreamExportable, factor: int) -> pa.RecordBatchReade
     Multiply the `n` column of every batch by `factor`, one batch at a time as the
     reader asks.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_streams_fa6b8e21abe4eb80")(
-        rows,
-        factor,
-    )
-    __bimetal_result: pa.RecordBatchReader = getattr(pa, "RecordBatchReader").from_stream(__bimetal_native)
+    __bimetal_native = await _bimetal_native_3(rows, factor)
+    __bimetal_result: pa.RecordBatchReader = _bimetal_arrow_1(__bimetal_native)
     return __bimetal_result
 
 
@@ -85,13 +83,7 @@ def total(rows: ArrowStreamExportable, limit: int | None = None) -> int:
     Raises:
         StreamError
     """
-    try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_streams_b7605faa482d5366")(
-            rows,
-            limit,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, StreamError) from None
+    __bimetal_native = _bimetal_native_4(rows, limit)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -105,12 +97,7 @@ async def total_later(rows: ArrowStreamExportable) -> int:
     Raises:
         StreamError
     """
-    try:
-        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_streams_b7d220eacd260037")(
-            rows,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, StreamError) from None
+    __bimetal_native = await _bimetal_native_5(rows)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 

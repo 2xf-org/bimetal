@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from showcase._runtime import (
+    register_classes as _bimetal_register_classes,
+)
+
 
 class ShelfErrorFull(BaseModel):
     """
@@ -56,6 +60,13 @@ class ShortageDetails(BaseModel):
 ShelfErrorFull.model_rebuild()
 ShelfErrorVisitor.model_rebuild()
 ShortageDetails.model_rebuild()
+
+
+_bimetal_register_classes({
+    "showcase::showcase::shelf::ShelfErrorFull": ShelfErrorFull,
+    "showcase::showcase::shelf::ShelfErrorVisitor": ShelfErrorVisitor,
+    "showcase::showcase::shelf::ShortageDetails": ShortageDetails,
+})
 
 __all__ = [
     "ShelfErrorFull",

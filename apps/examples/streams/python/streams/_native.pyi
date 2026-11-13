@@ -4,4 +4,12 @@ class PanicException(BaseException):
     """Raised when the Rust implementation panics."""
 
 
+class Revalidate(Exception):
+    """Raised for an argument that the extension reads only after Pydantic's dump."""
+
+
+class Dumped:
+    def __init__(self, value: object) -> None: ...
+
+
 __bimetal_contract__: str

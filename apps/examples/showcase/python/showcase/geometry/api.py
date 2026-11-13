@@ -8,11 +8,15 @@ from .models import (
     Point,
 )
 from showcase._runtime import (
-    dump_host as _bimetal_dump_host,
+    Adapter as _bimetal_Adapter,
+    Dumped as _bimetal_Dumped,
+    Revalidate as _bimetal_Revalidate,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_showcase_geometry_72526f9c125cc1b5")
+_bimetal_adapter_1 = _bimetal_Adapter(lambda: Point)
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_function_showcase_geometry_454d48bb338e5d76")
 
 
 GeometryErrorCode: TypeAlias = Literal[
@@ -41,16 +45,13 @@ def direction(from_value: Point, to: Point) -> Point:
         GeometryError
     """
     try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_geometry_72526f9c125cc1b5")(
-            _bimetal_dump_host(Point, from_value),
-            _bimetal_dump_host(Point, to),
+        __bimetal_native = _bimetal_native_0(from_value, to)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_0(
+            _bimetal_Dumped(_bimetal_adapter_1.dump(from_value)),
+            _bimetal_Dumped(_bimetal_adapter_1.dump(to)),
         )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, GeometryError) from None
-    __bimetal_result: Point = _bimetal_type_adapter(Point).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_result: Point = __bimetal_native
     return __bimetal_result
 
 
@@ -58,10 +59,13 @@ def distance(from_value: Point, to: Point) -> float:
     """
     The straight-line distance between two points.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_geometry_454d48bb338e5d76")(
-        _bimetal_dump_host(Point, from_value),
-        _bimetal_dump_host(Point, to),
-    )
+    try:
+        __bimetal_native = _bimetal_native_2(from_value, to)
+    except _bimetal_Revalidate:
+        __bimetal_native = _bimetal_native_2(
+            _bimetal_Dumped(_bimetal_adapter_1.dump(from_value)),
+            _bimetal_Dumped(_bimetal_adapter_1.dump(to)),
+        )
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 

@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use toml::Value;
 
-use crate::config::HostPackage;
+use crate::config::{Host, HostPackage};
 use crate::dependencies::HostDependency;
 use crate::literal;
 use crate::problems::{self, Subject};
@@ -60,16 +60,31 @@ fn validate_pyproject(path: &Path, pyproject: &Value, expected: &Expected<'_>) -
             .get("dependencies")
             .and_then(Value::as_array)
             .map_or(&[][..], Vec::as_slice);
-        let missing: Vec<String> = expected
-            .dependencies
-            .iter()
-            .filter(|dependency| !declares(dependencies, dependency.name))
-            .map(|dependency| literal::quoted(dependency.requirement))
-            .collect();
+        let mut missing = Vec::new();
+        let mut older = Vec::new();
+        for dependency in expected.dependencies {
+            match declared(dependencies, dependency.name) {
+                None => missing.push(literal::quoted(dependency.requirement)),
+                Some(declared) if dependency.allows_older(Host::Python, declared) => {
+                    older.push(format!(
+                        "{} with {}",
+                        literal::quoted(declared),
+                        literal::quoted(dependency.requirement)
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
         if !missing.is_empty() {
             problems.push(format!(
                 "must declare the generated runtime dependencies: add {} to `[project].dependencies`",
                 missing.join(", ")
+            ));
+        }
+        if !older.is_empty() {
+            problems.push(format!(
+                "must not allow versions older than the generated code needs: in `[project].dependencies`, replace {}",
+                older.join(", and ")
             ));
         }
     } else {
@@ -85,9 +100,10 @@ fn validate_pyproject(path: &Path, pyproject: &Value, expected: &Expected<'_>) -
     problems::report(Subject::File(path), &problems)
 }
 
-/// Return whether a requirement list names a package, ignoring case.
-fn declares(dependencies: &[Value], name: &str) -> bool {
-    dependencies.iter().filter_map(Value::as_str).any(|item| {
+/// Return the requirement of a requirement list that names a package,
+/// ignoring case.
+fn declared<'list>(dependencies: &'list [Value], name: &str) -> Option<&'list str> {
+    dependencies.iter().filter_map(Value::as_str).find(|item| {
         item.split(|character: char| {
             !character.is_ascii_alphanumeric() && !matches!(character, '-' | '_' | '.')
         })
@@ -154,7 +170,7 @@ build-backend = "pdm.backend"
 
 [project]
 version = "0.1.0"
-dependencies = ["pydantic>=2,<3"]
+dependencies = ["pydantic>=2.7,<3"]
 
 [tool.pdm.build]
 includes = ["acme"]
@@ -174,6 +190,21 @@ is-purelib = false
             .to_string();
 
         assert!(error.contains("\"numpy>=2,<3\""), "{error}");
+    }
+
+    #[test]
+    fn a_dependency_must_not_allow_versions_that_the_generated_code_lacks() {
+        let older = PROJECT.replace("pydantic>=2.7,<3", "pydantic>=2,<3");
+        let error = check(&older, "acme", &[PYDANTIC])
+            .expect_err("pydantic 2.6 lacks what the generated code needs")
+            .to_string();
+
+        assert!(
+            error.contains("replace \"pydantic>=2,<3\" with \"pydantic>=2.7,<3\""),
+            "{error}"
+        );
+        let newer = PROJECT.replace("pydantic>=2.7,<3", "pydantic>=2.9");
+        check(&newer, "acme", &[PYDANTIC]).expect("a higher floor is fine");
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 import { checkArgument as $checkArgument, checkNative as $checkNative, native as $native, nativeError as $nativeError, prepareHost as $prepareHost, restoreHost as $restoreHost } from "../runtime.js";
 
+const $spec0 = ["named", "showcase-geometry::showcase_geometry::Point"];
+
 export class GeometryError extends globalThis.Error {
   constructor(code, message) {
     super(message);
@@ -15,7 +17,7 @@ export function direction(from, to) {
   $checkArgument(from, "object", "direction(): argument `from`");
   $checkArgument(to, "object", "direction(): argument `to`");
   try {
-    return $restoreHost($native["__bimetal_function_showcase_geometry_72526f9c125cc1b5"]($prepareHost(from, ["named", "showcase-geometry::showcase_geometry::Point"]), $prepareHost(to, ["named", "showcase-geometry::showcase_geometry::Point"])), ["named", "showcase-geometry::showcase_geometry::Point"]);
+    return $restoreHost($native["__bimetal_function_showcase_geometry_72526f9c125cc1b5"]($prepareHost(from, $spec0), $prepareHost(to, $spec0)), $spec0);
   } catch ($error) {
     throw $nativeError($error, GeometryError);
   }
@@ -26,7 +28,7 @@ export function distance(from, to) {
   $checkArgument(from, "object", "distance(): argument `from`");
   $checkArgument(to, "object", "distance(): argument `to`");
   try {
-    return $native["__bimetal_function_showcase_geometry_454d48bb338e5d76"]($prepareHost(from, ["named", "showcase-geometry::showcase_geometry::Point"]), $prepareHost(to, ["named", "showcase-geometry::showcase_geometry::Point"]));
+    return $native["__bimetal_function_showcase_geometry_454d48bb338e5d76"]($prepareHost(from, $spec0), $prepareHost(to, $spec0));
   } catch ($error) {
     throw $nativeError($error);
   }

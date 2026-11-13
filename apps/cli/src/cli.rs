@@ -27,9 +27,6 @@ pub(crate) enum Command {
     New(NewArgs),
     /// Build the packages that bimetal.toml turns on.
     Build(BuildArgs),
-    /// Build only the current platform's native artifacts, such as the Python
-    /// extension.
-    BuildNative(ProjectArgs),
     /// Check that the generated files match the Rust sources.
     Check(CheckArgs),
 }

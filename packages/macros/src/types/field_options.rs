@@ -84,7 +84,7 @@ impl FieldOptions {
         if self.skip || self.has_rules() {
             return Err(syn::Error::new(
                 field.span(),
-                "transparent aliases support only `#[bimetal(bytes)]` or `#[bimetal(buffer)]`; field rules would otherwise be discarded",
+                "transparent aliases support only `#[bimetal(buffer)]`; field rules would otherwise be discarded",
             ));
         }
         Ok(())
@@ -171,8 +171,7 @@ impl FieldOptions {
     /// Record the options of one `#[bimetal(...)]` attribute.
     fn parse_attribute(&mut self, attr: &Attribute) -> syn::Result<()> {
         attr.parse_nested_meta(|meta| {
-            let boundaries = [Boundary::Buffer, Boundary::Bytes];
-            if attributes::declare_boundary(&meta, &mut self.boundary, &boundaries)? {
+            if attributes::declare_boundary(&meta, &mut self.boundary, &[Boundary::Buffer])? {
                 return Ok(());
             }
             if meta.path.is_ident("required") {
@@ -390,20 +389,25 @@ fn validate_field_presence(
             ));
         }
     }
+    // A field of another type is required already unless it has a default,
+    // which `required` would contradict.
+    if options.required && type_ref::option_item(&field.ty).is_none() {
+        return Err(syn::Error::new(
+            field.ty.span(),
+            "`required` applies to an `Option` field; a field of any other type is required unless it has a default",
+        ));
+    }
     // Serde reads an absent `Option` as `None` under `#[serde(default)]`, so
     // only a function can give a `required` field a value that its caller
     // left out.
     if let (true, Some(default)) = (options.required, serde.default.as_ref())
-        && (default.function.is_some() || type_ref::option_item(&field.ty).is_none())
+        && let Some(function) = &default.function
     {
-        let written = match &default.function {
-            Some(function) => format!("#[serde(default = \"{}\")]", function.value()),
-            None => "#[serde(default)]".to_owned(),
-        };
         return Err(syn::Error::new(
             default.span,
             format!(
-                "a `required` field cannot have `{written}`, which the hosts would fill in when it is absent"
+                "a `required` field cannot have `#[serde(default = \"{}\")]`, which the hosts would fill in when it is absent",
+                function.value()
             ),
         ));
     }
@@ -619,7 +623,11 @@ mod tests {
         );
         assert!(
             error(quote!(#[serde(default)] #[bimetal(required)] tags: Vec<String>))
-                .contains("a `required` field cannot have `#[serde(default)]`")
+                .contains("`required` applies to an `Option` field")
+        );
+        assert!(
+            error(quote!(#[bimetal(required)] count: u32))
+                .contains("`required` applies to an `Option` field")
         );
         // Serde calls the function for an absent `Option` too.
         assert!(

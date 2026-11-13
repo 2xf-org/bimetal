@@ -34,14 +34,13 @@ The application's `bimetal` dependency can come from crates.io, from a path, or 
 
 Nothing has needed these, and each needs design:
 
-- `bytes` and buffers inside a model. A `Vec<u8>` field is a list of integers.
+- Bytes and buffers inside a model. A `Vec<u8>` field is a list of integers.
 - Untagged and adjacently tagged enums, tuple variants that hold other than one value, `#[serde(flatten)]`, generic types, `u128`, and maps with keys other than strings.
 - A JSON Schema of an externally tagged enum's wire form. Pydantic's schema of its models describes their Python fields.
 - Async host functions, `Option<Callback<A, R>>`, keyword-only arguments and `*args`.
 - Operators other than `==`, such as `<` and `+`, and pickling a resource.
 - More than one `#[bimetal::export]` block for a resource, which fails to compile.
 - One method implementing two protocols.
-- Inferring `returns(resource)`, which a resource-heavy API repeats on most methods.
 
 ## What it can't do
 
@@ -52,5 +51,7 @@ These come from the hosts:
 - JavaScript doesn't tell `using` whether its block threw.
 - A browser can't load a native addon.
 - On the Node.js addon, a blocking wait inside an async export on a stream that JavaScript writes must go through Bimetal's stream reads, such as iterating the `RecordBatchStream`. Another executor's `block_on` there, before the call's first wait, stops the JavaScript thread.
+- An async export moves its calls to workers only after it has timed long ones, so when its calls turn slow, the next ones still run on the caller's event loop thread: up to eight before one times itself, and then two or more, as [the first wait](../concepts/async.md#the-first-wait) explains.
+- Every call of an exported function or method that isn't `brief` releases Python's interpreter lock, so that a thread that the call waits for can take it. While another Python thread competes for the lock, taking it back can take up to the interpreter's switch interval, 5 ms by default, for each call.
 - A `#[cfg]` that tests the target can't gate an exported method, because the hosts share one contract but differ by target. A feature can.
 - Python and JavaScript type checkers can't read types from a binary, so the generated files stay.

@@ -10,7 +10,7 @@ error: a resource constructor cannot implement a protocol
 22 |     pub fn new() -> Self {
    |         ^^
 
-error: function attributes are returns(arrow|buffer|bytes|resource)
+error: function attributes are brief and returns(arrow|buffer)
   --> tests/diagnostics/protocol_attributes.rs:28:11
    |
 28 | #[bimetal(next)]

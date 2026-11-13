@@ -1,4 +1,4 @@
-//! The build, `check`, and `build-native` steps.
+//! The build and `check` steps.
 
 use std::fs;
 use std::iter;
@@ -21,7 +21,7 @@ use crate::typescript;
 use super::Project;
 use super::compile::{Built, Compilation, CompileKind, Warnings};
 use super::link::{self, LinkCrate};
-use super::reports::{self, BuildReport, BuildStatus, CheckReport, NativeBuildReport};
+use super::reports::{self, BuildReport, BuildStatus, CheckReport};
 use super::{checkout, discovery, exports, validation};
 
 /// Generated packages in a staging directory.
@@ -100,39 +100,9 @@ pub(crate) fn build(project: &Project, force: bool) -> Result<BuildReport<'_>> {
     BuildReport::new(project, BuildStatus::Ok, &published)
 }
 
-/// Compile and install only the current platform's native artifacts.
-///
-/// Deployment builds use this path after `check` has verified the committed
-/// generated sources. It skips contract discovery, source emission, and Wasm,
-/// so it refuses sources that the generated packages do not match: their
-/// artifacts would lack what the generated code calls.
-pub(crate) fn build_native(project: &Project) -> Result<NativeBuildReport<'_>> {
-    let report = |artifacts| NativeBuildReport {
-        application: &project.package_name,
-        artifacts,
-    };
-    if project.native_kinds().is_empty() {
-        return Ok(report(Vec::new()));
-    }
-    let _lock = output::project_lock(&project.root, &project.package_name)?;
-    let config = current_config(project)?;
-    if config.generated.source_fingerprint.is_empty() {
-        bail!(
-            "bimetal.toml records no generated packages to build the native artifacts for: its [generated] tables are missing or empty; run `bimetal build`"
-        );
-    }
-    let sources = checkout::source_fingerprint(project, &config, &config.generated.inputs)?;
-    if sources.fingerprint != config.generated.source_fingerprint {
-        bail!(
-            "the generated packages are stale: the Rust sources, their inputs, the toolchain, or bimetal.toml changed since `bimetal build` generated them; run `bimetal build`"
-        );
-    }
-    Ok(report(compile_native(project, &sources)?))
-}
-
 /// Compile this platform's native artifacts from the sources with this
 /// fingerprint, and install them. The caller holds the project lock.
-fn compile_native(project: &Project, sources: &Sources) -> Result<Vec<PathBuf>> {
+fn compile_native(project: &Project, sources: &Sources) -> Result<()> {
     let link_crate = link::prepare_link_crate(project)?;
     let kinds = project.native_kinds();
     announce(project, &kinds);
@@ -146,7 +116,8 @@ fn compile_native(project: &Project, sources: &Sources) -> Result<Vec<PathBuf>> 
         Vec::new(),
         skipped,
         &mut Warnings::default(),
-    )
+    )?;
+    Ok(())
 }
 
 /// Finish the native builds, install their artifacts, and record that they

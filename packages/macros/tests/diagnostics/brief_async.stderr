@@ -1,0 +1,11 @@
+error: brief applies to a synchronous call
+ --> tests/diagnostics/brief_async.rs:5:5
+  |
+5 | pub async fn later() {}
+  |     ^^^^^
+
+error: a brief call cannot take a host function or stream, which may wait for the interpreter lock that the call keeps
+  --> tests/diagnostics/brief_async.rs:10:25
+   |
+10 | pub fn apply(_callback: bimetal::Callback<(u32,), u32>) -> u32 {
+   |                         ^^^^^^^

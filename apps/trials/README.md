@@ -57,7 +57,7 @@ These gaps showed up as compile errors or failing tests, and Bimetal now covers 
 
 | Need | Who needed it | What Bimetal has now |
 | --- | --- | --- |
-| A method that returns another resource | All four | `#[bimetal(returns(resource))]`, also in `Option` and `Vec` |
+| A method that returns another resource | All four | A return of the resource's type, also in `Option` and `Vec` |
 | A resource with no public constructor | All four | Constructors are optional |
 | Structured error data | All four | `#[bimetal(details)]`, a typed model on the exception |
 | `for` and `async for` | All four | `#[bimetal(next)]`, sync or async |
@@ -66,7 +66,7 @@ These gaps showed up as compile errors or failing tests, and Bimetal now covers 
 | Commit on success, roll back on exception | Tantivy | `#[bimetal(exit)]`, told whether the block failed |
 | A method that consumes its value | Tantivy | Methods can take `self` |
 | Host functions that Rust calls | DataFusion, Oxc | `bimetal::Callback` |
-| A resource as an argument | DataFusion | `#[bimetal(resource)]` on `&T`, `&mut T`, `Option<&T>`, or `T` |
+| A resource as an argument | DataFusion | A parameter of the resource's type: `&T`, `&mut T`, `Option<&T>`, or `T` |
 | `async for` over Arrow batches | DataFusion | `Option` of a direct value in a return |
 | `getrandom` on Wasm, in all three versions in use | DataFusion, Tantivy, Polars | The Wasm build configures it |
 | The time on Wasm | DataFusion | The runtime turns on chrono's `wasmbind` |
@@ -121,4 +121,3 @@ Nothing in the trials needed these, and each needs design:
 - Operators other than `==`, such as `<` and `+`, and pickling a resource.
 - More than one `#[bimetal::export]` block for a resource, which fails to compile.
 - One method implementing two protocols, so Polars' `repr` and `display` are two methods.
-- Inferring `returns(resource)`, which a resource-heavy API repeats on most methods.

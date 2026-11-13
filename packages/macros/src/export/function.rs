@@ -15,7 +15,7 @@ use crate::types::{self, Signature};
 pub(super) fn expand_function(mut function: ItemFn) -> syn::Result<TokenStream2> {
     types::ensure_public(&function.vis, function.sig.ident.span())?;
     let options = attributes::export_options(&function.attrs, CallableKind::Function)?;
-    let signature = Signature::parse(&function.sig, options.returns)?;
+    let signature = Signature::parse(&function.sig, options.returns, options.brief)?;
     let ident = &function.sig.ident;
     let native_name =
         types::native_export_name(ident.span(), ExportKind::Function, &signature.host_name);
@@ -23,7 +23,12 @@ pub(super) fn expand_function(mut function: ItemFn) -> syn::Result<TokenStream2>
     let callable = signature.callable_tokens(&docs);
     let returns = &signature.returns.type_ref;
     let callee = quote!(#ident);
-    let python_wrapper = python::function(&signature, ident, &native_name);
+    let python_wrapper = python::function(
+        &signature,
+        ident,
+        &native_name,
+        attributes::docs_text(&function.attrs).as_deref(),
+    );
     let node_wrapper = node::function(&signature, ident, &native_name);
     let wasm_wrapper = wasm::function(&signature, ident, &native_name);
     let send_check = wrapper::send_check(&function.sig, &callee);

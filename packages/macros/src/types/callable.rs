@@ -6,11 +6,14 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
-use syn::{FnArg, GenericArgument, Ident, Pat, PathArguments, ReturnType, Safety, Type as SynType};
+use syn::{
+    Expr, ExprLit, FnArg, GenericArgument, Ident, Lit, Pat, PathArguments, ReturnType, Safety,
+    Type as SynType,
+};
 
 use crate::attributes::{self, Boundary};
 use crate::types::result_types::ResultTypes;
-use crate::types::{DirectType, ResourceShape, type_ref, validation};
+use crate::types::{DirectType, type_ref, validation};
 
 /// One exported callable's signature.
 pub(crate) struct Signature<'syntax> {
@@ -24,6 +27,9 @@ pub(crate) struct Signature<'syntax> {
     pub(crate) returns: Returns<'syntax>,
     /// Whether the callable is an `async fn`.
     pub(crate) is_async: bool,
+    /// Whether a synchronous call keeps Python's interpreter lock, as
+    /// `#[bimetal(brief)]` asks.
+    pub(crate) brief: bool,
 }
 
 /// One parameter of an exported callable.
@@ -44,26 +50,47 @@ pub(crate) struct Param<'syntax> {
 
 /// How an argument crosses into Rust.
 pub(crate) enum ParamValue<'syntax> {
-    /// Through Serde, as the owned type that the call takes or borrows:
-    /// `String` for `&str`, and `Vec<T>` for `&[T]`.
-    Serde(TokenStream2),
+    /// As the type's crossing says, through Serde or as a resource: the call
+    /// takes a value of this type, or borrows one when the parameter is `&T`.
+    Value(&'syntax SynType),
+    /// As a resource of this type, which only a resource can be.
+    Resource {
+        /// The resource's type.
+        value: &'syntax SynType,
+        /// How the call borrows it.
+        shape: ResourceShape,
+    },
     /// Through a direct boundary.
     Direct(DirectType<'syntax>),
     /// As a host function, which the `bimetal::Callback` of this type calls.
     Callback(&'syntax SynType),
 }
 
+/// How a parameter borrows a resource in a way that no other value could
+/// cross.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ResourceShape {
+    /// Alone: `&mut T`.
+    Exclusive,
+    /// When the argument is not `None`: `Option<&T>`.
+    Optional,
+}
+
 /// What an exported callable returns.
 pub(crate) struct Returns<'syntax> {
     /// The error type, when the callable returns `Result`.
     pub(crate) error: Option<&'syntax SynType>,
-    /// The direct boundary of a successful value, from `returns(...)`.
+    /// The direct boundary of a successful value: bytes, or what
+    /// `returns(...)` declares.
     pub(crate) direct: Option<DirectType<'syntax>>,
-    /// Whether the direct value is inside an `Option`, which a resource's
-    /// shape says itself.
+    /// Whether the direct value is inside an `Option`.
     pub(crate) optional: bool,
     /// The successful value, or `None` for `()`.
     pub(crate) value: Option<ReturnValue>,
+    /// The crossing of a successful value that crosses by its type, which
+    /// the item of an `Option` or a `Vec` decides, so that one of resources
+    /// crosses as they do; `None` for `()` and a direct value.
+    pub(crate) crossing: Option<TokenStream2>,
     /// The construction of the successful value's `bimetal::ir::TypeRef`.
     pub(crate) type_ref: TokenStream2,
 }
@@ -76,10 +103,12 @@ pub(crate) struct ReturnValue {
 
 impl<'syntax> Signature<'syntax> {
     /// Check a signature that Bimetal exports, whose successful value crosses
-    /// `return_boundary`, if any.
+    /// `return_boundary`, if any, and which is `brief` when its attributes
+    /// say so.
     pub(crate) fn parse(
         signature: &'syntax syn::Signature,
         return_boundary: Option<Boundary>,
+        brief: bool,
     ) -> syn::Result<Self> {
         use heck::ToLowerCamelCase;
 
@@ -90,10 +119,25 @@ impl<'syntax> Signature<'syntax> {
                 "unsafe and variadic exports are not supported",
             ));
         }
+        if let Some(asyncness) = signature.asyncness.filter(|_| brief) {
+            return Err(syn::Error::new(
+                asyncness.span(),
+                "brief applies to a synchronous call",
+            ));
+        }
         let mut params = Vec::new();
         for argument in &signature.inputs {
             if let FnArg::Typed(argument) = argument {
-                params.push(Param::parse(argument)?);
+                let param = Param::parse(argument)?;
+                // A brief call keeps Python's interpreter lock, which a host
+                // function or stream that runs on another thread waits for.
+                if brief && param.waits_for_host() {
+                    return Err(syn::Error::new(
+                        argument.ty.span(),
+                        "a brief call cannot take a host function or stream, which may wait for the interpreter lock that the call keeps",
+                    ));
+                }
+                params.push(param);
             }
         }
         let rust_names: Vec<String> = params
@@ -111,6 +155,7 @@ impl<'syntax> Signature<'syntax> {
             params,
             returns: Returns::parse(signature, return_boundary)?,
             is_async: signature.asyncness.is_some(),
+            brief,
         })
     }
 
@@ -121,6 +166,7 @@ impl<'syntax> Signature<'syntax> {
             rust_name,
             host_name,
             is_async,
+            brief,
             ..
         } = self;
         let params = self.params.iter().map(|param| &param.definition);
@@ -137,6 +183,7 @@ impl<'syntax> Signature<'syntax> {
             params: vec![#(#params),*],
             error: #error,
             is_async: #is_async,
+            brief: #brief,
         })
     }
 }
@@ -166,44 +213,64 @@ impl<'syntax> Param<'syntax> {
         }
         let ty = argument.ty.as_ref();
         let options = attributes::parameter_options(&argument.attrs)?;
-        let resource = options.boundary == Some(Boundary::Resource);
-        let borrowed = match ty {
-            SynType::Reference(reference) if reference.mutability.is_some() && !resource => {
-                return Err(syn::Error::new(
-                    reference.span(),
-                    "mutable reference parameters cannot cross a Bimetal boundary",
-                ));
-            }
-            SynType::Reference(reference) => {
-                reject_nested_references(&reference.elem)?;
-                true
-            }
-            ty => {
-                if !resource {
-                    reject_nested_references(ty)?;
+        let boundary = options.boundary.or_else(|| type_ref::bytes_boundary(ty));
+        let resource = boundary.is_none().then(|| resource_borrow(ty)).flatten();
+        let (borrowed, value, type_ref) = if let Some((value, shape)) = resource {
+            reject_nested_references(value)?;
+            (
+                true,
+                ParamValue::Resource { value, shape },
+                shape.type_ref_tokens(value),
+            )
+        } else {
+            let (borrowed, value) = match ty {
+                SynType::Reference(reference) if reference.mutability.is_some() => {
+                    return Err(syn::Error::new(
+                        reference.span(),
+                        "a direct boundary takes a value or a shared reference",
+                    ));
                 }
-                false
-            }
+                SynType::Reference(reference) => (true, reference.elem.as_ref()),
+                ty => (false, ty),
+            };
+            reject_nested_references(value)?;
+            let (value, type_ref) = match boundary {
+                Some(boundary) => {
+                    let direct = DirectType::parse(ty, boundary)?;
+                    let type_ref = direct.type_ref_tokens();
+                    (ParamValue::Direct(direct), type_ref)
+                }
+                None if type_ref::is_callback(ty) => (
+                    ParamValue::Callback(ty),
+                    type_ref::type_ref_tokens(ty, None)?,
+                ),
+                None => (
+                    ParamValue::Value(value),
+                    type_ref::type_ref_tokens(ty, None)?,
+                ),
+            };
+            (borrowed, value, type_ref)
         };
-        let (value, type_ref) = match options.boundary {
-            Some(boundary) => {
-                let direct = DirectType::parse_param(ty, boundary)?;
-                let type_ref = direct.type_ref_tokens();
-                (ParamValue::Direct(direct), type_ref)
-            }
-            None if type_ref::is_callback(ty) => (
-                ParamValue::Callback(ty),
-                type_ref::type_ref_tokens(ty, None)?,
-            ),
-            None => (
-                ParamValue::Serde(owned_type(ty)),
-                type_ref::type_ref_tokens(ty, None)?,
-            ),
-        };
+        // A default is an expression of the parameter's type, which the contract
+        // holds as the hosts write it; a string literal also fits a `String`.
         let default = match &options.default {
-            Some(default) => quote!(::core::option::Option::Some(
-                ::bimetal::__private::serde_json::json!(#default)
-            )),
+            Some(default) => {
+                let value = match default {
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(_), ..
+                    }) => quote!(::core::convert::From::from(#default)),
+                    default => quote!(#default),
+                };
+                quote!(::core::option::Option::Some(
+                    ::bimetal::registry::parameter_default(
+                        &{
+                            let __bimetal_default: #ty = #value;
+                            __bimetal_default
+                        },
+                        &#type_ref,
+                    )
+                ))
+            }
             None => quote!(::core::option::Option::None),
         };
         let host_name = rust_name.to_lower_camel_case();
@@ -228,13 +295,9 @@ impl<'syntax> Param<'syntax> {
     pub(crate) fn call(&self) -> TokenStream2 {
         let ident = self.ident;
         match &self.value {
-            ParamValue::Direct(DirectType::Resource { shape, .. }) => match shape {
-                ResourceShape::Shared => quote!(&#ident),
+            ParamValue::Resource { shape, .. } => match shape {
                 ResourceShape::Exclusive => quote!(&mut #ident),
-                ResourceShape::OptionalShared => quote!(#ident.as_deref()),
-                ResourceShape::Owned | ResourceShape::OptionalOwned | ResourceShape::List => {
-                    quote!(#ident)
-                }
+                ResourceShape::Optional => quote!(#ident.as_deref()),
             },
             _ if self.borrowed => quote!(&#ident),
             _ => quote!(#ident),
@@ -250,7 +313,7 @@ impl<'syntax> Param<'syntax> {
             ParamValue::Direct(DirectType::Arrow { value }) => {
                 type_ref::type_last_ident(value).is_ok_and(|ident| ident == "RecordBatchStream")
             }
-            ParamValue::Serde(_) | ParamValue::Direct(_) => false,
+            ParamValue::Value(_) | ParamValue::Resource { .. } | ParamValue::Direct(_) => false,
         }
     }
 }
@@ -295,6 +358,11 @@ impl<'syntax> Returns<'syntax> {
             (None, ReturnType::Type(_, ty)) => Some(ty.as_ref()),
             (None, ReturnType::Default) => None,
         };
+        // Bytes, also in an `Option`, need no `returns(...)`.
+        let boundary = boundary.or_else(|| {
+            let value = success?;
+            type_ref::bytes_boundary(type_ref::option_item(value).unwrap_or(value))
+        });
         if signature.asyncness.is_some()
             && let Some(success) = success
             && contains_reference(success)
@@ -304,13 +372,13 @@ impl<'syntax> Returns<'syntax> {
                 "async exports must return owned values, because the host awaits them after the call returns",
             ));
         }
-        // A direct value other than a resource may be inside an `Option`.
+        // A direct value may be inside an `Option`.
         let inner = success
-            .filter(|_| boundary.is_some_and(|boundary| boundary != Boundary::Resource))
+            .filter(|_| boundary.is_some())
             .and_then(type_ref::option_item);
         let optional = inner.is_some();
         let direct = match (boundary, inner.or(success)) {
-            (Some(boundary), Some(value)) => Some(DirectType::parse_return(value, boundary)?),
+            (Some(boundary), Some(value)) => Some(DirectType::parse(value, boundary)?),
             (Some(boundary), None) => {
                 return Err(syn::Error::new_spanned(
                     signature,
@@ -333,29 +401,58 @@ impl<'syntax> Returns<'syntax> {
             (None, Some(success)) => type_ref::type_ref_tokens(success, None)?,
             (None, None) => quote!(::bimetal::ir::TypeRef::Unit),
         };
-        let value = success
-            .filter(|success| !matches!(success, SynType::Tuple(tuple) if tuple.elems.is_empty()))
-            .map(|success| ReturnValue {
-                borrowed: matches!(success, SynType::Reference(_)),
-            });
+        let success = success
+            .filter(|success| !matches!(success, SynType::Tuple(tuple) if tuple.elems.is_empty()));
+        let value = success.map(|success| ReturnValue {
+            borrowed: matches!(success, SynType::Reference(_)),
+        });
+        let crossing = success.filter(|_| direct.is_none()).map(|success| {
+            let item = type_ref::option_item(success)
+                .or_else(|| type_ref::vec_item(success))
+                .unwrap_or(success);
+            quote!(<#item as ::bimetal::ContractType>::Crossing)
+        });
         Ok(Self {
             error: result.map(|result| result.error),
             direct,
             optional,
             value,
+            crossing,
             type_ref,
         })
     }
 }
 
-/// Return the owned type that Serde decodes for a parameter of type `ty`,
-/// which the type system picks for a reference.
-fn owned_type(ty: &SynType) -> TokenStream2 {
-    let SynType::Reference(reference) = ty else {
-        return quote!(#ty);
-    };
-    let borrowed = reference.elem.as_ref();
-    quote!(<#borrowed as ::bimetal::__private::Owned>::Owned)
+impl ResourceShape {
+    /// Render the `bimetal::ir::TypeRef` construction of a parameter that
+    /// borrows a resource of type `value` this way.
+    fn type_ref_tokens(self, value: &SynType) -> TokenStream2 {
+        let resource = quote!(::bimetal::ir::TypeRef::Resource {
+            identity: <#value as ::bimetal::runtime::ResourceType>::identity(),
+        });
+        match self {
+            Self::Exclusive => resource,
+            Self::Optional => quote!(::bimetal::ir::TypeRef::Option {
+                item: ::std::boxed::Box::new(#resource),
+            }),
+        }
+    }
+}
+
+/// Return the resource that a parameter of type `ty` borrows in a way that
+/// no other value could cross, `&mut T` or `Option<&T>`, and how.
+fn resource_borrow(ty: &SynType) -> Option<(&SynType, ResourceShape)> {
+    match ty {
+        SynType::Reference(reference) if reference.mutability.is_some() => {
+            Some((reference.elem.as_ref(), ResourceShape::Exclusive))
+        }
+        ty => match type_ref::option_item(ty) {
+            Some(SynType::Reference(reference)) if reference.mutability.is_none() => {
+                Some((reference.elem.as_ref(), ResourceShape::Optional))
+            }
+            _ => None,
+        },
+    }
 }
 
 /// Reject references inside a parameter type, which no value that the

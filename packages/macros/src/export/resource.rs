@@ -10,6 +10,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
+use syn::visit_mut::VisitMut;
 use syn::{
     Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, ReceiverKind, Type as SynType, Visibility,
 };
@@ -37,7 +38,19 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
     let resource_name = resource_ident.unraw().to_string();
     let native_name =
         types::native_export_name(resource_ident.span(), ExportKind::Resource, &resource_name);
-    let plan = ResourcePlan::new(&item)?;
+    // Inside the generated classes `Self` names the class, so each member is
+    // planned with the resource's own name in its signature.
+    let SynType::Path(resource_path) = resource_ty else {
+        unreachable!("a resource without a name fails above");
+    };
+    let signatures: Vec<syn::Signature> = methods(&item)
+        .map(|method| {
+            let mut signature = method.sig.clone();
+            types::SelfToPath(&resource_path.path).visit_signature_mut(&mut signature);
+            signature
+        })
+        .collect();
+    let plan = ResourcePlan::new(&item, &signatures)?;
     let definition = |member: &Member<'_>| {
         let docs = attributes::docs_tokens(&member.method.attrs);
         member.signature.callable_tokens(&docs)
@@ -118,6 +131,15 @@ pub(super) fn expand_resource(mut item: ItemImpl) -> syn::Result<TokenStream2> {
                 ::bimetal::ir::DefinitionId::new(env!("CARGO_PKG_NAME"), #id)
             }
         }
+        impl ::bimetal::ContractType for #resource_ty {
+            type Crossing = ::bimetal::crossing::Resource;
+
+            fn type_ref() -> ::bimetal::ir::TypeRef {
+                ::bimetal::ir::TypeRef::Resource {
+                    identity: <Self as ::bimetal::runtime::ResourceType>::identity(),
+                }
+            }
+        }
         #registration
         #send_checks
         #python_wrapper
@@ -138,14 +160,12 @@ pub(super) struct ResourcePlan<'item> {
 }
 
 impl<'item> ResourcePlan<'item> {
-    /// Validate and classify the public, non-skipped functions of an impl block.
-    fn new(item: &'item ItemImpl) -> syn::Result<Self> {
+    /// Validate and classify the public, non-skipped functions of an impl
+    /// block, whose signatures, in order, are `signatures`.
+    fn new(item: &'item ItemImpl, signatures: &'item [syn::Signature]) -> syn::Result<Self> {
         let mut constructors = Vec::new();
         let mut methods = Vec::new();
-        for impl_item in &item.items {
-            let ImplItem::Fn(method) = impl_item else {
-                continue;
-            };
+        for (method, signature) in self::methods(item).zip(signatures) {
             if !matches!(method.vis, Visibility::Public(_)) {
                 continue;
             }
@@ -154,7 +174,7 @@ impl<'item> ResourcePlan<'item> {
                 continue;
             }
             let gates = attributes::feature_gates(&method.attrs)?;
-            let signature = Signature::parse(&method.sig, options.returns)?;
+            let signature = Signature::parse(signature, options.returns, options.brief)?;
             if options.constructor {
                 if options.returns.is_some() {
                     return Err(syn::Error::new(
@@ -217,6 +237,14 @@ impl<'item> ResourcePlan<'item> {
             .chain(&self.factories)
             .chain(&self.methods)
     }
+}
+
+/// Return the functions of an impl block, in order.
+fn methods(item: &ItemImpl) -> impl Iterator<Item = &ImplItemFn> {
+    item.items.iter().filter_map(|impl_item| match impl_item {
+        ImplItem::Fn(method) => Some(method),
+        _ => None,
+    })
 }
 
 /// Select read or write access from an exported method's receiver.
@@ -330,6 +358,14 @@ impl Member<'_> {
 mod tests {
     use super::*;
 
+    /// The signatures of an impl block that names no `Self` in them, which
+    /// `expand_resource` plans with.
+    fn signatures(implementation: &ItemImpl) -> Vec<syn::Signature> {
+        methods(implementation)
+            .map(|method| method.sig.clone())
+            .collect()
+    }
+
     #[test]
     fn resource_constructor_collection_preserves_attribute_errors() {
         let implementation: ItemImpl = syn::parse_quote! {
@@ -341,7 +377,7 @@ mod tests {
             }
         };
 
-        let error = match ResourcePlan::new(&implementation) {
+        let error = match ResourcePlan::new(&implementation, &signatures(&implementation)) {
             Ok(_) => panic!("invalid constructor attributes must be reported"),
             Err(error) => error,
         };
@@ -358,7 +394,8 @@ mod tests {
                     pub fn open(&self) {}
                 }
             };
-            ResourcePlan::new(&implementation).map(|plan| plan.methods[0].gates.len())
+            ResourcePlan::new(&implementation, &signatures(&implementation))
+                .map(|plan| plan.methods[0].gates.len())
         };
 
         let accepted = [
@@ -410,7 +447,8 @@ mod tests {
                     pub fn open(&self) {}
                 }
             };
-            ResourcePlan::new(&implementation).map(|plan| plan.methods.len())
+            ResourcePlan::new(&implementation, &signatures(&implementation))
+                .map(|plan| plan.methods.len())
         };
 
         let rejected = [
@@ -448,7 +486,8 @@ mod tests {
                 pub fn open() -> Self { Self }
             }
         };
-        let plan = ResourcePlan::new(&implementation).expect("plan resource");
+        let signatures = signatures(&implementation);
+        let plan = ResourcePlan::new(&implementation, &signatures).expect("plan resource");
 
         let constructor = plan.constructor.as_ref().expect("an ungated constructor");
         assert_eq!(constructor.method.sig.ident, "open");
@@ -463,7 +502,8 @@ mod tests {
                 pub fn finish(self) -> u32 { 0 }
             }
         };
-        let plan = ResourcePlan::new(&implementation).expect("plan resource");
+        let signatures = signatures(&implementation);
+        let plan = ResourcePlan::new(&implementation, &signatures).expect("plan resource");
 
         assert!(plan.constructor.is_none());
         let roles: Vec<Role> = plan.methods.iter().map(|member| member.role).collect();
@@ -485,7 +525,8 @@ mod tests {
                 pub async fn write(&mut self) {}
             }
         };
-        let plan = ResourcePlan::new(&implementation).expect("plan resource");
+        let signatures = signatures(&implementation);
+        let plan = ResourcePlan::new(&implementation, &signatures).expect("plan resource");
 
         let constructor = plan
             .constructor

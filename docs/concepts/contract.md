@@ -37,7 +37,7 @@ One gap remains. The contract comes from a build for this machine, and the Wasm 
 
 ## One signature, every host
 
-A signature means the same thing on each host, so you describe it once. Where a host needs more than the Rust type says, an attribute says it: `#[bimetal(bytes)]` for a byte string, `#[bimetal(resource)]` for a class instance, `#[bimetal(default = 10)]` for an optional argument. [Attributes](../reference/attributes.md) lists them all.
+A signature means the same thing on each host, so you describe it once. Where a host needs more than the Rust type says, an attribute says it: `#[bimetal(buffer)]` for a NumPy array, `#[bimetal(arrow)]` for an Arrow value, `#[bimetal(default = 10)]` for an optional argument. [Attributes](../reference/attributes.md) lists them all.
 
 Everything else follows from the signature. `&mut self` means a method runs alone, `Result` means it can raise, `self` means it consumes the resource. You don't configure these.
 

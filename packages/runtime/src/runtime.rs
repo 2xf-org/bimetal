@@ -12,8 +12,12 @@ mod contract_error;
 #[cfg(all(any(feature = "python", feature = "node"), not(target_arch = "wasm32")))]
 #[doc(hidden)]
 pub mod executor;
+#[cfg(all(feature = "python", not(target_arch = "wasm32")))]
+mod mailbox;
 #[cfg(all(feature = "node", not(target_arch = "wasm32")))]
 pub mod node;
+#[cfg(all(any(feature = "python", feature = "node"), not(target_arch = "wasm32")))]
+mod pace;
 #[cfg(all(feature = "python", not(target_arch = "wasm32")))]
 pub mod python;
 mod resource;

@@ -99,16 +99,12 @@ impl Compiler {
     }
 
     /// Add or replace a binary file, such as an image or a CSV file.
-    pub fn add_file(
-        &mut self,
-        path: &str,
-        #[bimetal(bytes)] data: &[u8],
-    ) -> Result<(), TypstError> {
+    pub fn add_file(&mut self, path: &str, data: &[u8]) -> Result<(), TypstError> {
         self.files.add(path, data.to_vec())
     }
 
     /// Add a font, and return how many faces the file holds.
-    pub fn add_font(&mut self, #[bimetal(bytes)] data: &[u8]) -> Result<u32, TypstError> {
+    pub fn add_font(&mut self, data: &[u8]) -> Result<u32, TypstError> {
         self.files.add_font(data)
     }
 
@@ -119,7 +115,6 @@ impl Compiler {
     }
 
     /// Compile a document from the file at `main`.
-    #[bimetal(returns(resource))]
     pub fn compile(&self, main: &str) -> Result<Document, TypstError> {
         let warned = typst::compile::<PagedDocument>(&self.files.world(main)?);
         let world = self.files.world(main)?;
@@ -164,7 +159,6 @@ impl Document {
     }
 
     /// Walk the pages as SVG documents.
-    #[bimetal(returns(resource))]
     pub fn pages(&self) -> Pages {
         Pages {
             svgs: self
@@ -178,7 +172,6 @@ impl Document {
     }
 
     /// Export the whole document as a PDF file.
-    #[bimetal(returns(bytes))]
     pub fn pdf(&self) -> Result<Vec<u8>, TypstError> {
         typst_pdf::pdf(&self.document, &PdfOptions::default()).map_err(|errors| {
             TypstError::Export(
@@ -196,7 +189,6 @@ impl Document {
     }
 
     /// Export one zero-based page as a PNG image.
-    #[bimetal(returns(bytes))]
     pub fn png(
         &self,
         page: u32,

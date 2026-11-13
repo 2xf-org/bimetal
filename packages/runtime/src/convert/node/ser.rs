@@ -2,13 +2,28 @@
 //! the settings of the Wasm boundary: `null` for `None` and `()`, a `Map` for
 //! each map, a bigint for every 64-bit and 128-bit integer, and a plain
 //! `Uint8Array` for bytes.
+//!
+//! An object, an array or a map is made in one call of a JavaScript function
+//! with its values: an object by the function of its keys, whose literal
+//! gives every object of those keys one shape, for less than adding each
+//! property through Node-API. Objects and arrays are frozen, as the generated
+//! `restoreHost` leaves them, so that it returns one whose schema restores
+//! nothing else as it is.
 
-use std::fmt::Display;
+use std::cell::{OnceCell, RefCell};
+use std::fmt::{Display, Write as _};
+use std::ptr;
 
 use serde::ser::{self, Serialize};
 
 use super::names::Names;
-use crate::runtime::node::{Env, Error, Value};
+use crate::convert::short_text::ShortText;
+use crate::runtime::node::{Env, Error, Gathered, Value};
+
+/// The most values that one call takes; a longer array or map is filled one
+/// value at a time instead, so that the call's arguments stay small on the
+/// stack.
+const MOST_ARGUMENTS: usize = 4096;
 
 impl ser::Error for Error {
     fn custom<T: Display>(message: T) -> Self {
@@ -20,6 +35,21 @@ impl ser::Error for Error {
 pub(super) struct Serializer<'env> {
     env: Env<'env>,
     names: Names<'env>,
+    /// The values of the containers that are being made.
+    gathered: Gathered<'env>,
+    /// The keys of the objects that are being made, a stack as `gathered` is.
+    keys: RefCell<Vec<&'static str>>,
+    /// The function of each list of keys that this conversion has made an
+    /// object of. Serde passes the same `&'static str` keys for every value
+    /// of a type.
+    objects: RefCell<Vec<ObjectFactory<'env>>>,
+    array_of: OnceCell<Value<'env>>,
+}
+
+/// The function that makes an object of `keys`, in order.
+struct ObjectFactory<'env> {
+    keys: Box<[&'static str]>,
+    function: Value<'env>,
 }
 
 impl<'env> Serializer<'env> {
@@ -28,31 +58,78 @@ impl<'env> Serializer<'env> {
         Self {
             env,
             names: Names::new(env),
+            gathered: Gathered::default(),
+            keys: RefCell::default(),
+            objects: RefCell::default(),
+            array_of: OnceCell::new(),
         }
+    }
+
+    /// The function that makes an array of its arguments.
+    fn array_of(&self) -> Result<Value<'env>, Error> {
+        if let Some(array_of) = self.array_of.get() {
+            return Ok(*array_of);
+        }
+        let array_of = self.env.array_of()?;
+        Ok(*self.array_of.get_or_init(|| array_of))
+    }
+
+    /// Make the object whose keys are on `keys` from `key_mark` on, and whose
+    /// values are gathered from `mark` on.
+    fn object(&self, key_mark: usize, mark: usize) -> Result<Value<'env>, Error> {
+        let factory = {
+            let keys = self.keys.borrow();
+            let keys = &keys[key_mark..];
+            let kept = self.objects.borrow().iter().find_map(|factory| {
+                let same = factory.keys.len() == keys.len()
+                    && factory
+                        .keys
+                        .iter()
+                        .zip(keys)
+                        .all(|(kept, key)| ptr::eq(*kept, *key));
+                same.then_some(factory.function)
+            });
+            match kept {
+                Some(function) => function,
+                None => {
+                    let function = self.env.object_of(keys)?;
+                    self.objects.borrow_mut().push(ObjectFactory {
+                        keys: keys.into(),
+                        function,
+                    });
+                    function
+                }
+            }
+        };
+        self.keys.borrow_mut().truncate(key_mark);
+        self.gathered.call(factory, mark)
     }
 }
 
 /// Wraps a serialized variant's payload as `{"Variant": payload}`, as
 /// serde_json does.
-pub(super) struct VariantSerializer<'env, S> {
-    variant: Value<'env>,
+pub(super) struct VariantSerializer<'serializer, 'env, S> {
+    serializer: &'serializer Serializer<'env>,
+    variant: &'static str,
     inner: S,
 }
 
-impl<'env, S> VariantSerializer<'env, S> {
+impl<'env, S> VariantSerializer<'_, 'env, S> {
     /// Wrap `inner`'s value in an object of the variant's name.
     fn wrap(
         self,
         inner: impl FnOnce(S) -> Result<Value<'env>, Error>,
     ) -> Result<Value<'env>, Error> {
         let value = inner(self.inner)?;
-        let object = value.env().object()?;
-        object.set_property(self.variant, value)?;
-        Ok(object)
+        let serializer = self.serializer;
+        let (key_mark, mark) = (serializer.keys.borrow().len(), serializer.gathered.mark());
+        serializer.gathered.push(value);
+        serializer.keys.borrow_mut().push(self.variant);
+        serializer.object(key_mark, mark)
     }
 }
 
-impl<'env, S> ser::SerializeTupleVariant for VariantSerializer<'env, S>
+impl<'env, S> ser::SerializeTupleVariant for VariantSerializer<'_, 'env, S>
 where
     S: ser::SerializeTupleStruct<Ok = Value<'env>, Error = Error>,
 {
@@ -68,7 +145,7 @@ where
     }
 }
 
-impl<'env, S> ser::SerializeStructVariant for VariantSerializer<'env, S>
+impl<'env, S> ser::SerializeStructVariant for VariantSerializer<'_, 'env, S>
 where
     S: ser::SerializeStruct<Ok = Value<'env>, Error = Error>,
 {
@@ -91,17 +168,15 @@ where
 /// Serializes sequences and tuples into arrays.
 pub(super) struct ArraySerializer<'serializer, 'env> {
     serializer: &'serializer Serializer<'env>,
-    target: Value<'env>,
-    index: u32,
+    mark: usize,
 }
 
 impl<'serializer, 'env> ArraySerializer<'serializer, 'env> {
-    fn new(serializer: &'serializer Serializer<'env>) -> Result<Self, Error> {
-        Ok(Self {
+    fn new(serializer: &'serializer Serializer<'env>) -> Self {
+        Self {
             serializer,
-            target: serializer.env.array()?,
-            index: 0,
-        })
+            mark: serializer.gathered.mark(),
+        }
     }
 }
 
@@ -110,14 +185,21 @@ impl<'env> ser::SerializeSeq for ArraySerializer<'_, 'env> {
     type Error = Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
-        self.target
-            .set_element(self.index, value.serialize(self.serializer)?)?;
-        self.index += 1;
+        let value = value.serialize(self.serializer)?;
+        self.serializer.gathered.push(value);
         Ok(())
     }
 
     fn end(self) -> Result<Value<'env>, Error> {
-        Ok(self.target)
+        let Self { serializer, mark } = self;
+        if serializer.gathered.since(mark) <= MOST_ARGUMENTS {
+            return serializer.gathered.call(serializer.array_of()?, mark);
+        }
+        let array = serializer.env.array()?;
+        for (index, value) in (0..).zip(serializer.gathered.take(serializer.env, mark)) {
+            array.set_element(index, value)?;
+        }
+        Ok(array)
     }
 }
 
@@ -147,16 +229,13 @@ impl<'env> ser::SerializeTupleStruct for ArraySerializer<'_, 'env> {
     }
 }
 
-/// Serializes maps into `Map`s, which the generated `restoreHost` turns into
-/// plain objects with an own property for each key. Assigning the keys to an
-/// object here would lose a key such as `__proto__`, because the assignment
-/// sets the object's prototype instead.
+/// Serializes maps into frozen plain objects with an own property for each
+/// key, or a map of more entries into a `Map`, which the generated
+/// `restoreHost` turns into such an object.
 pub(super) struct MapSerializer<'serializer, 'env> {
     serializer: &'serializer Serializer<'env>,
-    target: Value<'env>,
-    /// `Map.prototype.set`.
-    set: Value<'env>,
-    next_key: Option<Value<'env>>,
+    /// Where the keys and the values, in turn, start.
+    mark: usize,
 }
 
 impl<'env> ser::SerializeMap for MapSerializer<'_, 'env> {
@@ -164,29 +243,37 @@ impl<'env> ser::SerializeMap for MapSerializer<'_, 'env> {
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Error> {
-        self.next_key = Some(key.serialize(self.serializer)?);
+        let key = key.serialize(self.serializer)?;
+        self.serializer.gathered.push(key);
         Ok(())
     }
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Error> {
-        let key = self
-            .next_key
-            .take()
-            .expect("Serde serializes each map key before its value");
         let value = value.serialize(self.serializer)?;
-        self.set.call(self.target, [key, value])?;
+        self.serializer.gathered.push(value);
         Ok(())
     }
 
     fn end(self) -> Result<Value<'env>, Error> {
-        Ok(self.target)
+        let Self { serializer, mark } = self;
+        let env = serializer.env;
+        if serializer.gathered.since(mark) <= MOST_ARGUMENTS {
+            return serializer.gathered.call(env.map_of()?, mark);
+        }
+        let (map, set) = env.map()?;
+        let entries = serializer.gathered.take(env, mark);
+        for entry in entries.chunks_exact(2) {
+            set.call(map, [entry[0], entry[1]])?;
+        }
+        Ok(map)
     }
 }
 
 /// Serializes structs into plain objects.
 pub(super) struct ObjectSerializer<'serializer, 'env> {
     serializer: &'serializer Serializer<'env>,
-    target: Value<'env>,
+    key_mark: usize,
+    mark: usize,
 }
 
 impl<'env> ser::SerializeStruct for ObjectSerializer<'_, 'env> {
@@ -199,12 +286,13 @@ impl<'env> ser::SerializeStruct for ObjectSerializer<'_, 'env> {
         value: &T,
     ) -> Result<(), Error> {
         let value = value.serialize(self.serializer)?;
-        self.target
-            .set_property(self.serializer.names.string(key)?, value)
+        self.serializer.gathered.push(value);
+        self.serializer.keys.borrow_mut().push(key);
+        Ok(())
     }
 
     fn end(self) -> Result<Value<'env>, Error> {
-        Ok(self.target)
+        self.serializer.object(self.key_mark, self.mark)
     }
 }
 
@@ -215,10 +303,12 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
     type SerializeSeq = ArraySerializer<'serializer, 'env>;
     type SerializeTuple = ArraySerializer<'serializer, 'env>;
     type SerializeTupleStruct = ArraySerializer<'serializer, 'env>;
-    type SerializeTupleVariant = VariantSerializer<'env, ArraySerializer<'serializer, 'env>>;
+    type SerializeTupleVariant =
+        VariantSerializer<'serializer, 'env, ArraySerializer<'serializer, 'env>>;
     type SerializeMap = MapSerializer<'serializer, 'env>;
     type SerializeStruct = ObjectSerializer<'serializer, 'env>;
-    type SerializeStructVariant = VariantSerializer<'env, ObjectSerializer<'serializer, 'env>>;
+    type SerializeStructVariant =
+        VariantSerializer<'serializer, 'env, ObjectSerializer<'serializer, 'env>>;
 
     fn serialize_bool(self, value: bool) -> Result<Value<'env>, Error> {
         self.env.boolean(value)
@@ -281,6 +371,16 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
         self.env.string(value)
     }
 
+    /// Write text that fits on the stack there, such as a date-time's, and
+    /// longer text to the heap.
+    fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Value<'env>, Error> {
+        let mut text = ShortText::new();
+        if write!(text, "{value}").is_ok() {
+            return self.env.string(text.as_str());
+        }
+        self.env.string(&value.to_string())
+    }
+
     fn serialize_bytes(self, value: &[u8]) -> Result<Value<'env>, Error> {
         self.env.typed_array(value)
     }
@@ -327,18 +427,19 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
     ) -> Result<Value<'env>, Error> {
         let inner = value.serialize(self)?;
         VariantSerializer {
-            variant: self.names.string(variant)?,
+            serializer: self,
+            variant,
             inner,
         }
         .wrap(Ok)
     }
 
     fn serialize_seq(self, _length: Option<usize>) -> Result<Self::SerializeSeq, Error> {
-        ArraySerializer::new(self)
+        Ok(ArraySerializer::new(self))
     }
 
     fn serialize_tuple(self, _length: usize) -> Result<Self::SerializeTuple, Error> {
-        ArraySerializer::new(self)
+        Ok(ArraySerializer::new(self))
     }
 
     fn serialize_tuple_struct(
@@ -346,7 +447,7 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
         _name: &'static str,
         _length: usize,
     ) -> Result<Self::SerializeTupleStruct, Error> {
-        ArraySerializer::new(self)
+        Ok(ArraySerializer::new(self))
     }
 
     fn serialize_tuple_variant(
@@ -357,18 +458,16 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
         _length: usize,
     ) -> Result<Self::SerializeTupleVariant, Error> {
         Ok(VariantSerializer {
-            variant: self.names.string(variant)?,
-            inner: ArraySerializer::new(self)?,
+            serializer: self,
+            variant,
+            inner: ArraySerializer::new(self),
         })
     }
 
     fn serialize_map(self, _length: Option<usize>) -> Result<Self::SerializeMap, Error> {
-        let (target, set) = self.env.map()?;
         Ok(MapSerializer {
             serializer: self,
-            target,
-            set,
-            next_key: None,
+            mark: self.gathered.mark(),
         })
     }
 
@@ -379,7 +478,8 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
     ) -> Result<Self::SerializeStruct, Error> {
         Ok(ObjectSerializer {
             serializer: self,
-            target: self.env.object()?,
+            key_mark: self.keys.borrow().len(),
+            mark: self.gathered.mark(),
         })
     }
 
@@ -391,7 +491,8 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
         length: usize,
     ) -> Result<Self::SerializeStructVariant, Error> {
         Ok(VariantSerializer {
-            variant: self.names.string(variant)?,
+            serializer: self,
+            variant,
             inner: self.serialize_struct(variant, length)?,
         })
     }

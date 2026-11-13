@@ -6,7 +6,7 @@ One Rust API, built into a Python package and a TypeScript package. Both call th
 
 ## How it works
 
-You mark the functions, types and `impl` blocks that callers may use. `bimetal build` compiles your library for each host, reads the API from the compiled code, and writes a typed package into a Python project and an npm project. The Python package is a native CPython extension. The TypeScript package runs your Rust as WebAssembly, in Node.js and browsers, or as a native Node.js addon. Field rules, error codes and documentation come from the Rust, so they are the same on every host. You commit the generated files, so an API change shows up in review, and `bimetal check` fails CI when they don't match the Rust, byte for byte.
+You mark the functions, types and `impl` blocks that callers may use. `bimetal build` compiles your library for each host, reads the API from the compiled code, and writes a typed package into a Python project and an npm project. The Python package is a native CPython extension. The TypeScript package runs your Rust as WebAssembly, in Node.js and browsers, or as a native Node.js addon. Field rules, error codes and documentation come from the Rust, so they are the same on every host. You commit the generated files, so an API change shows up in review, and `bimetal check` fails CI when they don't match the Rust.
 
 ## Getting started
 
@@ -167,9 +167,8 @@ assert.equal(value.visit((_title, index) => index < 0), 1);
 
 ```rust
 #[bimetal::export]
-#[bimetal(returns(bytes))]
 #[must_use]
-pub fn reverse(#[bimetal(bytes)] bytes: &[u8]) -> Vec<u8> {
+pub fn reverse(bytes: &[u8]) -> Vec<u8> {
 ```
 
 ```rust

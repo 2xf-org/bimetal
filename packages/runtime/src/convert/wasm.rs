@@ -16,14 +16,18 @@
 //! of the module.
 
 use std::any::Any;
+use std::borrow::Borrow;
 use std::cell::{Cell, OnceCell};
 use std::fmt::Display;
-use std::future::Future;
+use std::future::{self, Future};
+use std::ops::Deref;
 use std::panic::{self, PanicHookInfo};
+use std::sync::Arc;
 
 use bimetal_ir::typescript_names;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsError, JsValue};
 use wasm_bindgen_futures::js_sys::{Array, Function, Object, Reflect};
@@ -31,9 +35,12 @@ use wasm_bindgen_futures::js_sys::{Array, Function, Object, Reflect};
 pub use super::parameter::Parameter;
 #[cfg(feature = "arrow-api")]
 pub use super::wasm_arrow::{arrow_from_host, arrow_to_host};
-use crate::ContractType;
 use crate::convert::parameter;
-use crate::runtime::{self, Callback, CallbackError, ContractError, Resource, rules};
+use crate::owned::Owned;
+use crate::runtime::{
+    self, Callback, CallbackError, ContractError, ReachedResources, Resource, ResourceError, rules,
+};
+use crate::{ContractType, crossing};
 
 #[wasm_bindgen]
 extern "C" {
@@ -232,10 +239,211 @@ impl<T: ResourceOutput> ResourceOutput for Vec<T> {
     }
 }
 
-/// Make the JavaScript value of a call's resources.
-#[must_use]
-pub fn resource_to_host<T: ResourceOutput>(value: T) -> JsValue {
-    value.into_javascript()
+/// How a parameter that the call borrows, `&T`, crosses from JavaScript: as
+/// its type's crossing, [`crossing::Serde`] or [`crossing::Resource`], says.
+#[doc(hidden)]
+pub trait Lend<T: ?Sized> {
+    /// What a synchronous call decodes the argument into.
+    type Decoded;
+    /// What an async call holds the argument through once it has waited.
+    type Waited;
+
+    /// Decode the argument of a synchronous call: through Serde, or as a
+    /// resource, which `reached` notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`from_host`] and [`resource_from_host`].
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<Self::Decoded, JsValue>;
+
+    /// Lend the decoded argument to the call named `callable`, locking a
+    /// resource's value as [`read`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`read`].
+    fn lock<'decoded>(
+        decoded: &'decoded Self::Decoded,
+        callable: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, Self, T>, JsValue>
+    where
+        T: 'decoded;
+
+    /// Decode the argument of an async call, as [`Lend::decode`] does. The
+    /// future waits for a resource's value while another call holds it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Lend::decode`].
+    fn decode_async(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<impl Future<Output = Self::Waited> + use<Self, T>, JsValue>;
+}
+
+impl<T: ?Sized + Owned> Lend<T> for crossing::Serde
+where
+    T::Owned: DeserializeOwned + ContractType + Borrow<T>,
+{
+    type Decoded = T::Owned;
+    type Waited = T::Owned;
+
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<T::Owned, JsValue> {
+        from_host(value, parameter)
+    }
+
+    fn lock<'decoded>(
+        decoded: &'decoded T::Owned,
+        _: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, T>, JsValue>
+    where
+        T: 'decoded,
+    {
+        Ok(decoded.borrow())
+    }
+
+    fn decode_async(
+        value: JsValue,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<impl Future<Output = T::Owned> + use<T>, JsValue> {
+        from_host(value, parameter).map(future::ready)
+    }
+}
+
+impl<T: HostResource> Lend<T> for crossing::Resource {
+    type Decoded = Arc<RwLock<T>>;
+    type Waited = OwnedRwLockReadGuard<T>;
+
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<Arc<RwLock<T>>, JsValue> {
+        resource_from_host(value, parameter, reached, Resource::<T>::get)
+    }
+
+    fn lock<'decoded>(
+        decoded: &'decoded Arc<RwLock<T>>,
+        callable: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, T>, JsValue>
+    where
+        T: 'decoded,
+    {
+        read(decoded, callable)
+    }
+
+    fn decode_async(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<impl Future<Output = OwnedRwLockReadGuard<T>> + use<T>, JsValue> {
+        resource_from_host(value, parameter, reached, Resource::<T>::read_owned)
+    }
+}
+
+/// How a parameter that the call takes, `T`, crosses from JavaScript: as its
+/// type's crossing says.
+#[doc(hidden)]
+pub trait Take<T> {
+    /// Decode the argument: through Serde, or as a resource, which `reached`
+    /// notes and the call closes, moving its value out.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`from_host`] and [`resource_from_host`].
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<T, JsValue>;
+}
+
+impl<T: DeserializeOwned + ContractType> Take<T> for crossing::Serde {
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<T, JsValue> {
+        from_host(value, parameter)
+    }
+}
+
+impl<T: HostResource> Take<T> for crossing::Resource {
+    fn decode(
+        value: JsValue,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<T, JsValue> {
+        resource_from_host(value, parameter, reached, Resource::<T>::take)
+    }
+}
+
+/// How what a call returns, `V`, crosses into JavaScript: a value of the
+/// crossing, or an `Option` or a `Vec` of them.
+#[doc(hidden)]
+pub trait Return<V> {
+    /// Make the JavaScript value of what `callable` returned: through Serde,
+    /// as [`to_host`] does, or as the objects of new resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`to_host`].
+    fn to_host(value: V, callable: &str) -> Result<JsValue, JsValue>;
+}
+
+impl<V: Serialize + ContractType> Return<V> for crossing::Serde {
+    fn to_host(value: V, callable: &str) -> Result<JsValue, JsValue> {
+        to_host(&value, callable)
+    }
+}
+
+impl<V: ResourceOutput> Return<V> for crossing::Resource {
+    fn to_host(value: V, _: &str) -> Result<JsValue, JsValue> {
+        Ok(value.into_javascript())
+    }
+}
+
+/// Lock a resource's value for a synchronous call named `callable`, which
+/// shares it with other readers.
+///
+/// # Errors
+///
+/// Returns a JavaScript `Error` when another call holds the value alone. The
+/// call cannot wait: JavaScript has one thread, and inside a host function
+/// the other call may be the one that called it.
+pub fn read<'value, T>(
+    shared: &'value RwLock<T>,
+    callable: &'static str,
+) -> Result<RwLockReadGuard<'value, T>, JsValue> {
+    shared
+        .try_read()
+        .map_err(|_| runtime_error(&ResourceError::Busy(callable)))
+}
+
+/// Lock a resource's value for a synchronous call named `callable`, which
+/// holds it alone.
+///
+/// # Errors
+///
+/// Returns a JavaScript `Error` when another call holds the value, as
+/// [`read`] says.
+pub fn write<'value, T>(
+    shared: &'value RwLock<T>,
+    callable: &'static str,
+) -> Result<RwLockWriteGuard<'value, T>, JsValue> {
+    shared
+        .try_write()
+        .map_err(|_| runtime_error(&ResourceError::Busy(callable)))
 }
 
 thread_local! {
@@ -250,16 +458,20 @@ pub fn share<T: 'static>(resource: &Resource<T>) {
     SHARED.set(Some(Box::new(resource.clone())));
 }
 
-/// Run `reach` on the resource behind a JavaScript argument.
+/// Reach the resource behind a JavaScript argument through `reach`, such as
+/// [`Resource::get`], for the call that `parameter` names, and note it in
+/// `reached`.
 ///
 /// # Errors
 ///
 /// Returns a JavaScript `TypeError` that names the parameter when the
-/// argument is not an object of the resource's class.
+/// argument is not an object of the resource's class, and an `Error` when the
+/// call reached it already or `reach` fails, such as on a closed resource.
 pub fn resource_from_host<T: HostResource, R>(
     value: JsValue,
     parameter: &Parameter,
-    reach: impl FnOnce(&Resource<T>) -> R,
+    reached: &mut ReachedResources,
+    reach: impl FnOnce(&Resource<T>, &'static str) -> Result<R, ResourceError>,
 ) -> Result<R, JsValue> {
     let wrong_type = || -> JsValue {
         JsTypeError::new(
@@ -275,25 +487,29 @@ pub fn resource_from_host<T: HostResource, R>(
     share.call0(&value).map_err(|_| wrong_type())?;
     let shared = SHARED.take().ok_or_else(wrong_type)?;
     let resource = shared.downcast::<Resource<T>>().map_err(|_| wrong_type())?;
-    Ok(reach(&resource))
+    let callable = parameter.callable;
+    reached
+        .add(&resource, callable)
+        .and_then(|()| reach(&resource, callable))
+        .map_err(|error| runtime_error(&error))
 }
 
-/// Run `reach` on the resource behind a JavaScript argument that may be
-/// `null` or `undefined`.
+/// Reach the resource behind a JavaScript argument that may be `null` or
+/// `undefined`, as [`resource_from_host`] does.
 ///
 /// # Errors
 ///
-/// Returns a JavaScript `TypeError` that names the parameter when the
-/// argument is another kind of object.
+/// Returns the errors of [`resource_from_host`].
 pub fn optional_resource_from_host<T: HostResource, R>(
     value: JsValue,
     parameter: &Parameter,
-    reach: impl FnOnce(&Resource<T>) -> R,
+    reached: &mut ReachedResources,
+    reach: impl FnOnce(&Resource<T>, &'static str) -> Result<R, ResourceError>,
 ) -> Result<Option<R>, JsValue> {
     if value.is_null() || value.is_undefined() {
         return Ok(None);
     }
-    resource_from_host(value, parameter, reach).map(Some)
+    resource_from_host(value, parameter, reached, reach).map(Some)
 }
 
 /// A JavaScript function, which a callback may keep because `wasm32` has one

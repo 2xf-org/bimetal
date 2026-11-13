@@ -16,7 +16,7 @@ One attribute on a method makes it implement a feature of the host languages. Th
 | `setitem` | Two parameters, returns `()` | `value[key] = item` | A method |
 | `delitem` | One parameter, returns `()` | `del value[key]` | A method |
 | `contains` | One parameter, returns `bool` | `item in value` | A method |
-| `eq` | One `#[bimetal(resource)] &T` parameter, returns `bool` | `value == other`, which is `True` for the same object | A method |
+| `eq` | One `&T` parameter of the resource's type, returns `bool` | `value == other`, which is `True` for the same object | A method |
 | `hash` | Returns an integer | `hash(value)` | A method |
 | `bool` | Returns `bool` | `bool(value)` | A method |
 | `call` | Any | `value(...)` | A method |

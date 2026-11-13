@@ -46,6 +46,10 @@ export declare class ParseError extends globalThis.Error {
 
 /**
  * The smallest and largest value, or nothing for an empty list.
+ *
+ * @remarks
+ * A brief call keeps Python's interpreter lock, and this one, which takes and returns plain values,
+ * is the native function itself in Python.
  */
 export declare function bounds(values: ReadonlyArray<number>): readonly [number, number] | null;
 
@@ -197,6 +201,9 @@ export declare function qualify(package_: string, class_: string): string;
 
 /**
  * Repeat a text. Its Python parameters are `str_` and `int_`.
+ *
+ * @remarks
+ * It is brief, but its Python function renames its parameters, so it stays.
  */
 export declare function repeat(str: string, int: number): string;
 

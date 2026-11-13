@@ -1,17 +1,23 @@
 //! The conversions that generated addon wrappers call for each argument and
 //! result, and the errors that they throw.
 
+use std::borrow::Borrow;
 use std::fmt::Display;
+use std::future::{self, Future};
+use std::ops::Deref;
+use std::sync::Arc;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{de, ser};
-use crate::ContractType;
 use crate::convert::parameter;
 pub use crate::convert::parameter::Parameter;
+use crate::owned::Owned;
 use crate::runtime::node::{self, Element, Env, Error, Value};
-use crate::runtime::{Callback, ContractError, Resource, rules};
+use crate::runtime::{Callback, ContractError, ReachedResources, Resource, ResourceError, rules};
+use crate::{ContractType, crossing};
 
 /// Deserialize a JavaScript argument through Serde, as the Wasm module does,
 /// and check its field rules.
@@ -192,49 +198,258 @@ impl<T: ResourceOutput> ResourceOutput for Vec<T> {
     }
 }
 
-/// Make the JavaScript value of a call's resources.
+/// How a parameter that the call borrows, `&T`, crosses from JavaScript: as
+/// its type's crossing, [`crossing::Serde`] or [`crossing::Resource`], says.
+#[doc(hidden)]
+pub trait Lend<T: ?Sized> {
+    /// What a synchronous call decodes the argument into.
+    type Decoded;
+    /// What an async call holds the argument through once it has waited.
+    type Waited;
+
+    /// Decode the argument of a synchronous call: through Serde, or as a
+    /// resource, which `reached` notes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`from_host`] and [`resource_from_host`].
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<Self::Decoded, Error>;
+
+    /// Lend the decoded argument to the call named `callable`, locking a
+    /// resource's value as [`read`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`read`].
+    fn lock<'decoded>(
+        decoded: &'decoded Self::Decoded,
+        callable: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, Self, T>, Error>
+    where
+        T: 'decoded;
+
+    /// Decode the argument of an async call, as [`Lend::decode`] does. The
+    /// future waits for a resource's value while another call holds it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Lend::decode`].
+    fn decode_async(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<impl Future<Output = Self::Waited> + use<Self, T>, Error>;
+}
+
+impl<T: ?Sized + Owned> Lend<T> for crossing::Serde
+where
+    T::Owned: DeserializeOwned + ContractType + Borrow<T>,
+{
+    type Decoded = T::Owned;
+    type Waited = T::Owned;
+
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<T::Owned, Error> {
+        from_host(value, parameter)
+    }
+
+    fn lock<'decoded>(
+        decoded: &'decoded T::Owned,
+        _: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, T>, Error>
+    where
+        T: 'decoded,
+    {
+        Ok(decoded.borrow())
+    }
+
+    fn decode_async(
+        value: Value<'_>,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<impl Future<Output = T::Owned> + use<T>, Error> {
+        from_host(value, parameter).map(future::ready)
+    }
+}
+
+impl<T: HostResource> Lend<T> for crossing::Resource {
+    type Decoded = Arc<RwLock<T>>;
+    type Waited = OwnedRwLockReadGuard<T>;
+
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<Arc<RwLock<T>>, Error> {
+        resource_from_host(value, parameter, reached, Resource::<T>::get)
+    }
+
+    fn lock<'decoded>(
+        decoded: &'decoded Arc<RwLock<T>>,
+        callable: &'static str,
+    ) -> Result<impl Deref<Target = T> + use<'decoded, T>, Error>
+    where
+        T: 'decoded,
+    {
+        read(decoded, callable)
+    }
+
+    fn decode_async(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<impl Future<Output = OwnedRwLockReadGuard<T>> + use<T>, Error> {
+        resource_from_host(value, parameter, reached, Resource::<T>::read_owned)
+    }
+}
+
+/// How a parameter that the call takes, `T`, crosses from JavaScript: as its
+/// type's crossing says.
+#[doc(hidden)]
+pub trait Take<T> {
+    /// Decode the argument: through Serde, or as a resource, which `reached`
+    /// notes and the call closes, moving its value out.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`from_host`] and [`resource_from_host`].
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<T, Error>;
+}
+
+impl<T: DeserializeOwned + ContractType> Take<T> for crossing::Serde {
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        _: &mut ReachedResources,
+    ) -> Result<T, Error> {
+        from_host(value, parameter)
+    }
+}
+
+impl<T: HostResource> Take<T> for crossing::Resource {
+    fn decode(
+        value: Value<'_>,
+        parameter: &Parameter,
+        reached: &mut ReachedResources,
+    ) -> Result<T, Error> {
+        resource_from_host(value, parameter, reached, Resource::<T>::take)
+    }
+}
+
+/// How what a call returns, `V`, crosses into JavaScript: a value of the
+/// crossing, or an `Option` or a `Vec` of them.
+#[doc(hidden)]
+pub trait Return<V> {
+    /// Make the JavaScript value of what `callable` returned: through Serde,
+    /// as [`to_host`] does, or as the objects of new resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`to_host`], and of Node-API, which are
+    /// pending.
+    fn to_host<'env>(env: Env<'env>, value: V, callable: &str) -> Result<Value<'env>, Error>;
+}
+
+impl<V: Serialize + ContractType> Return<V> for crossing::Serde {
+    fn to_host<'env>(env: Env<'env>, value: V, callable: &str) -> Result<Value<'env>, Error> {
+        to_host(env, &value, callable)
+    }
+}
+
+impl<V: ResourceOutput> Return<V> for crossing::Resource {
+    fn to_host<'env>(env: Env<'env>, value: V, _: &str) -> Result<Value<'env>, Error> {
+        value.into_javascript(env)
+    }
+}
+
+/// Lock a resource's value for a synchronous call named `callable`, which
+/// shares it with other readers.
 ///
 /// # Errors
 ///
-/// Returns the error of Node-API, which is pending.
-pub fn resource_to_host<T: ResourceOutput>(env: Env<'_>, value: T) -> Result<Value<'_>, Error> {
-    value.into_javascript(env)
+/// Returns a JavaScript `Error` when another call holds the value alone. The
+/// call cannot wait: JavaScript has one thread, and inside a host function
+/// the other call may be the one that called it.
+pub fn read<'value, T>(
+    shared: &'value RwLock<T>,
+    callable: &'static str,
+) -> Result<RwLockReadGuard<'value, T>, Error> {
+    shared
+        .try_read()
+        .map_err(|_| runtime_error(&ResourceError::Busy(callable)))
 }
 
-/// Run `reach` on the resource behind a JavaScript argument.
+/// Lock a resource's value for a synchronous call named `callable`, which
+/// holds it alone.
+///
+/// # Errors
+///
+/// Returns a JavaScript `Error` when another call holds the value, as
+/// [`read`] says.
+pub fn write<'value, T>(
+    shared: &'value RwLock<T>,
+    callable: &'static str,
+) -> Result<RwLockWriteGuard<'value, T>, Error> {
+    shared
+        .try_write()
+        .map_err(|_| runtime_error(&ResourceError::Busy(callable)))
+}
+
+/// Reach the resource behind a JavaScript argument through `reach`, such as
+/// [`Resource::get`], for the call that `parameter` names, and note it in
+/// `reached`.
 ///
 /// # Errors
 ///
 /// Returns a `TypeError` that names the parameter when the argument is not an
-/// object of the resource's class.
+/// object of the resource's class, and an `Error` when the call reached it
+/// already or `reach` fails, such as on a closed resource.
 pub fn resource_from_host<T: HostResource, R>(
     value: Value<'_>,
     parameter: &Parameter,
-    reach: impl FnOnce(&Resource<T>) -> R,
+    reached: &mut ReachedResources,
+    reach: impl FnOnce(&Resource<T>, &'static str) -> Result<R, ResourceError>,
 ) -> Result<R, Error> {
-    T::with_resource(value, reach)?.ok_or_else(|| {
+    let callable = parameter.callable;
+    T::with_resource(value, |resource| {
+        reached.add(resource, callable)?;
+        reach(resource, callable)
+    })?
+    .ok_or_else(|| {
         Error::Type(
             parameter.javascript_message(&format!("must be a {}", parameter::resource_name::<T>())),
         )
-    })
+    })?
+    .map_err(|error| runtime_error(&error))
 }
 
-/// Run `reach` on the resource behind a JavaScript argument that may be
-/// `null` or `undefined`.
+/// Reach the resource behind a JavaScript argument that may be `null` or
+/// `undefined`, as [`resource_from_host`] does.
 ///
 /// # Errors
 ///
-/// Returns a `TypeError` that names the parameter when the argument is
-/// another kind of object.
+/// Returns the errors of [`resource_from_host`].
 pub fn optional_resource_from_host<T: HostResource, R>(
     value: Value<'_>,
     parameter: &Parameter,
-    reach: impl FnOnce(&Resource<T>) -> R,
+    reached: &mut ReachedResources,
+    reach: impl FnOnce(&Resource<T>, &'static str) -> Result<R, ResourceError>,
 ) -> Result<Option<R>, Error> {
     if value.is_nullish()? {
         return Ok(None);
     }
-    resource_from_host(value, parameter, reach).map(Some)
+    resource_from_host(value, parameter, reached, reach).map(Some)
 }
 
 /// Keep a JavaScript function as a [`Callback`].

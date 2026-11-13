@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from showcase._runtime import (
+    register_classes as _bimetal_register_classes,
+)
+
 
 class Point(BaseModel):
     """
@@ -24,6 +28,11 @@ class Point(BaseModel):
 
 
 Point.model_rebuild()
+
+
+_bimetal_register_classes({
+    "showcase-geometry::showcase_geometry::Point": Point,
+})
 
 __all__ = [
     "Point",

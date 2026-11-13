@@ -1,8 +1,8 @@
 //! Built-in mappings from Rust types to the host-neutral contract IR.
 //!
-//! Implementations in this module describe ordinary Serde-shaped values.
-//! Direct `bytes` and numeric `buffer` boundaries are selected explicitly by
-//! export attributes and are therefore handled by the procedural macros.
+//! Implementations in this module describe ordinary Serde-shaped values. A
+//! resource's own implementation comes from `#[bimetal::export]`, and the
+//! procedural macros handle bytes, numeric buffers and Arrow values.
 
 use std::collections::{BTreeMap, HashMap};
 use std::hash::BuildHasher;
@@ -17,7 +17,7 @@ use crate::runtime::ValueError;
 
 /// Describe how a Rust type appears in the generated host APIs.
 #[diagnostic::on_unimplemented(
-    note = "derive `bimetal::Model` for your own types; bytes, numeric buffers, Arrow values, and resources need `#[bimetal(bytes)]`, `#[bimetal(buffer)]`, `#[bimetal(arrow)]`, or `#[bimetal(resource)]` on the parameter, or `#[bimetal(returns(...))]` on the export"
+    note = "derive `bimetal::Model` for your own types, or export an impl block of a resource; numeric buffers and Arrow values need `#[bimetal(buffer)]` or `#[bimetal(arrow)]` on the parameter, or `#[bimetal(returns(...))]` on the export"
 )]
 pub trait ContractType {
     /// How argument errors name the host sequence that this type reads, such
@@ -26,6 +26,13 @@ pub trait ContractType {
     /// for such a type.
     #[doc(hidden)]
     const SEQUENCE: Option<&'static str> = None;
+
+    /// How a whole parameter or return value of this type crosses:
+    /// [`crossing::Resource`] for a resource, and [`crossing::Serde`] for
+    /// every other type, including an `Option` or a `Vec` of resources, which
+    /// the macros ask their item about.
+    #[doc(hidden)]
+    type Crossing: crossing::Crossing;
 
     /// Return the host-neutral reference for this Rust type.
     fn type_ref() -> TypeRef;
@@ -47,6 +54,8 @@ pub trait ContractType {
 macro_rules! integer {
     ($type:ty, $signed:literal, $bits:literal) => {
         impl ContractType for $type {
+            type Crossing = crossing::Serde;
+
             fn type_ref() -> TypeRef {
                 TypeRef::Int {
                     signed: $signed,
@@ -69,48 +78,64 @@ integer!(i64, true, 64);
 integer!(isize, true, 64);
 
 impl ContractType for () {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Unit
     }
 }
 
 impl ContractType for bool {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Bool
     }
 }
 
 impl ContractType for f32 {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Float { bits: 32 }
     }
 }
 
 impl ContractType for f64 {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Float { bits: 64 }
     }
 }
 
 impl ContractType for String {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
 }
 
 impl ContractType for str {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
 }
 
 impl ContractType for DateTime<Utc> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::DateTime
     }
 }
 
 impl ContractType for NaiveDate {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Date
     }
@@ -119,6 +144,8 @@ impl ContractType for NaiveDate {
 // alloy's Serde writes each of these as a `0x` hex string.
 #[cfg(feature = "alloy")]
 impl ContractType for alloy_primitives::Address {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
@@ -126,6 +153,8 @@ impl ContractType for alloy_primitives::Address {
 
 #[cfg(feature = "alloy")]
 impl<const N: usize> ContractType for alloy_primitives::FixedBytes<N> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
@@ -135,6 +164,8 @@ impl<const N: usize> ContractType for alloy_primitives::FixedBytes<N> {
 // signed ones, such as `I256`, in decimal.
 #[cfg(feature = "alloy")]
 impl<const BITS: usize, const LIMBS: usize> ContractType for alloy_primitives::Uint<BITS, LIMBS> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
@@ -142,6 +173,8 @@ impl<const BITS: usize, const LIMBS: usize> ContractType for alloy_primitives::U
 
 #[cfg(feature = "alloy")]
 impl<const BITS: usize, const LIMBS: usize> ContractType for alloy_primitives::Signed<BITS, LIMBS> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
@@ -149,18 +182,24 @@ impl<const BITS: usize, const LIMBS: usize> ContractType for alloy_primitives::S
 
 #[cfg(feature = "alloy")]
 impl ContractType for alloy_primitives::Bytes {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
 }
 
 impl ContractType for DateTime<FixedOffset> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::DateTime
     }
 }
 
 impl ContractType for Value {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Json
     }
@@ -168,6 +207,8 @@ impl ContractType for Value {
 
 impl<T: ContractType> ContractType for Option<T> {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
+
+    type Crossing = crossing::Serde;
 
     fn type_ref() -> TypeRef {
         TypeRef::Option {
@@ -184,6 +225,8 @@ impl<T: ContractType> ContractType for Option<T> {
 impl<T: ContractType> ContractType for Vec<T> {
     const SEQUENCE: Option<&'static str> = Some("a list");
 
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::List {
             item: Box::new(T::type_ref()),
@@ -198,6 +241,8 @@ impl<T: ContractType> ContractType for Vec<T> {
 
 impl<T: ContractType> ContractType for [T] {
     const SEQUENCE: Option<&'static str> = Some("a list");
+
+    type Crossing = crossing::Serde;
 
     fn type_ref() -> TypeRef {
         TypeRef::List {
@@ -216,6 +261,8 @@ impl<T: ContractType> ContractType for [T] {
 }
 
 impl<T: ContractType> ContractType for BTreeMap<String, T> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Map {
             value: Box::new(T::type_ref()),
@@ -229,6 +276,8 @@ impl<T: ContractType> ContractType for BTreeMap<String, T> {
 }
 
 impl<T: ContractType, S: BuildHasher> ContractType for HashMap<String, T, S> {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Map {
             value: Box::new(T::type_ref()),
@@ -258,6 +307,8 @@ fn check_map_rules<'a, T: ContractType + 'a>(
 impl<T: ContractType + ?Sized> ContractType for &T {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
 
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         T::type_ref()
     }
@@ -270,18 +321,24 @@ impl<T: ContractType + ?Sized> ContractType for &T {
 
 // Serde writes a path as its text, and refuses to write one that isn't UTF-8.
 impl ContractType for Path {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
 }
 
 impl ContractType for PathBuf {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::String
     }
 }
 
 impl ContractType for Duration {
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         TypeRef::Duration
     }
@@ -290,6 +347,8 @@ impl ContractType for Duration {
 // Serde writes an array as a tuple of its items.
 impl<T: ContractType, const N: usize> ContractType for [T; N] {
     const SEQUENCE: Option<&'static str> = Some("a tuple");
+
+    type Crossing = crossing::Serde;
 
     fn type_ref() -> TypeRef {
         TypeRef::Tuple {
@@ -312,6 +371,8 @@ impl<T: ContractType, const N: usize> ContractType for [T; N] {
 impl<T: ContractType + ?Sized> ContractType for Box<T> {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
 
+    type Crossing = crossing::Serde;
+
     fn type_ref() -> TypeRef {
         T::type_ref()
     }
@@ -326,6 +387,8 @@ macro_rules! tuple {
     ($($index:tt $name:ident),+) => {
         impl<$($name: ContractType),+> ContractType for ($($name,)+) {
             const SEQUENCE: Option<&'static str> = Some("a tuple");
+
+            type Crossing = crossing::Serde;
 
             fn type_ref() -> TypeRef {
                 TypeRef::Tuple {
@@ -353,3 +416,32 @@ tuple!(0 A, 1 B, 2 C, 3 D, 4 E);
 tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F);
 tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G);
 tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H);
+
+/// How a whole parameter or return value crosses each host, which
+/// [`ContractType::Crossing`] says for its type. Each host's conversions
+/// implement their traits for both.
+#[doc(hidden)]
+pub mod crossing {
+    /// What a host knows of a crossing before it has a value.
+    pub trait Crossing {
+        /// Whether the values are resources. A synchronous call that makes
+        /// one enters the shared runtime, so that the resource can spawn
+        /// tasks.
+        const RESOURCE: bool;
+    }
+
+    /// Through Serde, as every value but a resource crosses.
+    pub enum Serde {}
+
+    impl Crossing for Serde {
+        const RESOURCE: bool = false;
+    }
+
+    /// As a resource, which the host holds as an object of its generated
+    /// class.
+    pub enum Resource {}
+
+    impl Crossing for Resource {
+        const RESOURCE: bool = true;
+    }
+}

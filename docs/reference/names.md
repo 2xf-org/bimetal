@@ -32,7 +32,7 @@ Exports and fields can have the names of other Python builtins, such as a functi
 
 ## Packages
 
-The application name uses lower-case letters, digits and single hyphens. The Python package can't be a Python keyword, the name of a standard-library module, or the name of a package the generated code imports. The npm package name in `[typescript]` must match `package.json`.
+The application name uses lower-case letters, digits and single hyphens. The Python package can't be a Python keyword, the name of a standard-library module, or the name of a package the generated code imports. The npm package name is the `name` of `package.json`.
 
 ## Namespaces
 

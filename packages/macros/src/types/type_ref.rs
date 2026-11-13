@@ -4,7 +4,8 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{GenericArgument, Ident, PathArguments, PathSegment, Type as SynType};
+use syn::visit_mut::VisitMut;
+use syn::{GenericArgument, Ident, Path, PathArguments, PathSegment, Type as SynType, TypePath};
 
 use crate::attributes::Boundary;
 use crate::types::DirectType;
@@ -21,8 +22,8 @@ pub(crate) fn type_ref_tokens(
     if let Some(boundary) = boundary {
         return Ok(DirectType::parse(ty, boundary)?.type_ref_tokens());
     }
-    // Without `bytes`, an array crosses as Serde writes it, a tuple of its
-    // items, as a `Vec<u8>` crosses as a list of integers. Serde writes
+    // An array inside a model crosses as Serde writes it, a tuple of its
+    // items, as a `Vec<u8>` there crosses as a list of integers. Serde writes
     // arrays of at most 32 items.
     let value = match ty {
         SynType::Reference(reference) => reference.elem.as_ref(),
@@ -37,14 +38,31 @@ pub(crate) fn type_ref_tokens(
             .base10_parse::<usize>()
             .is_ok_and(|length| length > 32)
     {
-        let message = if is_u8(&array.elem) {
-            "Serde writes arrays of at most 32 items; take a longer byte array with `#[bimetal(bytes)]`, return it with `#[bimetal(returns(bytes))]`, or use a `Vec<u8>`"
-        } else {
-            "Serde writes arrays of at most 32 items; use a `Vec`"
-        };
-        return Err(syn::Error::new(value.span(), message));
+        return Err(syn::Error::new(
+            value.span(),
+            "Serde writes arrays of at most 32 items; use a `Vec`",
+        ));
     }
     Ok(quote!(<#ty as ::bimetal::ContractType>::type_ref()))
+}
+
+/// Replaces `Self` in types with the path of the type it names, for code
+/// that renders them where `Self` names another type or nothing. The path
+/// keeps the span of `Self`, so errors point where the code says it.
+pub(crate) struct SelfToPath<'path>(pub(crate) &'path Path);
+
+impl VisitMut for SelfToPath<'_> {
+    fn visit_type_path_mut(&mut self, path: &mut TypePath) {
+        if path.qself.is_none() && path.path.is_ident("Self") {
+            let span = path.path.span();
+            let mut named = self.0.clone();
+            for segment in &mut named.segments {
+                segment.ident.set_span(span);
+            }
+            path.path = named;
+        }
+        syn::visit_mut::visit_type_path_mut(self, path);
+    }
 }
 
 /// Return the terminal identifier of a named Rust type, such as `Vec` in
@@ -95,6 +113,21 @@ pub(crate) fn scalar_name(ty: &SynType) -> Option<String> {
 /// Return whether a type is `u8`.
 pub(crate) fn is_u8(ty: &SynType) -> bool {
     scalar_name(ty).is_some_and(|name| name == "u8")
+}
+
+/// Return the bytes boundary for a byte sequence that is a whole value:
+/// `Vec<u8>`, `[u8]` or `[u8; N]`, or a shared reference to one.
+pub(crate) fn bytes_boundary(ty: &SynType) -> Option<Boundary> {
+    let value = match ty {
+        SynType::Reference(reference) if reference.mutability.is_none() => reference.elem.as_ref(),
+        ty => ty,
+    };
+    let bytes = match value {
+        SynType::Slice(slice) => is_u8(&slice.elem),
+        SynType::Array(array) => is_u8(&array.elem),
+        value => vec_item(value).is_some_and(is_u8),
+    };
+    bytes.then_some(Boundary::Bytes)
 }
 
 /// Return the last segment of a type that names an item of the standard

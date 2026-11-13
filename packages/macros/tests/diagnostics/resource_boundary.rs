@@ -1,37 +1,25 @@
-//! The shapes that a resource can cross in, and what happens without the
-//! attribute that says it is one.
+//! A resource crosses as one without an attribute, and only a resource
+//! crosses as `&mut T` or `Option<&T>`.
 
 pub struct Document;
 
 #[bimetal::export]
 impl Document {
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn fork(&self) -> Self {
         Self
     }
 }
 
-pub struct Compiler;
-
 #[bimetal::export]
-impl Compiler {
-    #[bimetal(constructor)]
-    #[must_use]
-    pub fn new() -> Self {
-        Self
-    }
-
-    #[must_use]
-    pub fn compile(&self) -> Document {
-        Document
-    }
+#[must_use]
+pub fn pages(#[bimetal(resource)] _document: &Document) -> u32 {
+    1
 }
 
 #[bimetal::export]
-#[must_use]
-pub fn pages(#[bimetal(resource)] document: Option<Document>) -> u32 {
-    u32::from(document.is_some())
+pub fn touch(count: &mut u32) {
+    *count += 1;
 }
 
 fn main() {}

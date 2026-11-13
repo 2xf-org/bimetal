@@ -1,0 +1,35 @@
+{
+  "python": {
+    "noop": 2.5,
+    "add": 4,
+    "numbers-100": 25,
+    "tally-10": 40,
+    "bounds-100": 50,
+    "length": 50,
+    "count-tags-100": 5000,
+    "rows-100": 6000,
+    "reverse-1k": 10,
+    "ready": 15,
+    "ready-numbers-100": 40,
+    "wait": 2500,
+    "wait-32": 600,
+    "wait-32/wait": 0.6,
+    "spin-async-32/spin": 0.75
+  },
+  "node": {
+    "noop": 2.5,
+    "add": 6,
+    "numbers-100": 600,
+    "total-100": 450,
+    "point": 50,
+    "length": 30,
+    "count-tags-100": 10000,
+    "rows-100": 14000,
+    "call": 70,
+    "ready": 30,
+    "wait": 2500,
+    "wait-32": 400,
+    "wait-32/wait": 0.6,
+    "spin-async-32/spin": 0.75
+  }
+}

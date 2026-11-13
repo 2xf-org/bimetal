@@ -269,6 +269,41 @@ where
     None
 }
 
+/// Return the default of a parameter of the contract type `reference`,
+/// `value`, as the hosts write it in their signatures: as Serde writes it, but
+/// a duration as its nanoseconds, which the hosts pass for one.
+///
+/// # Panics
+///
+/// Panics if Serde cannot write `value` as JSON, which no contract type does.
+#[doc(hidden)]
+#[must_use]
+pub fn parameter_default<T: Serialize + ?Sized>(value: &T, reference: &TypeRef) -> Value {
+    let written = serde_json::to_value(value).expect("a parameter's default serializes as JSON");
+    nanoseconds(written, reference)
+}
+
+/// Write the Serde form of a duration, or of an option of one, as its
+/// nanoseconds.
+fn nanoseconds(value: Value, reference: &TypeRef) -> Value {
+    match reference {
+        TypeRef::Option { item } => nanoseconds(value, item),
+        TypeRef::Duration => {
+            let part = |name: &str| value.get(name).and_then(Value::as_u64);
+            // A duration past `u64` nanoseconds keeps Serde's form, which the
+            // build refuses as a default.
+            match (part("secs"), part("nanos")) {
+                (Some(secs), Some(nanos)) => secs
+                    .checked_mul(1_000_000_000)
+                    .and_then(|whole| whole.checked_add(nanos))
+                    .map_or(value, Value::from),
+                _ => value,
+            }
+        }
+        _ => value,
+    }
+}
+
 /// Return `value` with the keys of every object in order. Serde writes a
 /// `HashMap` in an order that changes from one process to the next, which
 /// `serde_json` keeps when a crate turns on its `preserve_order`.

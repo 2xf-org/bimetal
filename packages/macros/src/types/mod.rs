@@ -18,10 +18,10 @@ mod result_types;
 mod type_ref;
 mod validation;
 
-pub(crate) use callable::{Param, ParamValue, Returns, Signature};
-pub(crate) use direct::{DirectType, ResourceShape};
+pub(crate) use callable::{Param, ParamValue, ResourceShape, Returns, Signature};
+pub(crate) use direct::DirectType;
 pub(crate) use field::{ModelField, field_bindings, field_tokens};
 pub(crate) use field_options::FieldOptions;
 pub(crate) use native_name::native_export_name;
-pub(crate) use type_ref::{type_last_ident, type_ref_tokens};
+pub(crate) use type_ref::{SelfToPath, bytes_boundary, type_last_ident, type_ref_tokens};
 pub(crate) use validation::{ensure_public, reject_generics, reject_reserved_resource_method};

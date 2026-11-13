@@ -710,15 +710,42 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
                     context.arrow("arrowToIpc"),
                     literal::quoted(contract::arrow_spelling(*value).key)
                 ),
+                // The module reads a scalar, a list or tuple of them, or a typed array
+                // as JavaScript holds it, once `checkArgument` checked its outer type.
+                reference if reads_directly(reference) => name,
                 reference => format!(
                     "{}({name}, {})",
                     context.runtime("prepareHost"),
-                    render::spec_literal(&contract::spec(reference))
+                    context.spec(render::spec_literal(&contract::spec(reference)))
                 ),
             }
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Whether the module reads an argument of this type as JavaScript holds it,
+/// so that `prepareHost` would return it unchanged: a boolean, a number, a
+/// bigint, a string, a date's text, a typed array, and lists, tuples and
+/// options of them. A `Date`, a duration, JSON and every object go through
+/// `prepareHost`.
+fn reads_directly(reference: &TypeRef) -> bool {
+    contract::nodes(reference).all(|item| {
+        matches!(
+            item,
+            TypeRef::Bool
+                | TypeRef::Int { .. }
+                | TypeRef::Float { .. }
+                | TypeRef::String
+                | TypeRef::Date
+                | TypeRef::Bytes
+                | TypeRef::FixedBytes { .. }
+                | TypeRef::Buffer { .. }
+                | TypeRef::Option { .. }
+                | TypeRef::List { .. }
+                | TypeRef::Tuple { .. }
+        )
+    })
 }
 
 /// Render the argument of a parameter that crosses as a host object: a
@@ -752,9 +779,10 @@ fn host_object_argument(
                 .collect::<Vec<_>>()
                 .join(", ");
             Some(format!(
-                "{}({name}, [{params}], {}, {})",
+                "{}({name}, {}, {}, {})",
                 context.runtime("callbackFromHost"),
-                render::spec_literal(&contract::spec(returns)),
+                context.spec(format!("[{params}]")),
+                context.spec(render::spec_literal(&contract::spec(returns))),
                 literal::quoted(&argument_label)
             ))
         }
@@ -814,13 +842,13 @@ fn host_result(call: &str, returns: &TypeRef, context: &TypeScriptContext<'_>) -
         format!(
             "{}({call}, {}) ?? null",
             context.runtime("restoreHost"),
-            render::spec_literal(&spec)
+            context.spec(render::spec_literal(&spec))
         )
     } else {
         format!(
             "{}({call}, {})",
             context.runtime("restoreHost"),
-            render::spec_literal(&spec)
+            context.spec(render::spec_literal(&spec))
         )
     }
 }
@@ -1037,6 +1065,11 @@ mod tests {
 
         let module = render_api(&manifest);
 
+        assert!(
+            module
+                .javascript
+                .contains("\nconst $spec0 = [\"map\", null];\n")
+        );
         assert!(module.javascript.contains(concat!(
             "export function load(package_, native, prepareHost, error) {\n",
             "  $checkNative();\n",
@@ -1045,7 +1078,7 @@ mod tests {
             "  $checkArgument(prepareHost, \"string\", \"load(): argument `prepareHost`\");\n",
             "  $checkArgument(error, \"string\", \"load(): argument `error`\");\n",
             "  try {\n",
-            "    return $restoreHost($native[\"native_load\"]($prepareHost(package_, null), $prepareHost(native, null), $prepareHost(prepareHost, null), $prepareHost(error, null)), [\"map\", null]);\n",
+            "    return $restoreHost($native[\"native_load\"](package_, native, prepareHost, error), $spec0);\n",
             "  } catch ($error) {\n",
             "    throw $nativeError($error);\n",
             "  }\n",

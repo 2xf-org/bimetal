@@ -179,7 +179,7 @@ impl Shelf {
 
     /// Whether two shelves hold the same books.
     #[bimetal(eq)]
-    pub fn same(&self, #[bimetal(resource)] other: &Shelf) -> bool {
+    pub fn same(&self, other: &Shelf) -> bool {
         *self.books.lock().expect(UNPOISONED) == *other.books.lock().expect(UNPOISONED)
     }
 
@@ -198,7 +198,6 @@ impl Shelf {
     }
 
     /// Open a session, whose books join the shelf when it commits.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn session(&self) -> Session {
         Session {
@@ -209,7 +208,6 @@ impl Shelf {
     }
 
     /// Open a session that opens and ends through async calls.
-    #[bimetal(returns(resource))]
     pub async fn async_session(&self) -> AsyncSession {
         AsyncSession {
             books: Arc::clone(&self.books),
@@ -219,14 +217,12 @@ impl Shelf {
     }
 
     /// Open a session, unless the shelf is full.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn try_session(&self) -> Option<Session> {
         (self.size() < self.limit as usize).then(|| self.session())
     }
 
     /// Divide the books among shelves of at most `size` books.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn split(&self, size: u32) -> Vec<Shelf> {
         self.books
@@ -242,7 +238,6 @@ impl Shelf {
     }
 
     /// Walk the titles, one call at a time.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn titles(&self) -> Titles {
         Titles {
@@ -251,7 +246,6 @@ impl Shelf {
     }
 
     /// Walk the titles, one async call at a time.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn title_stream(&self) -> TitleStream {
         TitleStream {
@@ -260,7 +254,7 @@ impl Shelf {
     }
 
     /// Copy the books of another shelf, which is only read.
-    pub fn copy_from(&mut self, #[bimetal(resource)] other: &Shelf) -> Result<(), ShelfError> {
+    pub fn copy_from(&mut self, other: &Shelf) -> Result<(), ShelfError> {
         let titles = other.books.lock().expect(UNPOISONED).clone();
         for title in titles {
             add(&self.books, self.limit, &title)?;
@@ -269,27 +263,24 @@ impl Shelf {
     }
 
     /// Give the books to another shelf, which is held alone meanwhile.
-    pub fn give_to(&self, #[bimetal(resource)] other: &mut Shelf) {
+    pub fn give_to(&self, other: &mut Shelf) {
         let books = std::mem::take(&mut *self.books.lock().expect(UNPOISONED));
         other.books.lock().expect(UNPOISONED).extend(books);
     }
 
     /// Take over another shelf, which is closed afterwards.
-    pub fn absorb(&mut self, #[bimetal(resource)] other: Shelf) {
+    pub fn absorb(&mut self, other: Shelf) {
         let books = std::mem::take(&mut *other.books.lock().expect(UNPOISONED));
         self.books.lock().expect(UNPOISONED).extend(books);
     }
 
     /// Count the books here and on another shelf, if one is passed.
-    pub fn count_with(&self, #[bimetal(resource)] other: Option<&Shelf>) -> u32 {
+    pub fn count_with(&self, other: Option<&Shelf>) -> u32 {
         (self.size() + other.map_or(0, Shelf::size)) as u32
     }
 
     /// Copy another shelf's books after a pause, while reading it.
-    pub async fn copy_later(
-        &mut self,
-        #[bimetal(resource)] other: &Shelf,
-    ) -> Result<(), ShelfError> {
+    pub async fn copy_later(&mut self, other: &Shelf) -> Result<(), ShelfError> {
         pause(2).await;
         let titles = other.books.lock().expect(UNPOISONED).clone();
         for title in titles {
@@ -343,14 +334,12 @@ impl Shelf {
     }
 
     /// Keep `label` in a labeler, which calls it after this call returned.
-    #[bimetal(returns(resource))]
     #[must_use]
     pub fn labeler(&self, label: Callback<(String,), String>) -> Labeler {
         Labeler { label }
     }
 
     /// The first title as bytes, if there is one.
-    #[bimetal(returns(bytes))]
     pub fn first_bytes(&self) -> Option<Vec<u8>> {
         self.at(0).map(String::into_bytes)
     }
@@ -511,10 +500,7 @@ impl Labeler {
 /// Count the books of two shelves, the second held alone.
 #[bimetal::export]
 #[must_use]
-pub fn count_both(
-    #[bimetal(resource)] first: &Shelf,
-    #[bimetal(resource)] second: &mut Shelf,
-) -> usize {
+pub fn count_both(first: &Shelf, second: &mut Shelf) -> usize {
     first.size() + second.size()
 }
 

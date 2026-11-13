@@ -46,6 +46,10 @@ extern crate arrow_select_59 as arrow_select;
 pub mod arrow;
 mod contract_type;
 pub mod convert;
+#[cfg(any(
+    target_arch = "wasm32",
+    all(any(feature = "python", feature = "node"), not(target_arch = "wasm32"))
+))]
 mod owned;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod registry;
@@ -100,7 +104,7 @@ pub mod arrow {
 }
 
 pub use bimetal_macros::{Error, Model, application, export};
-pub use contract_type::ContractType;
+pub use contract_type::{ContractType, crossing};
 pub use runtime::{Callback, CallbackError};
 
 /// Serialized, host-neutral contract shared with the build CLI.
@@ -117,8 +121,6 @@ pub mod __private {
     #[cfg(not(target_arch = "wasm32"))]
     pub use inventory;
     pub use serde_json;
-
-    pub use crate::owned::Owned;
 
     #[cfg(all(feature = "python", not(target_arch = "wasm32")))]
     pub use pyo3;

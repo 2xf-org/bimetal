@@ -1,6 +1,6 @@
-//! The reports that the build, `check`, and `build-native` steps return.
+//! The reports that the build and `check` steps return.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 use serde::Serialize;
@@ -64,7 +64,7 @@ pub(crate) struct HostReport<'project> {
     pub(crate) directory: &'project Path,
     /// The package's files, relative to the project with `/` separators:
     /// the generated files, then this platform's native artifacts, which
-    /// `bimetal build` and `bimetal build-native` install.
+    /// `bimetal build` installs.
     pub(crate) files: Vec<String>,
 }
 
@@ -95,14 +95,4 @@ pub(super) fn host_reports<'project>(
         });
     }
     Ok(reports)
-}
-
-/// The result of `bimetal build-native`, which says `"status": "ok"` in JSON.
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename = "ok")]
-pub(crate) struct NativeBuildReport<'project> {
-    pub(crate) application: &'project str,
-    /// The installed files, none for an application without native
-    /// artifacts.
-    pub(crate) artifacts: Vec<PathBuf>,
 }

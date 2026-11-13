@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, TypeAlias
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from trading._runtime import (
+    register_classes as _bimetal_register_classes,
+)
 
 
 class Order(BaseModel):
@@ -84,7 +88,7 @@ class OrderStateExpired(BaseModel):
 
 
 #: How an order ended.
-OrderState: TypeAlias = OrderStateFilled | OrderStateExpired
+OrderState: TypeAlias = Annotated[OrderStateFilled | OrderStateExpired, Field(discriminator="status")]
 
 
 class Quote(BaseModel):
@@ -147,6 +151,16 @@ OrderStateFilled.model_rebuild()
 OrderStateExpired.model_rebuild()
 Quote.model_rebuild()
 Snapshot.model_rebuild()
+
+
+_bimetal_register_classes({
+    "trading-core::trading_core::Order": Order,
+    "trading-core::trading_core::OrderRequest": OrderRequest,
+    "trading-core::trading_core::OrderState": {"filled": OrderStateFilled, "expired": OrderStateExpired},
+    "trading-core::trading_core::Quote": Quote,
+    "trading-core::trading_core::Side": Side,
+    "trading-core::trading_core::Snapshot": Snapshot,
+})
 
 __all__ = [
     "Order",

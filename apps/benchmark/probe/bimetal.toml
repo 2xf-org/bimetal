@@ -1,0 +1,6 @@
+# Bimetal configuration of the probe. apps/benchmark/lab.py copies the probe
+# into target/lab and builds it there, so no generated file lands here.
+
+[python]
+
+[typescript]

@@ -111,11 +111,7 @@ impl Session {
     }
 
     /// Register the result of a frame as a table.
-    pub async fn add_frame(
-        &self,
-        name: String,
-        #[bimetal(resource)] frame: &Frame,
-    ) -> Result<(), QueryError> {
+    pub async fn add_frame(&self, name: String, frame: &Frame) -> Result<(), QueryError> {
         let provider = frame.frame.clone().into_view();
         self.context.register_table(name.as_str(), provider)?;
         Ok(())
@@ -128,7 +124,6 @@ impl Session {
     }
 
     /// Plan a query, without running it.
-    #[bimetal(returns(resource))]
     pub async fn sql(&self, query: String) -> Result<Frame, QueryError> {
         Ok(Frame {
             frame: run(self.context.sql(&query)).await?,
@@ -170,7 +165,6 @@ impl Frame {
     }
 
     /// Keep the rows where a SQL expression is true.
-    #[bimetal(returns(resource))]
     pub fn filter(&self, predicate: &str) -> Result<Frame, QueryError> {
         let predicate = self.frame.parse_sql_expr(predicate)?;
         Ok(Frame {
@@ -179,7 +173,6 @@ impl Frame {
     }
 
     /// Keep these columns, or SQL expressions.
-    #[bimetal(returns(resource))]
     pub fn select(&self, columns: Vec<String>) -> Result<Frame, QueryError> {
         let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
         Ok(Frame {
@@ -188,7 +181,6 @@ impl Frame {
     }
 
     /// Keep at most `count` rows after skipping `skip` of them.
-    #[bimetal(returns(resource))]
     pub fn limit(
         &self,
         count: u32,
@@ -214,7 +206,6 @@ impl Frame {
     }
 
     /// Run the query, and walk its result a batch at a time.
-    #[bimetal(returns(resource))]
     pub async fn stream(&self) -> Result<Batches, QueryError> {
         Ok(Batches {
             stream: Mutex::new(run(self.frame.clone().execute_stream()).await?),

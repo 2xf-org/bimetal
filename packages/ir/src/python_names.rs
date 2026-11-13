@@ -49,6 +49,22 @@ pub const DATETIME_ALIAS: &str = "_bimetal_datetime";
 /// namespaces' modules, each followed by the namespace's index.
 pub const MODULE_ALIAS_PREFIXES: [&str; 2] = ["_bimetal_api_", "_bimetal_models_"];
 
+/// The prefixes of the constants that a generated module defines once below
+/// its imports, each followed by an index: the native functions and classes
+/// that it calls, the adapters of the types that it validates or writes, and
+/// the pyarrow functions that import its Arrow results.
+pub const MODULE_CONSTANT_PREFIXES: [&str; 3] = [
+    NATIVE_CONSTANT_PREFIX,
+    ADAPTER_CONSTANT_PREFIX,
+    ARROW_CONSTANT_PREFIX,
+];
+/// See [`MODULE_CONSTANT_PREFIXES`].
+pub const NATIVE_CONSTANT_PREFIX: &str = "_bimetal_native_";
+/// See [`MODULE_CONSTANT_PREFIXES`].
+pub const ADAPTER_CONSTANT_PREFIX: &str = "_bimetal_adapter_";
+/// See [`MODULE_CONSTANT_PREFIXES`].
+pub const ARROW_CONSTANT_PREFIX: &str = "_bimetal_arrow_";
+
 /// Names that a generated wrapper resolves in its own scope besides the
 /// builtins and the runtime helpers, which it imports under aliases that
 /// start with `_bimetal_`: its receivers, and the imports that its body and its
@@ -149,7 +165,7 @@ pub fn parameter_names<'name>(rust_names: impl IntoIterator<Item = &'name str>) 
     let hides = |name: &str| {
         BUILTINS.contains(&name)
             || WRAPPER_SCOPE.contains(&name)
-            || MODULE_ALIAS_PREFIXES.iter().any(|prefix| {
+            || MODULE_ALIAS_PREFIXES.iter().chain(&MODULE_CONSTANT_PREFIXES).any(|prefix| {
                 name.strip_prefix(prefix)
                     .is_some_and(|index| index.bytes().all(|byte| byte.is_ascii_digit()))
             })

@@ -14,7 +14,7 @@ Every Rust type that can cross, and what each host sees.
 | `Vec<T>`, `&[T]` | `list[T]` | `ReadonlyArray<T>` |
 | `HashMap<String, T>`, `BTreeMap<String, T>` | `dict[str, T]` | `{ readonly [key: string]: T }` |
 | Tuples of 2 to 8 items | `tuple[...]` | Readonly tuple |
-| `[T; N]` without `bytes`, up to 32 items | `tuple[...]` of N items | Readonly tuple |
+| `[T; N]` other than bytes, up to 32 items | `tuple[...]` of N items | Readonly tuple |
 | `chrono::DateTime<Utc>` or `<FixedOffset>` | `datetime` with a time zone | ISO 8601 `string` |
 | `chrono::NaiveDate`, in years 1 to 9999 | `date` | `YYYY-MM-DD` `string` |
 | `std::time::Duration` | `int` nanoseconds | `bigint` nanoseconds |
@@ -22,11 +22,11 @@ Every Rust type that can cross, and what each host sees.
 | alloy's `Address`, `FixedBytes<N>` such as `B256`, `Uint` such as `U256`, `Signed` such as `I256`, and `Bytes`, with Bimetal's `alloy` feature and alloy's `serde` feature | `str`, as alloy's Serde writes it | `string` |
 | `serde_json::Value` | `Any` | JSON value, where wide integers use `bigint` |
 | A `Model` type | Generated model | Generated interface, union or alias |
-| `&[u8]`, `Vec<u8>`, `[u8; N]`, with `bytes` | `bytes` | `Uint8Array` |
+| `&[u8]`, `Vec<u8>`, `[u8; N]`, as a parameter or a return value, also in an `Option` there | `bytes` | `Uint8Array` |
 | A numeric `&[T]` or `Vec<T>`, with `buffer` | `numpy.ndarray` | The matching typed array |
 | `ArrayRef`, `RecordBatch`, `Table`, `Schema`, with `arrow` | [Arrow](../guides/arrow.md) | [Arrow](../guides/arrow.md) |
 | `RecordBatchStream`, with `arrow` | [`RecordBatchReader`](../guides/arrow.md#streams) | [`RecordBatchStream`](../guides/arrow.md#streams-in-typescript) |
-| A resource, with `resource` | Its class | Its class |
+| A resource | Its class | Its class |
 | `bimetal::Callback<(A, B), R>` | `Callable[[A, B], R]` | `(arg0: A, arg1: B) => R` |
 
 ## Rules at the edges

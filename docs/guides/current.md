@@ -18,13 +18,15 @@ bimetal check --rebuild
 
 ## In a fresh clone
 
-`bimetal build` compiles only this platform's native artifacts when the committed files are current. Where you need only those, such as in a deployment image after `bimetal check`, run:
+`bimetal build` compiles only this platform's native artifacts when the committed files are current. In a deployment image, run `bimetal check` first, so that a build there never regenerates the packages:
 
 ```bash
-bimetal build-native
+bimetal check
 ```
 
-It stops if the source fingerprint changed since `bimetal build` generated the packages, because the generated code would call functions the artifacts lack.
+```bash
+bimetal build
+```
 
 ## Line endings
 
@@ -35,7 +37,7 @@ It stops if the source fingerprint changed since `bimetal build` generated the p
 *.wasm binary
 ```
 
-Without them, `check` reports every generated text file as changed there, and `build-native` refuses the packages as stale.
+Without them, `check` reports every generated text file as changed there.
 
 ## Merge conflicts
 

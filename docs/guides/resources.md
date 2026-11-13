@@ -87,32 +87,29 @@ A gated constructor is always a factory, so the class has the same constructor i
 
 ## Returning resources
 
-`#[bimetal(returns(resource))]` returns a resource from a function or a method, on its own or in an `Option` or a `Vec`. `Self` doesn't work here, so write the resource's name:
+A function or a method whose result is a resource's type returns a new object of its class, on its own or in an `Option` or a `Vec`:
 
 ```rust
 /// Open a session, whose books join the shelf when it commits.
-#[bimetal(returns(resource))]
 #[must_use]
 pub fn session(&self) -> Session {
 ```
 
 ```rust
 /// Open a session, unless the shelf is full.
-#[bimetal(returns(resource))]
 #[must_use]
 pub fn try_session(&self) -> Option<Session> {
 ```
 
 ```rust
 /// Divide the books among shelves of at most `size` books.
-#[bimetal(returns(resource))]
 #[must_use]
 pub fn split(&self, size: u32) -> Vec<Shelf> {
 ```
 
 ## Passing resources
 
-`#[bimetal(resource)]` takes one as a parameter. The signature says how the call holds it:
+A parameter of a resource's type takes one, and the signature says how the call holds it:
 
 | Parameter | The call | Other calls to that resource |
 | --- | --- | --- |
@@ -123,12 +120,12 @@ pub fn split(&self, size: u32) -> Vec<Shelf> {
 
 ```rust
 /// Copy the books of another shelf, which is only read.
-pub fn copy_from(&mut self, #[bimetal(resource)] other: &Shelf) -> Result<(), ShelfError> {
+pub fn copy_from(&mut self, other: &Shelf) -> Result<(), ShelfError> {
 ```
 
 ```rust
 /// Take over another shelf, which is closed afterwards.
-pub fn absorb(&mut self, #[bimetal(resource)] other: Shelf) {
+pub fn absorb(&mut self, other: Shelf) {
 ```
 
 An argument of another class raises `TypeError`, and a call that receives one resource twice fails.

@@ -11,13 +11,17 @@ from .models import (
     ShortageDetails,
 )
 from showcase._runtime import (
-    host_callback as _bimetal_host_callback,
+    Adapter as _bimetal_Adapter,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
     native_resource as _bimetal_native_resource,
-    restore_host as _bimetal_restore_host,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_showcase_656c2307959ffa30")
+_bimetal_native_1 = getattr(_bimetal_native, "__bimetal_function_showcase_99afcd0e5863f838")
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_function_showcase_136c6d6e579b9c16")
+_bimetal_native_3 = getattr(_bimetal_native, "__bimetal_resource_showcase_4c5f82ea59c0edd9")
+_bimetal_adapter_4 = _bimetal_Adapter(lambda: bool)
+_bimetal_adapter_5 = _bimetal_Adapter(lambda: str)
 
 
 ShelfErrorCode: TypeAlias = Literal[
@@ -79,7 +83,7 @@ def count_both(first: Shelf, second: Shelf) -> int:
     """
     Count the books of two shelves, the second held alone.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_8946f1f0e3e7192c")(
+    __bimetal_native = _bimetal_native_0(
         _bimetal_native_resource(first, Shelf, "first"),
         _bimetal_native_resource(second, Shelf, "second"),
     )
@@ -91,9 +95,7 @@ def double_size(size: int) -> int:
     """
     The largest position that a pointer-sized argument reaches, doubled.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_e0c13e567662d4a3")(
-        size,
-    )
+    __bimetal_native = _bimetal_native_1(size)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -102,11 +104,7 @@ def offset(value: int, by: int = -1, scale: float = 0.5) -> float:
     """
     A number with a negative default.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_89ea7bf7ee267f8e")(
-        value,
-        by,
-        scale,
-    )
+    __bimetal_native = _bimetal_native_2(value, by, scale)
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
@@ -217,10 +215,7 @@ class Labeler:
         Raises:
             ShelfError
         """
-        try:
-            __bimetal_native = self.native_resource.label(name)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        __bimetal_native = self.native_resource.label(name)
         __bimetal_result: str = __bimetal_native
         return __bimetal_result
 
@@ -281,10 +276,7 @@ class Session:
         Raises:
             ShelfError
         """
-        try:
-            self.native_resource.commit()
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        self.native_resource.commit()
         return None
 
     def finish(self, failed: bool) -> None:
@@ -295,10 +287,7 @@ class Session:
         Raises:
             ShelfError
         """
-        try:
-            self.native_resource.finish(failed)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        self.native_resource.finish(failed)
         return None
 
     def close(self) -> None:
@@ -349,10 +338,7 @@ class Shelf:
         """
         Make an empty shelf.
         """
-        self.native_resource = getattr(_bimetal_native, "__bimetal_resource_showcase_4c5f82ea59c0edd9")(
-            name,
-            limit,
-        )
+        self.native_resource = _bimetal_native_3(name, limit)
 
     @classmethod
     def __bimetal_wrap__(cls, native: Any) -> Shelf:
@@ -414,10 +400,7 @@ class Shelf:
         The book at a position, if there is one.
         """
         __bimetal_native = self.native_resource.at(index)
-        __bimetal_result: str | None = _bimetal_type_adapter(str | None).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: str | None = __bimetal_native
         return __bimetal_result
 
     def replace(self, index: int, title: str) -> None:
@@ -447,10 +430,7 @@ class Shelf:
         The books whose titles contain a word.
         """
         __bimetal_native = self.native_resource.matching(word)
-        __bimetal_result: list[str] = _bimetal_type_adapter(list[str]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[str] = __bimetal_native
         return __bimetal_result
 
     def fingerprint(self) -> int:
@@ -478,10 +458,7 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            self.native_resource.add(title)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        self.native_resource.add(title)
         return None
 
     def require(self, wanted: int) -> None:
@@ -491,10 +468,7 @@ class Shelf:
         Raises:
             Shortage
         """
-        try:
-            self.native_resource.require(wanted)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, Shortage) from None
+        self.native_resource.require(wanted)
         return None
 
     def session(self) -> Session:
@@ -552,12 +526,7 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            self.native_resource.copyFrom(
-                _bimetal_native_resource(other, Shelf, "other"),
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        self.native_resource.copyFrom(_bimetal_native_resource(other, Shelf, "other"))
         return None
 
     def give_to(self, other: Shelf) -> None:
@@ -591,12 +560,9 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            await self.native_resource.copyLater(
-                _bimetal_native_resource(other, Shelf, "other"),
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        await self.native_resource.copyLater(
+            _bimetal_native_resource(other, Shelf, "other"),
+        )
         return None
 
     def visit(self, visitor: Callable[[str, int], bool]) -> int:
@@ -607,12 +573,7 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            __bimetal_native = self.native_resource.visit(
-                _bimetal_host_callback(visitor, [str, int], bool),
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        __bimetal_native = self.native_resource.visit((visitor, _bimetal_adapter_4))
         __bimetal_result: int = __bimetal_native
         return __bimetal_result
 
@@ -624,10 +585,7 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            self.native_resource.rewrite(_bimetal_host_callback(transform, [str], str))
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        self.native_resource.rewrite((transform, _bimetal_adapter_5))
         return None
 
     async def label_later(self, label: Callable[[str], str]) -> str:
@@ -637,12 +595,9 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            __bimetal_native = await self.native_resource.labelLater(
-                _bimetal_host_callback(label, [str], str),
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        __bimetal_native = await self.native_resource.labelLater(
+            (label, _bimetal_adapter_5),
+        )
         __bimetal_result: str = __bimetal_native
         return __bimetal_result
 
@@ -654,12 +609,9 @@ class Shelf:
         Raises:
             ShelfError
         """
-        try:
-            __bimetal_native = await self.native_resource.labelAtOnce(
-                _bimetal_host_callback(label, [str], str),
-            )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
+        __bimetal_native = await self.native_resource.labelAtOnce(
+            (label, _bimetal_adapter_5),
+        )
         __bimetal_result: str = __bimetal_native
         return __bimetal_result
 
@@ -667,9 +619,7 @@ class Shelf:
         """
         Keep `label` in a labeler, which calls it after this call returned.
         """
-        __bimetal_native = self.native_resource.labeler(
-            _bimetal_host_callback(label, [str], str),
-        )
+        __bimetal_native = self.native_resource.labeler((label, _bimetal_adapter_5))
         __bimetal_result: Labeler = Labeler.__bimetal_wrap__(__bimetal_native)
         return __bimetal_result
 
@@ -678,10 +628,7 @@ class Shelf:
         The first title as bytes, if there is one.
         """
         __bimetal_native = self.native_resource.firstBytes()
-        __bimetal_result: bytes | None = _bimetal_type_adapter(bytes | None).validate_python(
-            _bimetal_restore_host(__bimetal_native, ["bytes"]),
-            strict=False,
-        )
+        __bimetal_result: bytes | None = __bimetal_native
         return __bimetal_result
 
     def seal(self) -> list[str]:
@@ -689,10 +636,7 @@ class Shelf:
         End the shelf, and return its books.
         """
         __bimetal_native = self.native_resource.seal()
-        __bimetal_result: list[str] = _bimetal_type_adapter(list[str]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[str] = __bimetal_native
         return __bimetal_result
 
     async def seal_later(self) -> int:
@@ -784,14 +728,8 @@ class TitleStream:
         Raises:
             ShelfError
         """
-        try:
-            __bimetal_native = await self.native_resource.nextTitle()
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ShelfError) from None
-        __bimetal_result: str | None = _bimetal_type_adapter(str | None).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_native = await self.native_resource.nextTitle()
+        __bimetal_result: str | None = __bimetal_native
         return __bimetal_result
 
     def close(self) -> None:
@@ -851,10 +789,7 @@ class Titles:
         The next title, or nothing at the end.
         """
         __bimetal_native = self.native_resource.nextTitle()
-        __bimetal_result: str | None = _bimetal_type_adapter(str | None).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: str | None = __bimetal_native
         return __bimetal_result
 
     def close(self) -> None:

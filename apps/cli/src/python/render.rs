@@ -304,11 +304,10 @@ pub(super) fn python_resource_ref(
     }
 }
 
-/// Render a local or namespace-qualified generated error reference.
-pub(super) fn python_error_ref(
-    identity: &DefinitionId,
-    context: &PythonContext<'_>,
-) -> Result<String> {
+/// Name a generated error class as the docs of a callable in this namespace
+/// name it: by its name in its own namespace, and by its public path, such as
+/// `app.geometry.GeometryError`, in another.
+fn python_error_name(identity: &DefinitionId, context: &PythonContext<'_>) -> Result<String> {
     let definition = context.contract.error_definition(identity)?;
     let namespace = context
         .contract
@@ -318,7 +317,7 @@ pub(super) fn python_error_ref(
     } else {
         Ok(format!(
             "{}.{}",
-            context.namespace_module(&namespace, API_MODULE),
+            python_namespace_module(context.package, &namespace),
             definition.name
         ))
     }
@@ -442,6 +441,58 @@ pub(super) fn python_adapter(reference: &TypeRef, context: &PythonContext<'_>) -
     Ok(format!("{adapter}({annotation}{options})"))
 }
 
+/// Spell the module constant that validates and writes values of
+/// `reference`: a runtime `Adapter`, which builds Pydantic's adapter on first
+/// use, so a call neither builds the annotation nor looks the adapter up.
+pub(super) fn python_adapter_constant(
+    reference: &TypeRef,
+    context: &PythonContext<'_>,
+) -> Result<String> {
+    let annotation = python_adapter_type(reference, context)?;
+    let buffers = context
+        .contract
+        .reaches(reference, |item| matches!(item, TypeRef::Buffer { .. }))?;
+    let options = if buffers {
+        ", arbitrary_types=True"
+    } else {
+        ""
+    };
+    let expression = format!(
+        "{}(lambda: {annotation}{options})",
+        context.runtime("Adapter")
+    );
+    Ok(context.constant(python_names::ADAPTER_CONSTANT_PREFIX, expression))
+}
+
+/// Whether the extension reads an argument of `reference` as Python holds it
+/// after validation, with no dump: a model, an enum, a date-time, a date, a
+/// duration or bytes, or a container of them. Every other argument is plain,
+/// and the extension reads its dump.
+pub(super) fn python_reads_natively(reference: &TypeRef, contract: &Contract<'_>) -> Result<bool> {
+    Ok(match reference {
+        TypeRef::DateTime
+        | TypeRef::Date
+        | TypeRef::Duration
+        | TypeRef::Bytes
+        | TypeRef::FixedBytes { .. } => true,
+        TypeRef::Option { item } | TypeRef::List { item } | TypeRef::Map { value: item } => {
+            python_reads_natively(item, contract)?
+        }
+        TypeRef::Tuple { items } => {
+            let mut any = false;
+            for item in items {
+                any |= python_reads_natively(item, contract)?;
+            }
+            any
+        }
+        TypeRef::Named { identity } => match &contract.type_definition(identity)?.shape {
+            TypeShape::Alias { target } => python_reads_natively(target, contract)?,
+            _ => true,
+        },
+        _ => false,
+    })
+}
+
 /// Render the expression that gives `value`, which Serde wrote, as the host
 /// value of `reference`.
 pub(super) fn python_value(
@@ -552,7 +603,7 @@ pub(super) fn emit_python_callable_doc(
     // The entry names the error class even without a description, as the
     // TypeScript `@throws` tag does.
     if let Some(error) = &callable.error {
-        let error_name = python_error_ref(error, context)?;
+        let error_name = python_error_name(error, context)?;
         let mut entry = format!("Raises:\n    {error_name}");
         if !sections.errors.is_empty() {
             let description =

@@ -8,6 +8,8 @@ from trading._runtime import (
     native as _bimetal_native,
 )
 
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_trading_core_a590629890cfd288")
+
 
 OrderErrorCode: TypeAlias = Literal[
     # The venue does not list the symbol.
@@ -43,10 +45,7 @@ def notional(price: int, quantity: int) -> int:
         Panics when the cost does not fit in a `u64`. The engine checks its own
         products, and refuses such an order instead.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_trading_core_a590629890cfd288")(
-        price,
-        quantity,
-    )
+    __bimetal_native = _bimetal_native_0(price, quantity)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 

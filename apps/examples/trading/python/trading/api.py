@@ -9,18 +9,22 @@ import pyarrow as pa
 from .models import (
     EngineConfig,
 )
-import trading.core.api as _bimetal_api_1
 import trading.core.models as _bimetal_models_1
 from trading._runtime import (
+    Adapter as _bimetal_Adapter,
     ArrowArrayExportable,
     ArrowSchemaExportable,
     ArrowStreamExportable,
+    Dumped as _bimetal_Dumped,
     PanicException,
-    dump_host as _bimetal_dump_host,
+    Revalidate as _bimetal_Revalidate,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_resource_trading_a92d5c129f97bbe8")
+_bimetal_adapter_1 = _bimetal_Adapter(lambda: EngineConfig)
+_bimetal_adapter_2 = _bimetal_Adapter(lambda: _bimetal_models_1.OrderRequest)
+_bimetal_arrow_3 = getattr(pa, "table")
 
 
 ConfigErrorCode: TypeAlias = Literal[
@@ -64,11 +68,11 @@ class Engine:
         """
         __bimetal_instance = cls.__new__(cls)
         try:
-            __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_trading_a92d5c129f97bbe8").connect(
-                _bimetal_dump_host(EngineConfig, config),
+            __bimetal_instance.native_resource = await _bimetal_native_0.connect(config)
+        except _bimetal_Revalidate:
+            __bimetal_instance.native_resource = await _bimetal_native_0.connect(
+                _bimetal_Dumped(_bimetal_adapter_1.dump(config)),
             )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ConfigError) from None
         return __bimetal_instance
 
     async def submit(
@@ -86,18 +90,15 @@ class Engine:
             while the engine is open.
 
         Raises:
-            _bimetal_api_1.OrderError
+            trading.core.OrderError
         """
         try:
+            __bimetal_native = await self.native_resource.submit(order)
+        except _bimetal_Revalidate:
             __bimetal_native = await self.native_resource.submit(
-                _bimetal_dump_host(_bimetal_models_1.OrderRequest, order),
+                _bimetal_Dumped(_bimetal_adapter_2.dump(order)),
             )
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, _bimetal_api_1.OrderError) from None
-        __bimetal_result: _bimetal_models_1.Order = _bimetal_type_adapter(_bimetal_models_1.Order).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: _bimetal_models_1.Order = __bimetal_native
         return __bimetal_result
 
     def snapshot(self) -> _bimetal_models_1.Snapshot:
@@ -105,10 +106,7 @@ class Engine:
         The account and the latest quotes, at one moment.
         """
         __bimetal_native = self.native_resource.snapshot()
-        __bimetal_result: _bimetal_models_1.Snapshot = _bimetal_type_adapter(_bimetal_models_1.Snapshot).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: _bimetal_models_1.Snapshot = __bimetal_native
         return __bimetal_result
 
     def fills(self) -> pa.Table:
@@ -117,7 +115,7 @@ class Engine:
         `price`, and `sequence`, the number of the quote it traded against.
         """
         __bimetal_native = self.native_resource.fills()
-        __bimetal_result: pa.Table = getattr(pa, "table")(__bimetal_native)
+        __bimetal_result: pa.Table = _bimetal_arrow_3(__bimetal_native)
         return __bimetal_result
 
     async def quotes(self, count: int) -> list[_bimetal_models_1.Quote]:
@@ -127,10 +125,7 @@ class Engine:
         oldest.
         """
         __bimetal_native = await self.native_resource.quotes(count)
-        __bimetal_result: list[_bimetal_models_1.Quote] = _bimetal_type_adapter(list[_bimetal_models_1.Quote]).validate_python(
-            __bimetal_native,
-            strict=False,
-        )
+        __bimetal_result: list[_bimetal_models_1.Quote] = __bimetal_native
         return __bimetal_result
 
     async def withdraw(self, amount: int) -> int:
@@ -140,12 +135,9 @@ class Engine:
         checked.
 
         Raises:
-            _bimetal_api_1.OrderError
+            trading.core.OrderError
         """
-        try:
-            __bimetal_native = await self.native_resource.withdraw(amount)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, _bimetal_api_1.OrderError) from None
+        __bimetal_native = await self.native_resource.withdraw(amount)
         __bimetal_result: int = __bimetal_native
         return __bimetal_result
 

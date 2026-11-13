@@ -8,21 +8,18 @@ from .models import (
 )
 from showcase._runtime import (
     native as _bimetal_native,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_showcase_7ecf66e38a5236a0")
+_bimetal_native_1 = getattr(_bimetal_native, "__bimetal_function_showcase_71d2001ce562e00e")
 
 
 def list(text: str) -> Words:
     """
     List the words of a text. An export may have the name of a Python builtin.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_7ecf66e38a5236a0")(
-        text,
-    )
-    __bimetal_result: Words = _bimetal_type_adapter(Words).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_0(text)
+    __bimetal_result: Words = __bimetal_native
     return __bimetal_result
 
 
@@ -30,13 +27,8 @@ def phrase(text: str) -> Phrase:
     """
     Count the words in a text.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_71d2001ce562e00e")(
-        text,
-    )
-    __bimetal_result: Phrase = _bimetal_type_adapter(Phrase).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_1(text)
+    __bimetal_result: Phrase = __bimetal_native
     return __bimetal_result
 
 __all__ = [

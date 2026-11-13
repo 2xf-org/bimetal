@@ -143,10 +143,11 @@ for name in "$@"; do
   mkdir -p "$scratch/$example"
   if $check; then
     # The committed outputs must match what this machine builds from the
-    # sources, fingerprints aside, so builds are reproducible. Only this
-    # platform's native artifacts, which are never committed, get installed.
+    # sources, fingerprints aside, so builds are reproducible. Then the build
+    # installs only this platform's native artifacts, which are never
+    # committed.
     "$bimetal" check --rebuild --json --config "$config" >"$report"
-    "$bimetal" build-native --config "$config"
+    "$bimetal" build --config "$config"
   else
     "$bimetal" build --config "$config"
     "$bimetal" check --json --config "$config" >"$report"

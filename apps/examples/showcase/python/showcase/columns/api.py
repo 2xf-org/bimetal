@@ -11,9 +11,24 @@ from showcase._runtime import (
     ArrowSchemaExportable,
     ArrowStreamExportable,
     native as _bimetal_native,
-    native_error as _bimetal_native_error,
-    type_adapter as _bimetal_type_adapter,
 )
+
+_bimetal_native_0 = getattr(_bimetal_native, "__bimetal_function_showcase_4ceaf7968fc03fea")
+_bimetal_arrow_1 = getattr(pa, "record_batch")
+_bimetal_native_2 = getattr(_bimetal_native, "__bimetal_function_showcase_b295a1ff3715f93a")
+_bimetal_arrow_3 = getattr(pa, "RecordBatchReader").from_stream
+_bimetal_native_4 = getattr(_bimetal_native, "__bimetal_function_showcase_700f5e6376beea9e")
+_bimetal_native_5 = getattr(_bimetal_native, "__bimetal_function_showcase_a8c4807be3c5b36f")
+_bimetal_native_6 = getattr(_bimetal_native, "__bimetal_function_showcase_1bf8386665337577")
+_bimetal_arrow_7 = getattr(pa, "array")
+_bimetal_native_8 = getattr(_bimetal_native, "__bimetal_function_showcase_b312b9ab4d477737")
+_bimetal_arrow_9 = getattr(pa, "table")
+_bimetal_native_10 = getattr(_bimetal_native, "__bimetal_function_showcase_683a2b9f700db74a")
+_bimetal_native_11 = getattr(_bimetal_native, "__bimetal_function_showcase_6e743049e47a9120")
+_bimetal_native_12 = getattr(_bimetal_native, "__bimetal_function_showcase_4771162941742abf")
+_bimetal_native_13 = getattr(_bimetal_native, "__bimetal_function_showcase_cd0763b3819104ed")
+_bimetal_arrow_14 = getattr(pa, "schema")
+_bimetal_native_15 = getattr(_bimetal_native, "__bimetal_resource_showcase_9d1d12f09cfc33f6")
 
 
 ColumnErrorCode: TypeAlias = Literal[
@@ -45,13 +60,8 @@ def add_totals(batch: ArrowArrayExportable) -> pa.RecordBatch:
     Raises:
         ColumnError
     """
-    try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_4ceaf7968fc03fea")(
-            batch,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
-    __bimetal_result: pa.RecordBatch = getattr(pa, "record_batch")(__bimetal_native)
+    __bimetal_native = _bimetal_native_0(batch)
+    __bimetal_result: pa.RecordBatch = _bimetal_arrow_1(__bimetal_native)
     return __bimetal_result
 
 
@@ -59,10 +69,8 @@ def batches(table: ArrowStreamExportable) -> pa.RecordBatchReader:
     """
     Stream a table one batch at a time.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_b295a1ff3715f93a")(
-        table,
-    )
-    __bimetal_result: pa.RecordBatchReader = getattr(pa, "RecordBatchReader").from_stream(__bimetal_native)
+    __bimetal_native = _bimetal_native_2(table)
+    __bimetal_result: pa.RecordBatchReader = _bimetal_arrow_3(__bimetal_native)
     return __bimetal_result
 
 
@@ -70,9 +78,7 @@ async def count_rows(table: ArrowStreamExportable) -> int:
     """
     Count the rows of a table asynchronously.
     """
-    __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_700f5e6376beea9e")(
-        table,
-    )
+    __bimetal_native = await _bimetal_native_4(table)
     __bimetal_result: int = __bimetal_native
     return __bimetal_result
 
@@ -81,13 +87,8 @@ def describe(schema: ArrowSchemaExportable) -> list[str]:
     """
     Name every field with its type, such as `price: Float64`.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_a8c4807be3c5b36f")(
-        schema,
-    )
-    __bimetal_result: list[str] = _bimetal_type_adapter(list[str]).validate_python(
-        __bimetal_native,
-        strict=False,
-    )
+    __bimetal_native = _bimetal_native_5(schema)
+    __bimetal_result: list[str] = __bimetal_native
     return __bimetal_result
 
 
@@ -98,14 +99,8 @@ def scale(values: ArrowArrayExportable, factor: float) -> pa.Array[Any]:
     Raises:
         ColumnError
     """
-    try:
-        __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_1bf8386665337577")(
-            values,
-            factor,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
-    __bimetal_result: pa.Array[Any] = getattr(pa, "array")(__bimetal_native)
+    __bimetal_native = _bimetal_native_6(values, factor)
+    __bimetal_result: pa.Array[Any] = _bimetal_arrow_7(__bimetal_native)
     return __bimetal_result
 
 
@@ -113,11 +108,8 @@ def split(batch: ArrowArrayExportable, size: int) -> pa.Table:
     """
     Split a batch into a table of batches with at most `size` rows.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_b312b9ab4d477737")(
-        batch,
-        size,
-    )
-    __bimetal_result: pa.Table = getattr(pa, "table")(__bimetal_native)
+    __bimetal_native = _bimetal_native_8(batch, size)
+    __bimetal_result: pa.Table = _bimetal_arrow_9(__bimetal_native)
     return __bimetal_result
 
 
@@ -128,13 +120,7 @@ async def sum_column(rows: ArrowStreamExportable, name: str) -> float:
     Raises:
         ColumnError
     """
-    try:
-        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_683a2b9f700db74a")(
-            rows,
-            name,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+    __bimetal_native = await _bimetal_native_10(rows, name)
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
@@ -149,13 +135,7 @@ async def sum_column_at_once(rows: ArrowStreamExportable, name: str) -> float:
     Raises:
         ColumnError
     """
-    try:
-        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_6e743049e47a9120")(
-            rows,
-            name,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+    __bimetal_native = await _bimetal_native_11(rows, name)
     __bimetal_result: float = __bimetal_native
     return __bimetal_result
 
@@ -168,13 +148,8 @@ async def totals(rows: ArrowStreamExportable) -> pa.RecordBatchReader:
     Raises:
         ColumnError
     """
-    try:
-        __bimetal_native = await getattr(_bimetal_native, "__bimetal_function_showcase_4771162941742abf")(
-            rows,
-        )
-    except RuntimeError as __bimetal_error:
-        raise _bimetal_native_error(__bimetal_error, ColumnError) from None
-    __bimetal_result: pa.RecordBatchReader = getattr(pa, "RecordBatchReader").from_stream(__bimetal_native)
+    __bimetal_native = await _bimetal_native_12(rows)
+    __bimetal_result: pa.RecordBatchReader = _bimetal_arrow_3(__bimetal_native)
     return __bimetal_result
 
 
@@ -182,11 +157,8 @@ def with_note(schema: ArrowSchemaExportable, note: str) -> pa.Schema:
     """
     Attach a note to a schema's metadata.
     """
-    __bimetal_native = getattr(_bimetal_native, "__bimetal_function_showcase_cd0763b3819104ed")(
-        schema,
-        note,
-    )
-    __bimetal_result: pa.Schema = getattr(pa, "schema")(__bimetal_native)
+    __bimetal_native = _bimetal_native_13(schema, note)
+    __bimetal_result: pa.Schema = _bimetal_arrow_14(__bimetal_native)
     return __bimetal_result
 
 
@@ -208,9 +180,7 @@ class Rows:
         Keep a stream, which no batch is read from yet.
         """
         __bimetal_instance = cls.__new__(cls)
-        __bimetal_instance.native_resource = await getattr(_bimetal_native, "__bimetal_resource_showcase_9d1d12f09cfc33f6").open(
-            rows,
-        )
+        __bimetal_instance.native_resource = await _bimetal_native_15.open(rows)
         return __bimetal_instance
 
     async def sum(self, name: str) -> float:
@@ -220,10 +190,7 @@ class Rows:
         Raises:
             ColumnError
         """
-        try:
-            __bimetal_native = await self.native_resource.sum(name)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_native = await self.native_resource.sum(name)
         __bimetal_result: float = __bimetal_native
         return __bimetal_result
 
@@ -236,10 +203,7 @@ class Rows:
         Raises:
             ColumnError
         """
-        try:
-            __bimetal_native = self.native_resource.sumNow(name)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_native = self.native_resource.sumNow(name)
         __bimetal_result: float = __bimetal_native
         return __bimetal_result
 
@@ -253,10 +217,7 @@ class Rows:
         Raises:
             ColumnError
         """
-        try:
-            __bimetal_native = await self.native_resource.sumAtOnce(name)
-        except RuntimeError as __bimetal_error:
-            raise _bimetal_native_error(__bimetal_error, ColumnError) from None
+        __bimetal_native = await self.native_resource.sumAtOnce(name)
         __bimetal_result: float = __bimetal_native
         return __bimetal_result
 

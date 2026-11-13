@@ -5,22 +5,22 @@ Every argument and result crosses a boundary between two memory managers, and ho
 | Way | For | Cost |
 | --- | --- | --- |
 | Converted | Models, strings, numbers, lists, maps | Walks the value, field by field |
-| Copied whole | `bytes` and `buffer` | One copy each way |
+| Copied whole | Bytes and buffers | One copy each way |
 | Shared | Arrow, in Python | No copy |
 
 ## Converted values
 
 A model or a list crosses as a tree of host objects, and Serde reads or writes it field by field. This is the most convenient way and the slowest per byte, and the cost grows with the number of fields, not the number of bytes.
 
-Python validates a model with Pydantic before it dumps it, and again when a result comes back. Rust checks the field rules on arguments and results as well, because a model changed with `model_copy(update=...)` skips Pydantic. TypeScript checks the outermost type of each argument before it enters Rust, and Rust reports anything deeper.
+Python reads a model instance as it is, and validates a dictionary passed for a model with Pydantic. A result comes back as an instance of the model's class, which the extension makes as Pydantic would validate it. Rust checks the field rules on arguments and results, so a model changed with `model_copy(update=...)`, which skips Pydantic, meets them too. TypeScript checks the outermost type of each argument before it enters Rust, and Rust reports anything deeper.
 
 A very large JSON result crosses faster as text. Returning 4.7 MB as a `serde_json::Value` took about 190 ms in the Wasm module, and returning it as a `String` for `JSON.parse` took about 30 ms.
 
 ## Bytes and buffers
 
-`#[bimetal(bytes)]` and `#[bimetal(buffer)]` cross as one block of memory: a `bytes` object or a `Uint8Array`, and a NumPy array or a typed array. There is no per-element cost. [Bytes and buffers](../guides/bytes.md) shows them.
+Bytes and `#[bimetal(buffer)]` cross as one block of memory: a `bytes` object or a `Uint8Array`, and a NumPy array or a typed array. There is no per-element cost. [Bytes and buffers](../guides/bytes.md) shows them.
 
-A plain `Vec<u8>` is a list of integers, so reach for `bytes` once a payload is more than a few values. Models can't hold these, so send large payloads as separate parameters.
+A `Vec<u8>` parameter or return value is bytes, but a `Vec<u8>` field of a model is a list of integers, and a model can't hold a buffer, so send large payloads as separate parameters.
 
 ## Arrow
 
@@ -42,6 +42,6 @@ The rule for working on Bimetal is that each value decodes once and moves. Bytes
 
 ## What can't cross
 
-Serde can't carry a resource or a function, so both cross as host objects on paths of their own, through `#[bimetal(resource)]` and `bimetal::Callback`. Neither can sit inside a model, and neither can `bytes`, `buffer` or Arrow.
+Serde can't carry a resource or a function, so both cross as host objects on paths of their own: a resource by its type, and a function as a `bimetal::Callback`. Neither can sit inside a model, and neither can a buffer or Arrow.
 
 A few shapes can't round-trip, so Bimetal rejects them while you build: directional Serde renames such as `rename(serialize = "...")`, Serde aliases, and `Option<Option<T>>`. [Types](../reference/types.md) has the whole list.

@@ -70,6 +70,9 @@ pub(super) struct Imports {
     namespaces: BTreeSet<String>,
     /// The runtime's names, as entries of the import from it.
     runtime: BTreeSet<String>,
+    /// The module's constants, as their expressions and names, in the order
+    /// of first use.
+    constants: Vec<(String, String)>,
 }
 
 /// Shared contract and namespace state for one generated Python module, in
@@ -200,8 +203,28 @@ impl<'emit> PythonContext<'emit> {
         name
     }
 
-    /// Return the module `leaf`, whose body is `body`, with the imports that
-    /// rendering it recorded.
+    /// Spell a constant of the module whose value is `expression`, which the
+    /// module defines once, below its imports, so that a call does not
+    /// evaluate it again. Its name is `prefix`, one of
+    /// [`python_names::MODULE_CONSTANT_PREFIXES`], and the constant's index.
+    ///
+    /// [`python_names::MODULE_CONSTANT_PREFIXES`]: bimetal_ir::python_names::MODULE_CONSTANT_PREFIXES
+    pub(super) fn constant(&self, prefix: &str, expression: String) -> String {
+        let mut imports = self.imports.borrow_mut();
+        if let Some((_, name)) = imports
+            .constants
+            .iter()
+            .find(|(existing, _)| *existing == expression)
+        {
+            return name.clone();
+        }
+        let name = format!("{prefix}{}", imports.constants.len());
+        imports.constants.push((expression, name.clone()));
+        name
+    }
+
+    /// Return the module `leaf`, whose body is `body`, with the imports and
+    /// the constants that rendering it recorded.
     #[must_use]
     pub(super) fn module(&self, leaf: &str, body: &str) -> String {
         let imports = self.imports.borrow();
@@ -216,10 +239,16 @@ impl<'emit> PythonContext<'emit> {
             local.push(import_list(&runtime, &imports.runtime));
         }
         let mut source = String::from("from __future__ import annotations\n");
+        let constants = imports
+            .constants
+            .iter()
+            .map(|(expression, name)| format!("{name} = {expression}"))
+            .collect();
         for block in [
             statements(&STANDARD_IMPORTS, &imports.external),
             statements(&PACKAGE_IMPORTS, &imports.external),
             local,
+            constants,
         ] {
             if !block.is_empty() {
                 let _ = write!(source, "\n{}\n", block.join("\n"));

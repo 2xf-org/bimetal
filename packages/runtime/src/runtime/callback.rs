@@ -139,6 +139,10 @@ arguments!(A, B, C, D, E, F, G);
 arguments!(A, B, C, D, E, F, G, H);
 
 impl<A: CallbackArguments, R: ContractType> ContractType for Callback<A, R> {
+    // The macros know a callback by its name, and its arguments and result
+    // cross through Serde.
+    type Crossing = crate::crossing::Serde;
+
     fn type_ref() -> TypeRef {
         let mut signature = A::type_refs();
         signature.push(R::type_ref());

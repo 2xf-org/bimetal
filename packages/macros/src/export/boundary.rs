@@ -1,5 +1,6 @@
-//! How parameters and return values cross into each host: through Serde, or
-//! directly as Arrow values, bytes, and numeric buffers.
+//! How parameters and return values cross into each host: as their types'
+//! crossings say, through Serde or as resources, or directly as Arrow values,
+//! bytes, and numeric buffers.
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -42,17 +43,26 @@ pub(super) fn wrapper_param(
     let host_value = backend.host_value();
     let byte_vector = quote!(#ident: ::std::vec::Vec<::core::primitive::u8>);
     let (declaration, decode) = match (&param.value, &host_value) {
-        (ParamValue::Serde(owned), host_value) => {
-            let argument = host_value.argument();
-            (
-                quote!(#ident: #argument),
-                quote!(let #ident: #owned = #convert::from_host(#ident, #parameter)?;),
-            )
+        (ParamValue::Value(ty), _) => {
+            return value_param(param, ty, backend, is_async, callable, &parameter);
         }
-        (ParamValue::Direct(DirectType::Resource { value, shape }), _) => {
+        (ParamValue::Resource { value, shape }, _) => {
             return resource_param(
                 param, value, *shape, backend, is_async, callable, &parameter,
             );
+        }
+        (ParamValue::Callback(ty), host_value) if matches!(backend, HostBackend::Python) => {
+            let argument = host_value.argument();
+            (
+                quote!(#ident: #argument),
+                quote! {
+                    let #ident: #ty = {
+                        static __BIMETAL_PLANS: #convert::CallbackPlans =
+                            #convert::CallbackPlans::new();
+                        #convert::callback_from_host(#ident, &__BIMETAL_PLANS, #parameter)?
+                    };
+                },
+            )
         }
         (ParamValue::Callback(ty), host_value) => {
             let argument = host_value.argument();
@@ -76,7 +86,6 @@ pub(super) fn wrapper_param(
                 DirectType::Buffer { element, .. } => quote! {
                     let #ident = #convert::buffer_from_host::<#element>(#ident, #parameter)?;
                 },
-                DirectType::Resource { .. } => unreachable!("resources return above"),
             };
             (quote!(#ident: #argument), decode)
         }
@@ -102,7 +111,6 @@ pub(super) fn wrapper_param(
                 quote!(#ident: ::std::vec::Vec<#element>),
                 TokenStream2::new(),
             ),
-            DirectType::Resource { .. } => unreachable!("resources return above"),
         },
     };
     WrapperParam {
@@ -113,9 +121,74 @@ pub(super) fn wrapper_param(
     }
 }
 
-/// Plan how a resource argument crosses from `backend`: its host object gives
-/// up the shared value, which the call locks as `shape` says, or the value
-/// itself when the call takes it.
+/// Plan how an argument of type `ty`, or `&ty` when the call borrows it,
+/// crosses from `backend` as its type's crossing says: through Serde, or as a
+/// resource, which a synchronous call locks after every argument has decoded,
+/// and an async call in its future. The host's `Lend` and `Take` implement
+/// each crossing.
+fn value_param(
+    param: &Param<'_>,
+    ty: &syn::Type,
+    backend: HostBackend,
+    is_async: bool,
+    callable: &str,
+    parameter: &TokenStream2,
+) -> WrapperParam {
+    let ident = param.ident;
+    let convert = backend.convert();
+    let argument = backend.host_value().argument();
+    let crossing = quote!(<#ty as ::bimetal::ContractType>::Crossing);
+    // Python reads a value that crosses through Serde by a plan of its
+    // contract type, built once at each call site.
+    let (plan, arguments) = match backend {
+        HostBackend::Python => (
+            quote!(static __BIMETAL_PLAN: #convert::ValuePlan = #convert::ValuePlan::new();),
+            quote!(#ident, &__BIMETAL_PLAN, #parameter, &mut __bimetal_reached),
+        ),
+        HostBackend::Node | HostBackend::Wasm => (
+            TokenStream2::new(),
+            quote!(#ident, #parameter, &mut __bimetal_reached),
+        ),
+    };
+    let lend = quote!(<#crossing as #convert::Lend<#ty>>);
+    let (decode, lock, wait) = match (param.borrowed, is_async) {
+        (false, _) => {
+            let take = quote!(<#crossing as #convert::Take<#ty>>);
+            (
+                quote!(#take::decode),
+                TokenStream2::new(),
+                TokenStream2::new(),
+            )
+        }
+        (true, false) => {
+            let context = lock_context(backend);
+            // The shadowed binding keeps the value alive under the guard.
+            let lock = quote!(let #ident = #lend::lock(#context &#ident, #callable)?;);
+            (quote!(#lend::decode), lock, TokenStream2::new())
+        }
+        (true, true) => (
+            quote!(#lend::decode_async),
+            TokenStream2::new(),
+            quote!(let #ident = #ident.await;),
+        ),
+    };
+    WrapperParam {
+        declaration: quote!(#ident: #argument),
+        decode: quote! {
+            let #ident = {
+                #plan
+                #decode(#arguments)?
+            };
+        },
+        lock,
+        wait,
+    }
+}
+
+/// Plan how an argument that only a resource can be crosses from `backend`:
+/// its host object gives up the shared value, which a synchronous call locks
+/// as `shape` says after every argument has decoded, and an async call in its
+/// future.
 ///
 /// A call that reaches one resource twice fails rather than waits for itself.
 #[allow(
@@ -135,78 +208,55 @@ fn resource_param(
     let convert = backend.convert();
     let argument = backend.host_value().argument();
     let exclusive = shape == ResourceShape::Exclusive;
-    let reach = match (shape, is_async) {
-        (ResourceShape::Owned | ResourceShape::OptionalOwned | ResourceShape::List, _) => {
-            quote!(take)
-        }
-        (ResourceShape::Exclusive, true) => quote!(write_owned),
-        (ResourceShape::Shared | ResourceShape::OptionalShared, true) => quote!(read_owned),
+    let reach = match (exclusive, is_async) {
+        (true, true) => quote!(write_owned),
+        (false, true) => quote!(read_owned),
         (_, false) => quote!(get),
     };
-    let reached = quote!(|__bimetal_resource: &::bimetal::runtime::Resource<#value>| {
-        __bimetal_reached.add(__bimetal_resource, #callable)?;
-        __bimetal_resource.#reach(#callable)
-    });
-    let translate = quote!(|__bimetal_error| #convert::runtime_error(&__bimetal_error));
-    let decode = if shape == ResourceShape::OptionalShared {
-        quote! {
-            let #ident = #convert::optional_resource_from_host(#ident, #parameter, #reached)?
-                .transpose()
-                .map_err(#translate)?;
-        }
-    } else {
-        quote! {
-            let #ident = #convert::resource_from_host(#ident, #parameter, #reached)?
-                .map_err(#translate)?;
-        }
+    let from_host = match shape {
+        ResourceShape::Exclusive => quote!(resource_from_host),
+        ResourceShape::Optional => quote!(optional_resource_from_host),
     };
-    let guard = |shared: TokenStream2| sync_lock(backend, &shared, exclusive, callable);
-    let mutability = exclusive.then(|| quote!(mut));
-    let (lock, wait) = match shape {
-        ResourceShape::Owned | ResourceShape::OptionalOwned | ResourceShape::List => {
-            (TokenStream2::new(), TokenStream2::new())
+    let decode = quote! {
+        let #ident = #convert::#from_host(
+            #ident,
+            #parameter,
+            &mut __bimetal_reached,
+            ::bimetal::runtime::Resource::<#value>::#reach,
+        )?;
+    };
+    let (lock, wait) = match (shape, is_async) {
+        // The shadowed binding keeps the value alive under the guard.
+        (ResourceShape::Exclusive, false) => {
+            let held = sync_lock(backend, &quote!(#ident), true, callable);
+            (quote!(let mut #ident = #held;), TokenStream2::new())
         }
-        ResourceShape::OptionalShared => {
-            let held = guard(quote!(__bimetal_shared));
-            let lock = if is_async {
-                TokenStream2::new()
-            } else {
-                // The shadowed binding keeps the value alive under the guard.
-                let held = held.clone();
-                quote! {
-                    let #ident = match &#ident {
-                        ::core::option::Option::Some(__bimetal_shared) => {
-                            ::core::option::Option::Some(#held)
-                        }
-                        ::core::option::Option::None => ::core::option::Option::None,
-                    };
-                }
+        (ResourceShape::Optional, false) => {
+            let held = sync_lock(backend, &quote!(__bimetal_shared), false, callable);
+            let lock = quote! {
+                let #ident = match &#ident {
+                    ::core::option::Option::Some(__bimetal_shared) => {
+                        ::core::option::Option::Some(#held)
+                    }
+                    ::core::option::Option::None => ::core::option::Option::None,
+                };
             };
-            (
-                lock,
-                quote! {
-                    let #ident = match #ident {
-                        ::core::option::Option::Some(__bimetal_waiting) => {
-                            ::core::option::Option::Some(__bimetal_waiting.await)
-                        }
-                        ::core::option::Option::None => ::core::option::Option::None,
-                    };
-                },
-            )
+            (lock, TokenStream2::new())
         }
-        ResourceShape::Shared | ResourceShape::Exclusive => {
-            let held = guard(quote!(#ident));
-            (
-                // The shadowed binding keeps the value alive under the guard.
-                quote!(let #mutability #ident = #held;),
-                quote!(let #mutability #ident = #ident.await;),
-            )
+        (ResourceShape::Exclusive, true) => {
+            (TokenStream2::new(), quote!(let mut #ident = #ident.await;))
         }
-    };
-    let (lock, wait) = if is_async {
-        (TokenStream2::new(), wait)
-    } else {
-        (lock, TokenStream2::new())
+        (ResourceShape::Optional, true) => {
+            let wait = quote! {
+                let #ident = match #ident {
+                    ::core::option::Option::Some(__bimetal_waiting) => {
+                        ::core::option::Option::Some(__bimetal_waiting.await)
+                    }
+                    ::core::option::Option::None => ::core::option::Option::None,
+                };
+            };
+            (TokenStream2::new(), wait)
+        }
     };
     WrapperParam {
         declaration: quote!(#ident: #argument),
@@ -217,8 +267,9 @@ fn resource_param(
 }
 
 /// The expression that a synchronous call named `callable` locks the value
-/// `shared` with, alone if `exclusive`. It evaluates to the guard, or returns
-/// the host's error that the resource is busy.
+/// `shared` with, alone if `exclusive`, through the host's `read` or `write`.
+/// It evaluates to the guard, or returns the host's error that the resource
+/// is busy.
 pub(super) fn sync_lock(
     backend: HostBackend,
     shared: &TokenStream2,
@@ -226,31 +277,23 @@ pub(super) fn sync_lock(
     callable: &str,
 ) -> TokenStream2 {
     let convert = backend.convert();
-    let (attempt, wait) = if exclusive {
-        (quote!(try_write), quote!(blocking_write))
+    let lock = if exclusive {
+        quote!(write)
     } else {
-        (quote!(try_read), quote!(blocking_read))
+        quote!(read)
     };
-    let busy = quote! {
-        #convert::runtime_error(&::bimetal::runtime::ResourceError::Busy(#callable))
-    };
-    match backend.sync_locks() {
-        SyncLocks::Try => quote!(#shared.#attempt().map_err(|_| #busy)?),
-        // A free resource is taken with the host's lock held. Only a busy
-        // one makes the call release that lock to wait.
-        SyncLocks::Detach => {
-            let context = backend.context();
-            quote! {
-                match #shared.#attempt() {
-                    Ok(__bimetal_guard) => __bimetal_guard,
-                    Err(_) if ::bimetal::runtime::inside_callback() => return Err(#busy),
-                    Err(_) => #context.detach(|| {
-                        ::bimetal::runtime::executor::allow_blocking(|| #shared.#wait())
-                    }),
-                }
-            }
-        }
-    }
+    let context = lock_context(backend);
+    quote!(#convert::#lock(#context &#shared, #callable)?)
+}
+
+/// The host context that a synchronous lock takes first, followed by a
+/// comma: Python's interpreter token, which a busy lock releases while it
+/// waits. Hosts that cannot wait take none.
+fn lock_context(backend: HostBackend) -> Option<TokenStream2> {
+    matches!(backend.sync_locks(), SyncLocks::Detach).then(|| {
+        let context = backend.context();
+        quote!(#context,)
+    })
 }
 
 /// Generated wrapper return type and the statements that produce it from
@@ -275,16 +318,6 @@ pub(super) fn return_plan(
     let convert = backend.convert();
     let context = backend.context().map(|context| quote!(#context,));
     let (ty, success) = match (&returns.direct, &returns.value) {
-        (Some(DirectType::Resource { .. }), Some(_)) => match &host_value {
-            HostValue::Object { result, .. } => (
-                result.clone(),
-                quote!(#convert::resource_to_host(#context __bimetal_value)),
-            ),
-            HostValue::Bindgen => (
-                quote!(::bimetal::__private::wasm_bindgen::JsValue),
-                quote!(::std::result::Result::Ok(#convert::resource_to_host(__bimetal_value))),
-            ),
-        },
         (Some(direct), Some(value)) => {
             let owned = value.owned();
             let reference = value.reference();
@@ -322,10 +355,23 @@ pub(super) fn return_plan(
                 (ty, success)
             }
         }
-        _ => (
-            host_value.result(),
-            quote!(#convert::to_host(#context &__bimetal_value, #callable)),
-        ),
+        // A value crosses as its type's crossing says, through the host's `Return`;
+        // Python's Serde path follows a plan built once at each call site.
+        _ => {
+            let serde = quote!(::bimetal::crossing::Serde);
+            let crossing = returns.crossing.as_ref().unwrap_or(&serde);
+            let to_host = quote!(<#crossing as #convert::Return<_>>::to_host);
+            let success = match backend {
+                HostBackend::Python => quote! {{
+                    static __BIMETAL_PLAN: #convert::ValuePlan = #convert::ValuePlan::new();
+                    #to_host(#context &__BIMETAL_PLAN, __bimetal_value, #callable)
+                }},
+                HostBackend::Node | HostBackend::Wasm => {
+                    quote!(#to_host(#context __bimetal_value, #callable))
+                }
+            };
+            (host_value.result(), success)
+        }
     };
     HostReturnPlan {
         ty,

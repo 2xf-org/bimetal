@@ -6,6 +6,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from greeter._runtime import (
+    register_classes as _bimetal_register_classes,
+)
+
 
 class Greeting(BaseModel):
     """
@@ -58,6 +62,13 @@ class Tone(StrEnum):
 
 Greeting.model_rebuild()
 GreetingRequest.model_rebuild()
+
+
+_bimetal_register_classes({
+    "greeter::greeter::Greeting": Greeting,
+    "greeter::greeter::GreetingRequest": GreetingRequest,
+    "greeter::greeter::Tone": Tone,
+})
 
 __all__ = [
     "Greeting",

@@ -9,7 +9,7 @@ use quote::quote;
 
 use crate::export::boundary::{self, HostReturnPlan};
 use crate::export::host_backend::{AsyncStyle, HostBackend, SyncLocks};
-use crate::types::{DirectType, Param, ParamValue, Signature};
+use crate::types::{Param, ParamValue, Signature};
 
 /// How a wrapper reaches the Rust value of a resource.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,7 +64,7 @@ pub(super) fn plan_free(
 /// A synchronous call holds the resource lock until its result has converted.
 /// An async call decodes its arguments and takes the lock when the host makes
 /// the call, or waits for the lock in its future if another call holds it,
-/// and keeps it until its result has converted.
+/// and keeps it as [`async_call`] says.
 pub(super) fn plan(
     signature: &Signature<'_>,
     backend: HostBackend,
@@ -88,7 +88,7 @@ pub(super) fn plan(
     } else {
         boundary::return_plan(&signature.returns, backend, callable)
     };
-    let reached = reached_resources(signature, backend, access, callable);
+    let reached = reached_resources(signature, access);
     let error_ty = backend.error_ty();
     let (return_ty, call) = if signature.is_async {
         let awaitable = backend.host_value().result();
@@ -97,7 +97,12 @@ pub(super) fn plan(
         let start = if signature.params.iter().any(Param::waits_for_host) {
             quote!(Runtime)
         } else {
-            quote!(Caller)
+            // Each export's pace decides where its calls start.
+            quote!(Caller({
+                static __BIMETAL_PACE: ::bimetal::runtime::executor::Pace =
+                    ::bimetal::runtime::executor::Pace::new();
+                &__BIMETAL_PACE
+            }))
         };
         (
             quote!(::std::result::Result<#awaitable, #error_ty>),
@@ -118,7 +123,8 @@ pub(super) fn plan(
             sync_call(
                 backend,
                 access,
-                matches!(signature.returns.direct, Some(DirectType::Resource { .. })),
+                signature.returns.crossing.as_ref(),
+                signature.brief,
                 &invocation,
                 &returns.body,
                 callable,
@@ -138,45 +144,39 @@ pub(super) fn plan(
 }
 
 /// Start the record of the resources that the call reaches, with the
-/// receiver's, when it takes any as arguments.
-fn reached_resources(
-    signature: &Signature<'_>,
-    backend: HostBackend,
-    access: Access,
-    callable: &str,
-) -> TokenStream2 {
-    let takes_resources = signature
-        .params
-        .iter()
-        .any(|param| matches!(param.value, ParamValue::Direct(DirectType::Resource { .. })));
+/// receiver's, when it takes arguments that may be resources: those that
+/// cross as their types say. The record is a few words on the stack, which
+/// the optimizer removes when no argument is a resource.
+fn reached_resources(signature: &Signature<'_>, access: Access) -> TokenStream2 {
+    let takes_resources = signature.params.iter().any(|param| {
+        matches!(
+            param.value,
+            ParamValue::Value(_) | ParamValue::Resource { .. }
+        )
+    });
     if !takes_resources {
         return TokenStream2::new();
     }
-    let convert = backend.convert();
-    let receiver = matches!(access, Access::Read | Access::Write | Access::Take).then(|| {
-        quote! {
-            __bimetal_reached.add(&self.inner, #callable).map_err(|__bimetal_error| {
-                #convert::runtime_error(&__bimetal_error)
-            })?;
-        }
-    });
-    quote! {
-        let mut __bimetal_reached = ::bimetal::runtime::ReachedResources::default();
-        #receiver
-    }
+    let reached = quote!(::bimetal::runtime::ReachedResources);
+    let start = match access {
+        Access::Read | Access::Write | Access::Take => quote!(#reached::with_receiver(&self.inner)),
+        Access::Free | Access::Construct => quote!(#reached::default()),
+    };
+    quote!(let mut __bimetal_reached = #start;)
 }
 
 /// Reach the resource value, call Rust, and convert the result.
 ///
 /// On a host whose async calls run on the shared executor, a call that makes
-/// a resource, a constructor, a factory, or one that `makes_resource` says
-/// returns one, enters its runtime, so that the resource can spawn tasks.
+/// a resource, a constructor, a factory, or one whose result's `crossing`
+/// is a resource's, enters its runtime, so that the resource can spawn tasks.
 /// Other calls do not, so a package without resources or async calls never
 /// starts the runtime's threads.
 fn sync_call(
     backend: HostBackend,
     access: Access,
-    makes_resource: bool,
+    crossing: Option<&TokenStream2>,
+    brief: bool,
     invocation: &TokenStream2,
     result_body: &TokenStream2,
     callable: &str,
@@ -200,19 +200,23 @@ fn sync_call(
     });
     let take = (access == Access::Take).then(|| take_inner(backend, callable));
     // Decoded arguments are owned Rust values, so a call that detaches runs
-    // while other host threads, such as an event loop, keep running.
+    // while other host threads, such as an event loop, keep running. A brief
+    // call keeps the lock, which costs less than releasing it.
     let call = match backend.sync_locks() {
-        SyncLocks::Detach => quote!(#context.detach(|| #invocation)),
-        SyncLocks::Try => invocation.clone(),
+        SyncLocks::Detach if !brief => quote!(#context.detach(|| #invocation)),
+        SyncLocks::Detach | SyncLocks::Try => invocation.clone(),
     };
-    let runtime = match (
-        access == Access::Construct || makes_resource,
-        backend.async_style(),
-    ) {
-        (true, AsyncStyle::Awaitable { .. }) => {
-            quote!(let __bimetal_runtime = ::bimetal::runtime::executor::enter();)
+    let enter = quote!(::bimetal::runtime::executor::enter);
+    let runtime = match (backend.async_style(), crossing) {
+        (AsyncStyle::Promise, _) => TokenStream2::new(),
+        (AsyncStyle::Awaitable { .. }, _) if access == Access::Construct => {
+            quote!(let __bimetal_runtime = #enter();)
         }
-        (false, _) | (_, AsyncStyle::Promise) => TokenStream2::new(),
+        (AsyncStyle::Awaitable { .. }, Some(crossing)) => quote! {
+            let __bimetal_runtime =
+                <#crossing as ::bimetal::crossing::Crossing>::RESOURCE.then(#enter);
+        },
+        (AsyncStyle::Awaitable { .. }, None) => TokenStream2::new(),
     };
     quote! {
         #lock
@@ -225,10 +229,16 @@ fn sync_call(
     }
 }
 
-/// Take the resource lock, start the Rust future, and convert its result
-/// before the lock is released: inside the future for a promise, and in the
-/// deferred conversion for an awaitable, whose first poll is where the
+/// Take the resource lock, start the Rust future, and convert its result:
+/// inside the future for a promise, and in the deferred conversion for an
+/// awaitable, on the host's thread, whose first poll is where the
 /// `executor::Start` variant `start` says.
+///
+/// The lock holds until the result has converted, so a synchronous call that
+/// the host makes before the async call settles reports the resource busy. A
+/// host whose synchronous calls wait for the lock instead converts on the
+/// thread that such a call blocks, so there the lock goes when the Rust call
+/// returns: the conversion reads only the call's owned result.
 fn async_call(
     backend: HostBackend,
     access: Access,
@@ -255,11 +265,15 @@ fn async_call(
     let release = lock
         .is_some()
         .then(|| quote!(::core::mem::drop(__bimetal_guard);));
+    let (released, converted_then_released) = match backend.sync_locks() {
+        SyncLocks::Detach => (release, None),
+        SyncLocks::Try => (None, release),
+    };
     let inner = bind_inner(access, &quote!(__bimetal_lock.await));
     let result_body = &returns.body;
     let converted = quote! {
         let __bimetal_output = { #result_body };
-        #release
+        #converted_then_released
         __bimetal_output
     };
     match backend.async_style() {
@@ -272,6 +286,7 @@ fn async_call(
                     #waits
                     #inner
                     let __bimetal_result = #invocation.await;
+                    #released
                     #[allow(unused_variables)]
                     let __bimetal_output = #runtime::deferred(move |#context| { #converted });
                     Ok(__bimetal_output)
@@ -288,6 +303,7 @@ fn async_call(
                     #waits
                     #inner
                     let __bimetal_result = #invocation.await;
+                    #released
                     let __bimetal_output: ::std::result::Result<#ty, #error_ty> = { #converted };
                     __bimetal_output.map(::core::convert::Into::into)
                 }))
