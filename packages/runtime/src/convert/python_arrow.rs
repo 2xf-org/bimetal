@@ -354,9 +354,7 @@ impl Drop for ExportedStream {
 /// as a consumer that Python code calls may.
 fn released<T: Send>(pull: impl FnOnce() -> T + Send) -> T {
     let mut pull = Some(pull);
-    // SAFETY: the call reads this thread's state, which exists while the
-    // thread holds the interpreter lock, and returns NULL without it.
-    if !unsafe { pyo3::ffi::PyThreadState_GetDict() }.is_null() {
+    if may_hold_lock() {
         // pyo3 refuses while the interpreter shuts down, and the pull then
         // keeps the lock.
         let detached = Python::try_attach(|py| py.detach(|| pull.take().map(|pull| pull())));
@@ -366,6 +364,23 @@ fn released<T: Send>(pull: impl FnOnce() -> T + Send) -> T {
     }
     pull.take()
         .expect("the pull runs here unless it ran detached")()
+}
+
+/// Return whether this thread may hold the interpreter lock. From Python
+/// 3.12 the current thread state is this thread's, so the answer is exact.
+/// Python 3.11 keeps one current thread state, the holder's, which another
+/// thread must not touch, so there a thread with a state of its own may hold
+/// the lock, and attaching, which returns at once if it does, finds out.
+fn may_hold_lock() -> bool {
+    // SAFETY: Python sets its version before it loads any extension.
+    if unsafe { pyo3::ffi::Py_Version } >= 0x030c_0000 {
+        // SAFETY: from 3.12 this reads this thread's own state, which exists
+        // only while the thread holds the lock, and returns NULL without it.
+        !unsafe { pyo3::ffi::PyThreadState_GetDict() }.is_null()
+    } else {
+        // SAFETY: any thread may read its own state.
+        !unsafe { pyo3::ffi::PyGILState_GetThisThreadState() }.is_null()
+    }
 }
 
 /// A schema that Python imports through `__arrow_c_schema__`.
