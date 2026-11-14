@@ -144,9 +144,8 @@ pub(super) fn plan(
 }
 
 /// Start the record of the resources that the call reaches, with the
-/// receiver's, when it takes arguments that may be resources: those that
-/// cross as their types say. The record is a few words on the stack, which
-/// the optimizer removes when no argument is a resource.
+/// receiver's, when an argument may be a resource. The record is a few words
+/// on the stack, which the optimizer removes when no argument is one.
 fn reached_resources(signature: &Signature<'_>, access: Access) -> TokenStream2 {
     let takes_resources = signature.params.iter().any(|param| {
         matches!(
@@ -199,9 +198,8 @@ fn sync_call(
         }
     });
     let take = (access == Access::Take).then(|| take_inner(backend, callable));
-    // Decoded arguments are owned Rust values, so a call that detaches runs
-    // while other host threads, such as an event loop, keep running. A brief
-    // call keeps the lock, which costs less than releasing it.
+    // Decoded arguments are owned, so a detached call lets other host threads,
+    // such as an event loop, run. A brief call keeps the interpreter lock instead.
     let call = match backend.sync_locks() {
         SyncLocks::Detach if !brief => quote!(#context.detach(|| #invocation)),
         SyncLocks::Detach | SyncLocks::Try => invocation.clone(),
@@ -230,15 +228,14 @@ fn sync_call(
 }
 
 /// Take the resource lock, start the Rust future, and convert its result:
-/// inside the future for a promise, and in the deferred conversion for an
-/// awaitable, on the host's thread, whose first poll is where the
-/// `executor::Start` variant `start` says.
+/// inside the future for a promise, and for an awaitable, whose first poll is
+/// where the `executor::Start` variant `start` says, in the deferred
+/// conversion on the host's thread.
 ///
-/// The lock holds until the result has converted, so a synchronous call that
-/// the host makes before the async call settles reports the resource busy. A
-/// host whose synchronous calls wait for the lock instead converts on the
-/// thread that such a call blocks, so there the lock goes when the Rust call
-/// returns: the conversion reads only the call's owned result.
+/// On a host whose synchronous calls fail on a busy lock, the lock holds until
+/// the result has converted. On one whose synchronous calls wait for it, the
+/// lock goes when the Rust call returns, because the conversion runs on the
+/// thread that such a call would block, and reads only the call's owned result.
 fn async_call(
     backend: HostBackend,
     access: Access,

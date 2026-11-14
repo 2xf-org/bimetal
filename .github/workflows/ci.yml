@@ -51,13 +51,13 @@ jobs:
         if: matrix.platform == 'Linux x86_64'
         run: mise run lab -- --hosts python,node --rounds 3 --samples 10 --cases noop --gate apps/benchmark/lab-gate.json
       # The Wasm loader is what needs Node.js 20.16, so the showcase's
-      # package loads here beside greeter's Node.js addon.
+      # package loads here beside the bank's Node.js addon.
       - name: Load the packages on a newer Python and the oldest supported Node.js
         run: |
-          uv run --locked --python 3.13 --project apps/examples/greeter/python python -c \
-            'from greeter import GreetingRequest, greet; print(greet(GreetingRequest(name="Ada", tone="formal")).message)'
+          uv run --locked --python 3.13 --project apps/examples/bank/python python -c \
+            'from bank import Account; account = Account(); account.deposit(100); print(account.balance())'
           mise exec node@20.16.0 -- node --input-type=module -e \
-            'const { greet } = await import("./apps/examples/greeter/typescript/greeter/index.js"); console.log(greet({ name: "Ada", tone: "formal" }).message);'
+            'const { Account } = await import("./apps/examples/bank/typescript/bank/index.js"); const account = new Account(); account.deposit(100); console.log(account.balance());'
           mise exec node@20.16.0 -- node --input-type=module -e \
             'const { repeat } = await import("./apps/examples/showcase/typescript/showcase/index.js"); console.log(repeat("ab", 2));'
 

@@ -1,0 +1,14 @@
+{
+  "//": "Type-checks the tests against the generated declarations.",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2024", "ESNext.Disposable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2024",
+    "types": ["node"]
+  },
+  "include": ["*.ts", "tests/**/*.ts"]
+}

@@ -1,4 +1,8 @@
-"""Polars through the generated Python package."""
+"""
+Polars through the generated Python package.
+"""
+
+from __future__ import annotations
 
 import unittest
 
@@ -17,6 +21,9 @@ CSV = b"name,age\nAda,36\nGrace,45\nAlan,41\n"
 
 
 def trades() -> Frame:
+    """
+    A frame of `TRADES`.
+    """
     return Frame(TRADES)
 
 
@@ -78,6 +85,9 @@ class FrameTests(unittest.TestCase):
 
 
 def pa_frame(rows: int) -> Frame:
+    """
+    A frame made from a pyarrow table, whose one column `n` counts `rows` rows from zero.
+    """
     return Frame(pa.table({"n": list(range(rows))}))
 
 
@@ -97,6 +107,7 @@ class ArrowTests(unittest.TestCase):
         self.assertEqual((frame.height, frame.columns), (0, ["n"]))
 
     def test_a_python_polars_frame_crosses_both_ways(self) -> None:
+        # Polars is not a dependency of this project, so the test runs only where it is installed.
         try:
             import polars
         except ImportError:
@@ -167,9 +178,7 @@ class SessionTests(unittest.TestCase):
             session.register("trades", trades())
             session.register("names", Frame.from_rows([{"symbol": "NVDA", "name": "Nvidia"}]))
             self.assertEqual(sorted(session.tables), ["names", "trades"])
-            result = session.sql(
-                "select n.name, t.size from trades t join names n on t.symbol = n.symbol"
-            )
+            result = session.sql("select n.name, t.size from trades t join names n on t.symbol = n.symbol")
             self.assertEqual(result.to_rows(), [{"name": "Nvidia", "size": 10}])
 
 

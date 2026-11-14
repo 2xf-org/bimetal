@@ -17,7 +17,7 @@ use bimetal_ir::{
 use crate::contract::{self, NamespaceItems};
 use crate::literal;
 
-use super::context::PythonContext;
+use super::context::{LINE_WIDTH, PythonContext};
 use super::package::MODELS_MODULE;
 use super::render;
 
@@ -41,13 +41,13 @@ pub(super) fn python_models(
         render::begin_python_alias(&mut source);
         let _ = writeln!(
             source,
-            "{name}: {alias} = {annotated}[\n    {array}[{np}.{scalar}],\n    {before}(lambda value: {np}.asarray(value, dtype={np}.{scalar})),\n    {serializer}(lambda value: value.tolist(), return_type={list}[{item}]),\n]",
-            alias = context.import("TypeAlias"),
-            annotated = context.import("Annotated"),
-            array = context.import("NDArray"),
-            np = context.import("np"),
-            before = context.import("BeforeValidator"),
-            serializer = context.import("PlainSerializer"),
+            "{name}: {alias} = {annotated}[\n    {array}[{numpy}.{scalar}],\n    {before}(lambda value: {numpy}.asarray(value, dtype={numpy}.{scalar})),\n    {serializer}(lambda value: value.tolist(), return_type={list}[{item}]),\n]",
+            alias = context.import("typing.TypeAlias"),
+            annotated = context.import("typing.Annotated"),
+            array = context.import("numpy.typing.NDArray"),
+            numpy = context.import("numpy"),
+            before = context.import("pydantic.BeforeValidator"),
+            serializer = context.import("pydantic.PlainSerializer"),
             list = context.builtin("list"),
         );
     }
@@ -73,23 +73,28 @@ pub(super) fn python_models(
         }
     }
     emit_class_registration(&mut source, items, context);
-    Ok(context.module(MODELS_MODULE, &source))
+    let docstring = format!(
+        "The models of `{}`.",
+        render::python_namespace_module(context.package, context.namespace)
+    );
+    Ok(context.module(MODELS_MODULE, &docstring, &source))
 }
 
-/// Register the namespace's classes by their keys, which the extension
-/// makes its results of: each model and string enum, and for an enum with
-/// data, the class of each variant by its wire name.
+/// Emit the registration of the namespace's classes by key, from which the
+/// extension makes its results: each model and string enum, and for an enum
+/// with data, each variant's class by its wire name.
 fn emit_class_registration(
     source: &mut String,
     items: &NamespaceItems<'_>,
     context: &PythonContext<'_>,
 ) {
-    let mut entries = Vec::new();
+    // Each entry is its key and its class, or its variants' classes.
+    let mut entries: Vec<(String, Result<String, Vec<String>>)> = Vec::new();
     for definition in &items.types {
         let key = literal::quoted(&definition.identity().to_string());
         let variants: Vec<(&str, &str)> = match &definition.shape {
             TypeShape::Struct { .. } | TypeShape::StringEnum { .. } => {
-                entries.push(format!("    {key}: {},", definition.name));
+                entries.push((key, Ok(definition.name.clone())));
                 continue;
             }
             TypeShape::Alias { .. } => continue,
@@ -112,18 +117,36 @@ fn emit_class_registration(
                 )
             })
             .collect();
-        entries.push(format!("    {key}: {{{}}},", classes.join(", ")));
+        entries.push((key, Err(classes)));
     }
     if entries.is_empty() {
         return;
     }
     render::begin_python_top_level(source);
-    let _ = writeln!(
-        source,
-        "{}({{\n{}\n}})",
-        context.runtime("register_classes"),
-        entries.join("\n")
-    );
+    let call = format!("{}(", context.runtime("register_classes"));
+    let flat: Vec<String> = entries
+        .iter()
+        .map(|(key, classes)| match classes {
+            Ok(class) => format!("{key}: {class}"),
+            Err(classes) => format!("{key}: {{{}}}", classes.join(", ")),
+        })
+        .collect();
+    let line = format!("{call}{{{}}})", flat.join(", "));
+    if line.chars().count() <= LINE_WIDTH {
+        let _ = writeln!(source, "{line}");
+        return;
+    }
+    let _ = writeln!(source, "{call}\n    {{");
+    for (key, classes) in &entries {
+        let entry = match classes {
+            Ok(class) => format!("        {key}: {class}"),
+            Err(classes) => {
+                render::bracketed(&format!("        {key}: {{"), classes, "}", "        ")
+            }
+        };
+        let _ = writeln!(source, "{entry},");
+    }
+    source.push_str("    }\n)\n");
 }
 
 /// Order local aliases after the local declarations on which they depend.
@@ -185,7 +208,7 @@ fn emit_python_type(
                 source,
                 "class {}({}):",
                 definition.name,
-                context.import("BaseModel")
+                context.import("pydantic.BaseModel")
             );
             if render::emit_python_doc(source, definition.docs.as_deref(), "    ") {
                 source.push('\n');
@@ -206,7 +229,7 @@ fn emit_python_type(
                 source,
                 "class {}({}):",
                 definition.name,
-                context.import("StrEnum")
+                context.import("enum.StrEnum")
             );
             if render::emit_python_doc(source, definition.docs.as_deref(), "    ")
                 && !variants.is_empty()
@@ -239,7 +262,7 @@ fn emit_python_type(
                 source,
                 "{}: {} = {}",
                 definition.name,
-                context.import("TypeAlias"),
+                context.import("typing.TypeAlias"),
                 render::python_ref(target, context)?
             );
         }
@@ -260,7 +283,11 @@ fn emit_python_tagged_enum(
     for variant in variants {
         let name = contract::tagged_variant_name(&definition.name, &variant.rust_name);
         render::begin_python_top_level(source);
-        let _ = writeln!(source, "class {name}({}):", context.import("BaseModel"));
+        let _ = writeln!(
+            source,
+            "class {name}({}):",
+            context.import("pydantic.BaseModel")
+        );
         if render::emit_python_doc(source, variant.docs.as_deref(), "    ") {
             source.push('\n');
         }
@@ -273,13 +300,16 @@ fn emit_python_tagged_enum(
         let context = &context.within(names.iter().map(String::as_str).chain([tag_name.as_str()]));
         let mut options = vec![format!("default={}", literal::quoted(&variant.wire_name))];
         options.extend(wire_name_options(&tag_name, tag));
+        let start = format!(
+            "    {tag_name}: {}[{}] = {}(",
+            context.import("typing.Literal"),
+            literal::quoted(&variant.wire_name),
+            context.import("pydantic.Field"),
+        );
         let _ = writeln!(
             source,
-            "    {tag_name}: {}[{}] = {}({})",
-            context.import("Literal"),
-            literal::quoted(&variant.wire_name),
-            context.import("Field"),
-            options.join(", "),
+            "{}",
+            render::bracketed(&start, &options, ")", "    ")
         );
         for field in &variant.fields {
             emit_python_field(source, field, context, "    ")?;
@@ -294,14 +324,21 @@ fn emit_python_tagged_enum(
     // Serde; a variant's model fills it in only when it is built directly.
     render::begin_python_top_level(source);
     render::emit_python_comment_docs(source, definition.docs.as_deref(), "#: ");
+    let start = format!(
+        "{}: {} = {}[",
+        definition.name,
+        context.import("typing.TypeAlias"),
+        context.import("typing.Annotated"),
+    );
+    let discriminator = format!(
+        "{}(discriminator={})",
+        context.import("pydantic.Field"),
+        literal::quoted(&tag_name)
+    );
     let _ = writeln!(
         source,
-        "{}: {} = {}[{names}, {}(discriminator={})]",
-        definition.name,
-        context.import("TypeAlias"),
-        context.import("Annotated"),
-        context.import("Field"),
-        literal::quoted(&tag_name),
+        "{}",
+        render::bracketed(&start, &[names, discriminator], "]", "")
     );
     Ok(())
 }
@@ -344,8 +381,8 @@ fn emit_python_external_enum(
             emit_python_field(source, field, context, "    ")?;
         }
     }
-    let annotated = context.import("Annotated");
-    let tag = context.runtime("variant_tag");
+    let annotated = context.import("typing.Annotated");
+    let tag = context.import("pydantic.Tag");
     let members = variants
         .iter()
         .map(|variant| {
@@ -355,16 +392,31 @@ fn emit_python_external_enum(
                 literal::quoted(&variant.wire_name)
             )
         })
-        .collect::<Vec<_>>()
-        .join("\n    | ");
+        .collect::<Vec<_>>();
+    // The union goes on its own line when it fits there, and otherwise one
+    // member per line.
+    let union = members.join(" | ");
+    let union = if union.chars().count() + 5 <= LINE_WIDTH {
+        union
+    } else {
+        members.join("\n    | ")
+    };
     render::begin_python_top_level(source);
     render::emit_python_comment_docs(source, definition.docs.as_deref(), "#: ");
+    let start = format!(
+        "{}: {} = {annotated}[",
+        definition.name,
+        context.import("typing.TypeAlias"),
+    );
+    let discriminator = format!(
+        "{}({})",
+        context.import("pydantic.Discriminator"),
+        context.runtime("external_name")
+    );
     let _ = writeln!(
         source,
-        "{}: {} = {annotated}[\n    {members},\n    {},\n]",
-        definition.name,
-        context.import("TypeAlias"),
-        context.runtime("external_discriminator")
+        "{}",
+        render::bracketed(&start, &[union, discriminator], "]", "")
     );
     Ok(())
 }
@@ -390,7 +442,7 @@ fn emit_model_config(source: &mut String, context: &PythonContext<'_>) {
     let _ = writeln!(
         source,
         "    model_config = {}(\n        frozen=True,\n        populate_by_name=True,\n        extra=\"forbid\",\n        arbitrary_types_allowed=True,\n        protected_namespaces=(),\n    )",
-        context.import("ConfigDict")
+        context.import("pydantic.ConfigDict")
     );
 }
 
@@ -430,14 +482,18 @@ const BASE_MODEL_MEMBERS: [&str; 28] = [
 /// Return the Python name of a model field, or of a tagged union's tag.
 ///
 /// As a keyword does, the name of a `BaseModel` member gains `_value`
-/// (`json_value`), and so does a name with leading underscores, without
+/// (`json_value`), and so does the name of a module that the class body
+/// reaches (`datetime_value`), and a name with leading underscores, without
 /// them (`_id` becomes `id_value`), which Pydantic would take for a private
 /// attribute rather than a field. The wire name stays an alias of the field.
 #[must_use]
 pub(crate) fn python_field_name(rust_name: &str) -> String {
     let public_name = rust_name.trim_start_matches('_');
     let mut name = python_names::identifier(public_name);
-    if BASE_MODEL_MEMBERS.contains(&name.as_str()) || public_name.len() < rust_name.len() {
+    if BASE_MODEL_MEMBERS.contains(&name.as_str())
+        || python_names::IMPORTED_MODULES.contains(&name.as_str())
+        || public_name.len() < rust_name.len()
+    {
         name.push_str("_value");
     }
     name
@@ -474,7 +530,7 @@ fn emit_python_field(
     let annotation = if let Some(value) = &field.constraints.literal {
         format!(
             "{}[{}]",
-            context.import("Literal"),
+            context.import("typing.Literal"),
             render::python_scalar(value)
         )
     } else {
@@ -483,7 +539,7 @@ fn emit_python_field(
     let name = python_field_name(&field.rust_name);
     let mut options = vec![python_field_default(field, context)?];
     if let Some(docs) = field.docs.as_deref() {
-        options.push(format!("description={}", literal::quoted(docs)));
+        options.push(format!("description={}", render::python_string(docs)));
     }
     options.extend(wire_name_options(&name, &field.wire_name));
     if let Some(value) = field.constraints.min_length {
@@ -498,11 +554,14 @@ fn emit_python_field(
     if let Some(value) = field.constraints.le {
         options.push(format!("le={value}"));
     }
+    let start = format!(
+        "{indent}{name}: {annotation} = {}(",
+        context.import("pydantic.Field")
+    );
     let _ = writeln!(
         source,
-        "{indent}{name}: {annotation} = {}({})",
-        context.import("Field"),
-        options.join(", ")
+        "{}",
+        render::bracketed(&start, &options, ")", indent)
     );
     Ok(())
 }
@@ -592,17 +651,20 @@ mod tests {
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
 
         // Pydantic copies a literal; a model is validated for each model.
-        assert!(source.contains("    share: float = Field(default=0.5)\n"));
-        assert!(source.contains("    tags: list[str] = Field(default=[])\n"));
+        assert!(source.contains("    share: float = pydantic.Field(default=0.5)\n"));
+        assert!(source.contains("    tags: list[str] = pydantic.Field(default=[])\n"));
+        assert!(source.contains("\nBIMETAL_ADAPTER_0 = bimetal.Adapter(lambda: Retry)\n"));
         assert!(source.contains(
-            "    retry: Retry = Field(default_factory=lambda: _bimetal_type_adapter(Retry).validate_python({\"attempts\": 3}, strict=False))\n"
-        ));
+            "    retry: Retry = pydantic.Field(default_factory=lambda: BIMETAL_ADAPTER_0.validate({\"attempts\": 3}))\n"
+        ), "{source}");
         // A default function can give an `Option` a value other than `None`.
-        assert!(source.contains("    fallback: str | None = Field(default=\"dead-letter\")\n"));
+        assert!(
+            source.contains("    fallback: str | None = pydantic.Field(default=\"dead-letter\")\n")
+        );
     }
 
     #[test]
-    fn fields_named_like_builtins_or_model_members_stay_usable() {
+    fn fields_named_like_builtins_modules_or_model_members_stay_usable() {
         let list = |item: TypeRef| TypeRef::List {
             item: Box::new(item),
         };
@@ -619,6 +681,7 @@ mod tests {
                     fixtures::typed_field("json", TypeRef::String),
                     fixtures::typed_field("model_dump", TypeRef::String),
                     fixtures::typed_field("model_name", TypeRef::String),
+                    fixtures::typed_field("datetime", TypeRef::Date),
                 ],
             },
         );
@@ -642,16 +705,18 @@ mod tests {
 
         // Only a module whose code reaches a hidden builtin imports
         // `builtins`, beside what the models use.
-        assert!(source.starts_with("from __future__ import annotations\n\nimport builtins as _bimetal_builtins\n\nfrom pydantic import BaseModel, ConfigDict, Field\n\nfrom test._runtime import (\n    register_classes as _bimetal_register_classes,\n)\n\n\nclass Listing(BaseModel):\n"), "{source}");
+        assert!(source.starts_with("\"\"\"\nThe models of `test`.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport builtins\nimport datetime\n\nimport pydantic\n\nfrom test import bimetal\n\n\nclass Listing(pydantic.BaseModel):\n"), "{source}");
         // The field `list` hides the builtin in its class, before and after.
-        assert!(source.contains("    list: _bimetal_builtins.list[str] = Field(default=...)\n"));
-        assert!(source.contains("    counts: _bimetal_builtins.list[int] = Field(default=...)\n"));
-        // `BaseModel` members are renamed and keep their wire names.
-        assert!(source.contains("    json_value: str = Field(default=..., validation_alias=\"json\", serialization_alias=\"json\")\n"));
-        assert!(source.contains("    model_dump_value: str = Field(default=..., validation_alias=\"model_dump\", serialization_alias=\"model_dump\")\n"));
-        assert!(source.contains("    model_name: str = Field(default=...)\n"));
+        assert!(source.contains("    list: builtins.list[str] = pydantic.Field(default=...)\n"));
+        assert!(source.contains("    counts: builtins.list[int] = pydantic.Field(default=...)\n"));
+        // `BaseModel` members and the modules that the class uses are renamed
+        // and keep their wire names.
+        assert!(source.contains("    json_value: str = pydantic.Field(default=..., validation_alias=\"json\", serialization_alias=\"json\")\n"));
+        assert!(source.contains("    model_dump_value: str = pydantic.Field(default=..., validation_alias=\"model_dump\", serialization_alias=\"model_dump\")\n"), "{source}");
+        assert!(source.contains("    model_name: str = pydantic.Field(default=...)\n"));
+        assert!(source.contains("    datetime_value: datetime.date = pydantic.Field(\n        default=...,\n        validation_alias=\"datetime\",\n        serialization_alias=\"datetime\",\n    )\n"), "{source}");
         // Other classes keep the builtin.
-        assert!(source.contains("    names: list[str] = Field(default=...)\n"));
+        assert!(source.contains("    names: list[str] = pydantic.Field(default=...)\n"));
     }
 
     #[test]
@@ -668,19 +733,19 @@ mod tests {
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
 
-        assert!(source.contains("from test._runtime import (\n    ExternalVariant as _bimetal_ExternalVariant,\n    external_discriminator as _bimetal_external_discriminator,\n    register_classes as _bimetal_register_classes,\n    variant_tag as _bimetal_variant_tag,\n)\n"));
-        // The extension makes each variant of its class, by its wire name.
-        assert!(source.contains("_bimetal_register_classes({\n    \"test::test::Shape\": {\"empty\": ShapeEmpty, \"label\": ShapeLabel, \"circle\": ShapeCircle},\n})\n"), "{source}");
-        assert!(source.contains("class ShapeEmpty(_bimetal_ExternalVariant):\n    __bimetal_variant__ = \"empty\"\n    __bimetal_form__ = \"unit\"\n    model_config = ConfigDict("));
+        assert!(source.contains("\nfrom test import bimetal\n"));
+        // Each variant's class is registered by its wire name.
+        assert!(source.contains("bimetal.register_classes({\"test::test::Shape\": {\"empty\": ShapeEmpty, \"label\": ShapeLabel, \"circle\": ShapeCircle}})\n"), "{source}");
+        assert!(source.contains("class ShapeEmpty(bimetal.ExternalVariant):\n    __bimetal_variant__ = \"empty\"\n    __bimetal_form__ = \"unit\"\n    model_config = pydantic.ConfigDict("));
         assert!(
             source.contains(
                 "    __bimetal_variant__ = \"label\"\n    __bimetal_form__ = \"value\"\n"
             )
         );
-        assert!(source.contains("    value: str = Field(default=...)\n"));
-        assert!(source.contains("class ShapeCircle(_bimetal_ExternalVariant):\n    \"\"\"\n    A circle.\n    \"\"\"\n\n    __bimetal_variant__ = \"circle\"\n    __bimetal_form__ = \"fields\"\n"));
-        assert!(source.contains("    radius: float = Field(default=...)\n"));
-        assert!(source.contains("Shape: TypeAlias = Annotated[\n    Annotated[ShapeEmpty, _bimetal_variant_tag(\"empty\")]\n    | Annotated[ShapeLabel, _bimetal_variant_tag(\"label\")]\n    | Annotated[ShapeCircle, _bimetal_variant_tag(\"circle\")],\n    _bimetal_external_discriminator,\n]\n"));
+        assert!(source.contains("    value: str = pydantic.Field(default=...)\n"));
+        assert!(source.contains("class ShapeCircle(bimetal.ExternalVariant):\n    \"\"\"\n    A circle.\n    \"\"\"\n\n    __bimetal_variant__ = \"circle\"\n    __bimetal_form__ = \"fields\"\n"));
+        assert!(source.contains("    radius: float = pydantic.Field(default=...)\n"));
+        assert!(source.contains("Shape: typing.TypeAlias = typing.Annotated[\n    typing.Annotated[ShapeEmpty, pydantic.Tag(\"empty\")]\n    | typing.Annotated[ShapeLabel, pydantic.Tag(\"label\")]\n    | typing.Annotated[ShapeCircle, pydantic.Tag(\"circle\")],\n    pydantic.Discriminator(bimetal.external_name),\n]\n"), "{source}");
         assert!(source.contains(
             "ShapeEmpty.model_rebuild()\nShapeLabel.model_rebuild()\nShapeCircle.model_rebuild()\n"
         ));
@@ -714,11 +779,13 @@ mod tests {
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
 
         assert!(
-            source.contains("    kind: Literal[\"moved\"] = Field(default=\"moved\")\n"),
+            source.contains(
+                "    kind: typing.Literal[\"moved\"] = pydantic.Field(default=\"moved\")\n"
+            ),
             "{source}"
         );
         assert!(
-            source.contains("Event: TypeAlias = Annotated[EventCreated | EventMoved, Field(discriminator=\"kind\")]\n"),
+            source.contains("Event: typing.TypeAlias = typing.Annotated[EventCreated | EventMoved, pydantic.Field(discriminator=\"kind\")]\n"),
             "{source}"
         );
     }
@@ -764,7 +831,12 @@ mod tests {
 
         emit_python_field(&mut source, &field, &context, "    ").expect("render field");
 
-        assert!(source.contains(r#"description="The \"size\" in bytes.\nMust be positive.""#));
+        // A description with double quotes and no single one is in single
+        // quotes, which then need no escape.
+        assert!(
+            source.contains(r#"description='The "size" in bytes.\nMust be positive.'"#),
+            "{source}"
+        );
     }
 
     #[test]
@@ -793,7 +865,7 @@ mod tests {
         // `alias` would rename the constructor's keyword for type checkers.
         assert_eq!(
             source,
-            "    created_at: AwareDatetime = Field(default=..., validation_alias=\"createdAt\", serialization_alias=\"createdAt\")\n    count: str = Field(default=...)\n    class_value: str = Field(default=..., validation_alias=\"class\", serialization_alias=\"class\")\n    id_value: str = Field(default=..., validation_alias=\"_id\", serialization_alias=\"_id\")\n"
+            "    created_at: pydantic.AwareDatetime = pydantic.Field(\n        default=...,\n        validation_alias=\"createdAt\",\n        serialization_alias=\"createdAt\",\n    )\n    count: str = pydantic.Field(default=...)\n    class_value: str = pydantic.Field(default=..., validation_alias=\"class\", serialization_alias=\"class\")\n    id_value: str = pydantic.Field(default=..., validation_alias=\"_id\", serialization_alias=\"_id\")\n"
         );
     }
 }

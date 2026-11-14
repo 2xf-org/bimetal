@@ -1,11 +1,13 @@
-"""Resources that make and take resources, and the Python features they implement."""
+"""
+Resources that make and take resources, and the Python features they implement.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import collections.abc
 import threading
 import unittest
-from collections.abc import Callable
 
 from showcase.shelf import (
     AsyncSession,
@@ -16,8 +18,8 @@ from showcase.shelf import (
     ShelfErrorFull,
     Shortage,
     ShortageDetails,
-    TitleStream,
     Titles,
+    TitleStream,
     count_both,
     double_size,
     offset,
@@ -25,14 +27,25 @@ from showcase.shelf import (
 
 
 def shelf(*titles: str, limit: int = 3) -> Shelf:
+    """
+    A fiction shelf with room for `limit` books, holding `titles`.
+    """
     result = Shelf("fiction", limit)
     for title in titles:
         result.add(title)
     return result
 
 
-def finishing(call: Callable[[], object]) -> object:
-    """Run `call` on another thread, so that a deadlock fails a test instead of hanging it."""
+def finishing(call: collections.abc.Callable[[], object]) -> object:
+    """
+    Run `call` on another thread, so that a deadlock fails a test instead of hanging it.
+
+    Returns:
+        What `call` returned. What it raised is raised here.
+
+    Raises:
+        AssertionError: If `call` has not finished within ten seconds.
+    """
     outcome: list[object] = []
     failure: list[BaseException] = []
 
@@ -271,7 +284,6 @@ class ErrorDetailsTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "untitled")
         self.assertIsNone(caught.exception.details)
 
-
     def test_an_error_struct_declares_details_too(self) -> None:
         shelf("a").require(1)
         with self.assertRaises(Shortage) as caught:
@@ -368,6 +380,7 @@ class CallbackTest(unittest.TestCase):
         writer.join()
         waiting.join()
         self.assertEqual(reader, [1])
+
     def test_an_exception_reaches_the_caller_as_text(self) -> None:
         def visitor(title: str, index: int) -> bool:
             raise KeyError("no such book")

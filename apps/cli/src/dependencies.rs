@@ -9,8 +9,8 @@ use crate::config::Host;
 use crate::contract::Contract;
 
 /// A host package that generated code imports, with the requirement that a
-/// new project declares for it, whose lowest version the generated code
-/// needs.
+/// new project declares for it. The requirement's lowest version is the
+/// oldest that the generated code works with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HostDependency {
     pub(crate) name: &'static str,

@@ -52,16 +52,23 @@ impl Platform {
 #[must_use]
 pub(crate) fn native_file(host: Host, package: &str, platform: Platform) -> PathBuf {
     match host {
-        Host::Python => {
-            // CPython's stable ABI on Unix, and Windows' own suffix.
-            let suffix = match platform {
-                Platform::Linux | Platform::MacOs => "abi3.so",
-                Platform::Windows => "pyd",
-            };
-            Path::new(package).join(format!("{NATIVE_MODULE}.{suffix}"))
-        }
+        Host::Python => python_extension(
+            &Path::new(package).join(format!("{NATIVE_MODULE}.pyi")),
+            platform,
+        ),
         Host::TypeScript => Path::new(package).join(NATIVE_DIRECTORY).join(NODE_ADDON),
     }
+}
+
+/// Return the Python extension on `platform` that `stub` types, which has the
+/// stub's name.
+#[must_use]
+pub(crate) fn python_extension(stub: &Path, platform: Platform) -> PathBuf {
+    // CPython's stable ABI on Unix, and Windows' own suffix.
+    stub.with_extension(match platform {
+        Platform::Linux | Platform::MacOs => "abi3.so",
+        Platform::Windows => "pyd",
+    })
 }
 
 #[cfg(test)]

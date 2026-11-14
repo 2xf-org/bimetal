@@ -1,124 +1,142 @@
+"""
+Load the extension and hold the helpers that the generated modules share.
+"""
+
 from __future__ import annotations
 
+import collections.abc
+import datetime
+import functools
+import importlib
 import sys
-from datetime import date, datetime
-from collections.abc import Callable
-from functools import cache, partial
-from importlib import import_module
-from typing import Annotated, Any, ClassVar, Literal, Protocol, TypeAlias, TypeVar, cast
+import typing
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Discriminator,
-    Field,
-    SerializationInfo,
-    SerializerFunctionWrapHandler,
-    Strict,
-    Tag,
-    TypeAdapter,
-    model_serializer,
-    model_validator,
-)
-from pydantic.functional_serializers import PlainSerializer
-from pydantic.functional_validators import BeforeValidator
+import pydantic
 
 # Without this, a checkout that lacks the extension reports a circular
-# import, because Python then looks for `_native` in the package itself.
+# import, because Python then looks for `native` in the package itself.
 try:
-    from . import _native as native
-    from ._native import Dumped, PanicException, Revalidate
+    from . import native
+    from .native import Dumped, PanicException, Revalidate
 except ImportError as error:
     raise ImportError(
-        f"the native extension {__package__}._native is missing or was built for "
-        "another platform; run `bimetal build` to build it"
+        f"the native extension {__package__}.native is missing or was built for another platform; "
+        "run `bimetal build` to build it"
     ) from error
+
+# `bimetal build` assigns these from the contract: the hash of the contract,
+# which the extension must match, the schema of each model by its key, and the
+# module and name of each error's class by the error's key, which the extension
+# raises a typed error as.
+CONTRACT: str
+NATIVE_SCHEMAS: dict[str, typing.Any]
+NATIVE_ERRORS: dict[str, tuple[str, str]]
+
+# The classes that each models module registers by key, whose instances the
+# extension makes as Pydantic would validate them.
+NATIVE_CLASSES: dict[str, typing.Any] = {}
+
+# The context of a dump that crosses into Rust, which `JsonValue` reads.
+CROSSING: typing.Any = object()
+
+# What the extension reads as it is, inside a JSON value.
+PLAIN = frozenset({str, int, float, bool, type(None)})
+
+NANOSECONDS = 1_000_000_000
+
+Function = typing.TypeVar("Function", bound=collections.abc.Callable[..., typing.Any])
 
 __all__ = [
     "Adapter",
-    "Dumped",
     "ArrowArrayExportable",
     "ArrowSchemaExportable",
     "ArrowStreamExportable",
+    "Dumped",
     "Duration",
     "ExternalVariant",
     "JsonValue",
     "PanicException",
     "Revalidate",
-    "external_discriminator",
+    "bound",
+    "external_name",
+    "host_callback",
     "native",
+    "native_resource",
+    "register_classes",
     "restore_host",
     "type_adapter",
-    "variant_tag",
 ]
 
-# The schema of each model, by its key. `bimetal build` assigns it at the end of
-# this module, and calls `require_contract` with the hash of the contract that
-# it generated the package from.
-native_schemas: dict[str, Any]
 
-# The classes that each models module registers by key, whose instances the
-# extension makes as Pydantic would validate them.
-native_classes: dict[str, Any] = {}
-
-# The module and name of each error's class by the error's key, which
-# `bimetal build` assigns below; the extension raises a typed error as that class.
-native_errors: dict[str, tuple[str, str]]
+# ---------------------------------------------------------------------------
+# Contract
+# ---------------------------------------------------------------------------
 
 
-def register_classes(classes: dict[str, Any]) -> None:
-    native_classes.update(classes)
+def register_classes(classes: dict[str, typing.Any]) -> None:
+    """
+    Record the classes of one models module by their keys.
+    """
+    NATIVE_CLASSES.update(classes)
 
 
-def require_contract(contract: str) -> None:
-    # An extension built from other Rust sources, such as one built before a
-    # `git pull`, would fail at the first call that it lacks.
-    if getattr(native, "__bimetal_contract__", None) != contract:
+def require_contract() -> None:
+    """
+    Refuse an extension built from other Rust sources than this package.
+
+    Notes:
+        Such an extension, such as one built before a `git pull`, would fail at the first call that it lacks.
+
+    Raises:
+        ImportError: If the extension's contract hash is not `CONTRACT`.
+    """
+    if getattr(native, "__bimetal_contract__", None) != CONTRACT:
         raise ImportError(
-            f"the native extension {__package__}._native was built from other Rust "
-            "sources than this package; run `bimetal build` "
-            "to rebuild it"
+            f"the native extension {__package__}.native was built from other Rust sources than this package; "
+            "run `bimetal build` to rebuild it"
         )
 
 
-# The context of a dump that crosses into Rust, which `JsonValue` reads.
-_CROSSING: Any = object()
-
-# What the extension reads as it is, inside a JSON value.
-_PLAIN = frozenset({str, int, float, bool, type(None)})
+require_contract()
 
 
-# What crosses for a Python value inside a `serde_json::Value`. A date is ISO
-# 8601 text, and a naive `datetime` fails here, because Rust could not tell
-# which instant it means. Bytes are a list of integers, and a NumPy array is a
-# list.
-def _json_into_rust(value: Any) -> Any:
-    if type(value) in _PLAIN:
+# ---------------------------------------------------------------------------
+# JSON values
+# ---------------------------------------------------------------------------
+
+
+def json_into_rust(value: typing.Any) -> typing.Any:
+    """
+    Return what crosses for a Python value inside a `serde_json::Value`.
+
+    Notes:
+        A date is ISO 8601 text, and a naive `datetime` fails here, because Rust could not tell which instant it
+        means. Bytes are a list of integers, and a NumPy array is a list.
+
+    Raises:
+        ValueError: If a `datetime` has no UTC offset.
+    """
+    if type(value) in PLAIN:
         return value
     # `isinstance` leaves the element types of a narrowed container unknown,
     # which strict pyright reports even through a typed local; mypy reads them
     # as `Any`.
     if isinstance(value, dict):
-        mapping: dict[Any, Any] = value  # pyright: ignore[reportUnknownVariableType]
-        return {
-            key: item if type(item) in _PLAIN else _json_into_rust(item)
-            for key, item in mapping.items()
-        }
+        mapping: dict[typing.Any, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
+        return {key: item if type(item) in PLAIN else json_into_rust(item) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
-        sequence: list[Any] | tuple[Any, ...] = value  # pyright: ignore[reportUnknownVariableType]
-        return [
-            item if type(item) in _PLAIN else _json_into_rust(item) for item in sequence
-        ]
-    if isinstance(value, BaseModel):
-        return _json_into_rust(value.model_dump(mode="python", by_alias=True))
-    if isinstance(value, datetime):
+        sequence: list[typing.Any] | tuple[typing.Any, ...] = value  # pyright: ignore[reportUnknownVariableType]
+        return [item if type(item) in PLAIN else json_into_rust(item) for item in sequence]
+    if isinstance(value, pydantic.BaseModel):
+        return json_into_rust(value.model_dump(mode="python", by_alias=True))
+    if isinstance(value, datetime.datetime):
         if value.utcoffset() is None:
             raise ValueError(
-                f"datetime {value.isoformat()} has no UTC offset; pass an aware "
-                "datetime, such as datetime.now(timezone.utc)"
+                f"datetime {value.isoformat()} has no UTC offset; pass an aware datetime, "
+                "such as datetime.now(timezone.utc)"
             )
         return value.isoformat()
-    if isinstance(value, date):
+    if isinstance(value, datetime.date):
         return value.isoformat()
     if isinstance(value, bytes):
         return list(value)
@@ -129,86 +147,114 @@ def _json_into_rust(value: Any) -> Any:
     return value
 
 
-def _write_json_value(value: Any, info: SerializationInfo) -> Any:
-    return _json_into_rust(value) if info.context is _CROSSING else value
+def write_json_value(value: typing.Any, info: pydantic.SerializationInfo) -> typing.Any:
+    """
+    Write a JSON value by the rules of `json_into_rust` in a dump that crosses into Rust, and as it is otherwise.
+    """
+    return json_into_rust(value) if info.context is CROSSING else value
 
 
 # A `serde_json::Value`, which is any JSON, so Python takes any value for it.
 # Only a dump that crosses into Rust writes it by the rules above. Every other
 # dump writes it as Pydantic does, from the value that the function returns.
-JsonValue: TypeAlias = Annotated[
-    Any, PlainSerializer(_write_json_value, when_used="json")
+JsonValue: typing.TypeAlias = typing.Annotated[
+    typing.Any,
+    pydantic.PlainSerializer(write_json_value, when_used="json"),
 ]
 
 
-def restore_host(value: Any, spec: Any) -> Any:
+# ---------------------------------------------------------------------------
+# Results
+# ---------------------------------------------------------------------------
+
+
+def restore_host(value: typing.Any, spec: typing.Any) -> typing.Any:
+    """
+    Return a native result with its bytes and buffers in their Python types.
+
+    Args:
+        value: The value that the extension returned.
+        spec: Where the value holds bytes or buffers, as the contract describes its type.
+
+    Returns:
+        The value, with `bytes` for each byte list and a NumPy array for each buffer.
+    """
     if value is None or spec is None:
         return value
     kind = spec[0]
     if kind == "bytes":
         return bytes(value)
     if kind == "buffer":
-        return import_module("numpy").frombuffer(value, dtype=spec[1])
+        return importlib.import_module("numpy").frombuffer(value, dtype=spec[1])
     if kind == "list":
         return [restore_host(item, spec[1]) for item in value]
     if kind == "map":
         return {key: restore_host(item, spec[1]) for key, item in value.items()}
     if kind == "tuple":
-        return tuple(
-            restore_host(item, item_spec) for item, item_spec in zip(value, spec[1])
-        )
+        return tuple(restore_host(item, item_spec) for item, item_spec in zip(value, spec[1]))
     if kind == "named":
-        return restore_host(value, native_schemas.get(spec[1]))
+        return restore_host(value, NATIVE_SCHEMAS.get(spec[1]))
     if kind == "alias":
         return restore_host(value, spec[1])
     if kind == "struct":
-        return {
-            key: restore_host(item, spec[1].get(key)) for key, item in value.items()
-        }
+        return {key: restore_host(item, spec[1].get(key)) for key, item in value.items()}
     if kind == "tagged":
         fields = spec[2].get(value.get(spec[1]), {})
         return {key: restore_host(item, fields.get(key)) for key, item in value.items()}
     # A variant without data is its name, which crosses as it is.
     if kind == "external" and isinstance(value, dict):
-        entries: dict[str, Any] = value  # pyright: ignore[reportUnknownVariableType]
-        return {
-            name: restore_host(item, spec[1].get(name)) for name, item in entries.items()
-        }
+        entries: dict[str, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
+        return {name: restore_host(item, spec[1].get(name)) for name, item in entries.items()}
     # Pydantic validates the other kinds, such as `json`, as they arrive.
     return value
 
 
-# An externally tagged enum crosses as Serde writes it: a variant without data
-# is its name, and a variant with data is an object whose only key is its
-# name. Each variant's model declares which variant it is and what it carries,
-# reads that form, and writes it back.
-class ExternalVariant(BaseModel):
-    __bimetal_variant__: ClassVar[str]
-    __bimetal_form__: ClassVar[Literal["unit", "value", "fields"]]
+# ---------------------------------------------------------------------------
+# Externally tagged enums
+# ---------------------------------------------------------------------------
 
-    @model_validator(mode="before")
+
+class ExternalVariant(pydantic.BaseModel):
+    """
+    A variant of an externally tagged enum, which crosses as Serde writes it.
+
+    Notes:
+        A variant without data is its name, and a variant with data is an object whose only key is its name. Each
+        variant's model declares which variant it is and what it carries, reads that form, and writes it back.
+    """
+
+    __bimetal_variant__: typing.ClassVar[str]
+    __bimetal_form__: typing.ClassVar[typing.Literal["unit", "value", "fields"]]
+
+    @pydantic.model_validator(mode="before")
     @classmethod
-    def _bimetal_read(cls, value: Any) -> Any:
+    def __bimetal_read__(cls, value: typing.Any) -> typing.Any:
+        """
+        Read the variant's wire form as the fields of its model.
+        """
         variant = cls.__bimetal_variant__
         # Serde also reads a variant without data from its name with null.
         if cls.__bimetal_form__ == "unit":
             return {} if value in (variant, {variant: None}) else value
         if not isinstance(value, dict):
             return value
-        entries: dict[str, Any] = value  # pyright: ignore[reportUnknownVariableType]
+        entries: dict[str, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
         if len(entries) != 1 or variant not in entries:
             return entries
         payload = entries[variant]
         return {"value": payload} if cls.__bimetal_form__ == "value" else payload
 
-    @model_serializer(mode="wrap")
-    def _bimetal_write(self, handler: SerializerFunctionWrapHandler) -> Any:
+    @pydantic.model_serializer(mode="wrap")
+    def __bimetal_write__(self, handler: pydantic.SerializerFunctionWrapHandler) -> typing.Any:
+        """
+        Write the variant's fields in its wire form.
+        """
         variant = self.__bimetal_variant__
         if self.__bimetal_form__ == "unit":
             return variant
-        fields: Any = handler(self)
+        fields: typing.Any = handler(self)
         # Inside a recursive model, Pydantic runs this again on what it wrote.
-        if _written(fields, variant):
+        if written(fields, variant):
             return fields
         if self.__bimetal_form__ == "value":
             # `exclude_none` leaves out a `None` value, which Serde writes as
@@ -217,164 +263,225 @@ class ExternalVariant(BaseModel):
         return {variant: fields}
 
 
-# Whether `value` is already the wire form of a variant with data.
-def _written(value: Any, variant: str) -> bool:
+def written(value: typing.Any, variant: str) -> bool:
+    """
+    Return whether `value` is already the wire form of the variant `variant` with data.
+    """
     return isinstance(value, dict) and len(value) == 1 and variant in value  # pyright: ignore[reportUnknownArgumentType]
 
 
-# The wire name of a value of an externally tagged enum, which picks the model
-# that reads it, or `None` for a value of no variant's form.
-def _external_name(value: Any) -> str | None:
+def external_name(value: typing.Any) -> str | None:
+    """
+    Return the wire name of a value of an externally tagged enum, which picks the model that reads it.
+
+    Returns:
+        The variant's wire name, or `None` for a value of no variant's form.
+    """
     if isinstance(value, ExternalVariant):
         return value.__bimetal_variant__
     if isinstance(value, str):
         return value
     if isinstance(value, dict) and len(value) == 1:  # pyright: ignore[reportUnknownArgumentType]
-        entries: dict[str, Any] = value  # pyright: ignore[reportUnknownVariableType]
+        entries: dict[str, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
         return next(iter(entries))
     return None
 
 
-external_discriminator = Discriminator(_external_name)
+# ---------------------------------------------------------------------------
+# Durations
+# ---------------------------------------------------------------------------
 
 
-def variant_tag(name: str) -> Tag:
-    return Tag(name)
+def duration_from_wire(value: typing.Any) -> typing.Any:
+    """
+    Read Serde's `{"secs": ..., "nanos": ...}` of a `std::time::Duration` as its nanoseconds.
 
-
-# A `std::time::Duration` is its nanoseconds here, a non-negative `int`. Serde
-# writes it as `{"secs": ..., "nanos": ...}`, which this reads and writes; a
-# model dumps it in that form too, since its dump is what crosses.
-_NANOSECONDS = 1_000_000_000
-
-
-def _duration_from_wire(value: Any) -> Any:
+    Raises:
+        ValueError: If `value` is a dictionary of another form.
+    """
     if not isinstance(value, dict):
         return value
-    parts: dict[str, Any] = value  # pyright: ignore[reportUnknownVariableType]
+    parts: dict[str, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
     secs, nanos = parts.get("secs"), parts.get("nanos")
     if (
         parts.keys() != {"secs", "nanos"}
         or type(secs) is not int
         or type(nanos) is not int
         or secs < 0
-        or not 0 <= nanos < _NANOSECONDS
+        or not 0 <= nanos < NANOSECONDS
     ):
         raise ValueError(
-            "a duration is its nanoseconds, or Serde's {secs, nanos} of whole "
-            "seconds and the nanoseconds below one"
+            "a duration is its nanoseconds, or Serde's {secs, nanos} of whole seconds and the nanoseconds below one"
         )
-    return secs * _NANOSECONDS + nanos
+    return secs * NANOSECONDS + nanos
 
 
-def _duration_to_wire(nanoseconds: int) -> dict[str, int]:
-    secs, nanos = divmod(nanoseconds, _NANOSECONDS)
+def duration_to_wire(nanoseconds: int) -> dict[str, int]:
+    """
+    Write a duration's nanoseconds as Serde's `{"secs": ..., "nanos": ...}`.
+    """
+    secs, nanos = divmod(nanoseconds, NANOSECONDS)
     return {"secs": secs, "nanos": nanos}
 
 
-Duration: TypeAlias = Annotated[
+# A `std::time::Duration` is its nanoseconds here, a non-negative `int`. Serde
+# writes it as `{"secs": ..., "nanos": ...}`, which this reads and writes; a
+# model dumps it in that form too, since its dump is what crosses.
+Duration: typing.TypeAlias = typing.Annotated[
     int,
-    BeforeValidator(_duration_from_wire),
-    Strict(),
-    Field(ge=0),
-    PlainSerializer(_duration_to_wire, return_type=dict[str, int]),
+    pydantic.BeforeValidator(duration_from_wire),
+    pydantic.Strict(),
+    pydantic.Field(ge=0),
+    pydantic.PlainSerializer(duration_to_wire, return_type=dict[str, int]),
 ]
 
 
-# A typed error crosses as its code, its message, and its fields as JSON or
-# `None`. The class says which model reads the fields of each code.
-def native_resource(value: Any, resource_type: Any, parameter: str) -> Any:
+# ---------------------------------------------------------------------------
+# Calls
+# ---------------------------------------------------------------------------
+
+
+def native_resource(value: typing.Any, resource_type: typing.Any, parameter: str) -> typing.Any:
+    """
+    Return the native object of a generated resource that an argument passes.
+
+    Raises:
+        TypeError: If `value` is not an instance of `resource_type`.
+    """
     if not isinstance(value, resource_type):
-        raise TypeError(
-            f"argument '{parameter}' must be a {resource_type.__name__}, "
-            f"not {type(value).__name__}"
-        )
+        raise TypeError(f"argument '{parameter}' must be a {resource_type.__name__}, not {type(value).__name__}")
     return value.native_resource
 
 
-_Function = TypeVar("_Function", bound=Callable[..., Any])
+def bound(function: typing.Any) -> collections.abc.Callable[[Function], Function]:
+    """
+    Return a decorator that puts the native function `function` in place of a brief one that only passes its
+    arguments on.
 
+    Notes:
+        The native function takes the module of the function it replaces, so a call runs no Python frame.
+    """
 
-# Bind the native function in place of a brief function that only passes its
-# arguments on, under the module's name, so a call crosses no Python frame.
-def bound(native: Any) -> Callable[[_Function], _Function]:
-    def bind(function: _Function) -> _Function:
-        native.__module__ = function.__module__
-        return cast(_Function, native)
+    def bind(wrapper: Function) -> Function:
+        function.__module__ = wrapper.__module__
+        return typing.cast(Function, function)
 
     return bind
 
 
-# What Rust calls in place of a Python function whose arguments reach a
-# numeric buffer, which Pydantic restores as the function's types say.
-def host_callback(function: Any, parameters: list[Adapter]) -> Any:
+def host_callback(function: typing.Any, parameters: list[Adapter]) -> typing.Any:
+    """
+    Return what Rust calls in place of a callback whose arguments reach a numeric buffer.
+
+    Notes:
+        Pydantic validates each argument as the function's types say.
+
+    Raises:
+        TypeError: If `function` is not callable.
+    """
     if not callable(function):
         raise TypeError(f"expected a callable, not {type(function).__name__}")
 
-    def call(*arguments: Any) -> Any:
-        return function(
-            *[adapter.validate(argument) for adapter, argument in zip(parameters, arguments)]
-        )
+    def call(*arguments: typing.Any) -> typing.Any:
+        return function(*[adapter.validate(argument) for adapter, argument in zip(parameters, arguments)])
 
     return call
 
 
-# Validators are cached because constructing one costs far more than a typical
-# native call.
-@cache
-def type_adapter(annotation: Any, arbitrary_types: bool = False) -> TypeAdapter[Any]:
-    config = ConfigDict(arbitrary_types_allowed=True) if arbitrary_types else None
-    return TypeAdapter(annotation, config=config)
+# ---------------------------------------------------------------------------
+# Adapters
+# ---------------------------------------------------------------------------
 
 
-# The validator and writer of one type, which builds Pydantic's adapter at its
-# first call. `dump` validates a value that the extension can't read, and writes
-# it in JSON mode.
+@functools.cache
+def type_adapter(annotation: typing.Any, arbitrary_types: bool = False) -> pydantic.TypeAdapter[typing.Any]:
+    """
+    Return Pydantic's adapter of `annotation`.
+
+    Notes:
+        Adapters are cached because constructing one costs far more than a typical native call.
+    """
+    config = pydantic.ConfigDict(arbitrary_types_allowed=True) if arbitrary_types else None
+    return pydantic.TypeAdapter(annotation, config=config)
+
+
+def dump_json_mode(
+    validate: collections.abc.Callable[[typing.Any], typing.Any],
+    dump: collections.abc.Callable[..., typing.Any],
+    value: typing.Any,
+) -> typing.Any:
+    """
+    Validate `value`, and dump it in JSON mode for a crossing into Rust.
+    """
+    return dump(validate(value), by_alias=True, mode="json", context=CROSSING)
+
+
 class Adapter:
-    __slots__ = ("_annotation", "_arbitrary_types", "validate", "dump")
+    """
+    The validator and writer of one type, which builds Pydantic's adapter at its first call.
 
-    validate: Callable[[Any], Any]
-    dump: Callable[[Any], Any]
+    Notes:
+        `dump` validates a value that the extension cannot read, and writes it in JSON mode.
+    """
 
-    def __init__(self, annotation: Callable[[], Any], arbitrary_types: bool = False) -> None:
-        self._annotation = annotation
-        self._arbitrary_types = arbitrary_types
-        self.validate = self._validate_first
-        self.dump = self._dump_first
+    __slots__ = ("annotation", "arbitrary_types", "dump", "validate")
 
-    def _load(self) -> None:
-        adapter = type_adapter(self._annotation(), self._arbitrary_types)
-        self.validate = partial(adapter.validate_python, strict=False)
-        self.dump = partial(
-            _dump_json_mode, adapter.validate_python, adapter.dump_python
-        )
+    validate: collections.abc.Callable[[typing.Any], typing.Any]
+    dump: collections.abc.Callable[[typing.Any], typing.Any]
 
-    def _validate_first(self, value: Any) -> Any:
-        self._load()
+    def __init__(self, annotation: collections.abc.Callable[[], typing.Any], arbitrary_types: bool = False) -> None:
+        self.annotation = annotation
+        self.arbitrary_types = arbitrary_types
+        self.validate = self.validate_first
+        self.dump = self.dump_first
+
+    def load(self) -> None:
+        """
+        Build Pydantic's adapter, and call it from now on.
+        """
+        adapter = type_adapter(self.annotation(), self.arbitrary_types)
+        self.validate = functools.partial(adapter.validate_python, strict=False)
+        self.dump = functools.partial(dump_json_mode, adapter.validate_python, adapter.dump_python)
+
+    def validate_first(self, value: typing.Any) -> typing.Any:
+        """
+        Build the adapter, then validate `value`.
+        """
+        self.load()
         return self.validate(value)
 
-    def _dump_first(self, value: Any) -> Any:
-        self._load()
+    def dump_first(self, value: typing.Any) -> typing.Any:
+        """
+        Build the adapter, then dump `value`.
+        """
+        self.load()
         return self.dump(value)
 
 
-def _dump_json_mode(
-    validate: Callable[[Any], Any], dump: Callable[..., Any], value: Any
-) -> Any:
-    return dump(validate(value), by_alias=True, mode="json", context=_CROSSING)
+# ---------------------------------------------------------------------------
+# Arrow
+# ---------------------------------------------------------------------------
 
 
-# The values that Arrow parameters accept: any producer of the Arrow PyCapsule
-# interface, such as pyarrow, polars, or DuckDB.
-class ArrowArrayExportable(Protocol):
-    def __arrow_c_array__(
-        self, requested_schema: object | None = None
-    ) -> tuple[object, object]: ...
+class ArrowArrayExportable(typing.Protocol):
+    """
+    A producer of an Arrow array through the Arrow PyCapsule interface, such as pyarrow, polars or DuckDB.
+    """
+
+    def __arrow_c_array__(self, requested_schema: object | None = None) -> tuple[object, object]: ...
 
 
-class ArrowStreamExportable(Protocol):
+class ArrowStreamExportable(typing.Protocol):
+    """
+    A producer of an Arrow stream through the Arrow PyCapsule interface.
+    """
+
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
 
 
-class ArrowSchemaExportable(Protocol):
+class ArrowSchemaExportable(typing.Protocol):
+    """
+    A producer of an Arrow schema through the Arrow PyCapsule interface.
+    """
+
     def __arrow_c_schema__(self) -> object: ...

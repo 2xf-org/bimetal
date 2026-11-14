@@ -126,9 +126,8 @@ pub(super) struct State {
     /// frozen object of their arguments taken as keys and values in turn.
     array_of: sys::napi_ref,
     map_of: sys::napi_ref,
-    /// The function that makes a frozen object with each list of keys, in
-    /// order, from as many arguments, compiled at the first object with the
-    /// list.
+    /// For each list of keys, the function that makes a frozen object with
+    /// those keys, in order, from as many arguments, compiled at its first use.
     objects: RefCell<HashMap<Box<[&'static str]>, sys::napi_ref>>,
     /// The constructor of each class.
     pub(super) classes: Vec<DefinedClass>,
@@ -410,8 +409,8 @@ impl<'env> Env<'env> {
     }
 
     /// Return the function that makes a frozen object with `keys`, in order,
-    /// from as many arguments. A literal of fixed keys makes each object in
-    /// one shape, for less than adding its properties one at a time.
+    /// from as many arguments. A literal of fixed keys gives every object one
+    /// shape, which costs less than adding its properties one at a time.
     pub(crate) fn object_of(self, keys: &[&'static str]) -> Result<Value<'env>, Error> {
         let state = self.state()?;
         if let Some(&function) = state.objects.borrow().get(keys) {

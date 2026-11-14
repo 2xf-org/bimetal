@@ -166,8 +166,8 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
         }
     }
 
-    /// Write text that fits on the stack there, such as a date-time's, and
-    /// longer text to the heap.
+    /// Write text that fits a [`ShortText`], such as a date-time's, on the
+    /// stack, and longer text on the heap.
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Self::Ok> {
         let mut text = ShortText::new();
         if write!(text, "{value}").is_ok() {

@@ -367,10 +367,9 @@ fn released<T: Send>(pull: impl FnOnce() -> T + Send) -> T {
 }
 
 /// Return whether this thread may hold the interpreter lock. From Python
-/// 3.12 the current thread state is this thread's, so the answer is exact.
-/// Python 3.11 keeps one current thread state, the holder's, which another
-/// thread must not touch, so there a thread with a state of its own may hold
-/// the lock, and attaching, which returns at once if it does, finds out.
+/// 3.12 the answer is exact, since the current thread state is this thread's.
+/// Python 3.11 keeps only the holder's state, which another thread must not
+/// touch, so there any thread with a state of its own may hold the lock.
 fn may_hold_lock() -> bool {
     // SAFETY: Python sets its version before it loads any extension.
     if unsafe { pyo3::ffi::Py_Version } >= 0x030c_0000 {

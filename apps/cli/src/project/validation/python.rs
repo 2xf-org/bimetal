@@ -89,29 +89,21 @@ pub(super) fn validate_exports(
         .collect();
     let root = *namespace == Namespace::root();
     // The names that the package root defines itself, beside those that
-    // every module does.
+    // every module does: the runtime and the extension, and what the root
+    // exports from the runtime.
     let root_name = |name: &str| {
         root && [
-            python::RUNTIME_MODULE,
+            python_names::RUNTIME_MODULE,
             python_names::NATIVE_MODULE,
             python_names::PANIC_EXCEPTION,
+            ARROW_ARRAY_PROTOCOL,
+            ARROW_SCHEMA_PROTOCOL,
+            ARROW_STREAM_PROTOCOL,
         ]
         .contains(&name)
     };
     let leaf = |name: &str| [python::API_MODULE, python::MODELS_MODULE].contains(&name);
-    // Every module may import the protocols that Arrow parameters accept.
-    let generated = |name: &str| {
-        leaf(name)
-            || root_name(name)
-            || [
-                ARROW_ARRAY_PROTOCOL,
-                ARROW_SCHEMA_PROTOCOL,
-                ARROW_STREAM_PROTOCOL,
-            ]
-            .contains(&name)
-            || python::imported_names().any(|imported| imported == name)
-            || name.starts_with(python::ALIAS_PREFIX)
-    };
+    let generated = |name: &str| leaf(name) || root_name(name) || python_names::is_reserved(name);
     for (name, child) in &child_modules {
         if leaf(name) || root_name(name) {
             let source = Source::of(contract, child);
@@ -172,6 +164,10 @@ pub(super) fn validate_resource_members(items: &NamespaceItems<'_>, problems: &m
             } else if python::RESOURCE_MEMBERS.contains(&name) {
                 problems.push(format!(
                     "Rust method `{name}` of resource `{class}` collides with the member `{name}` of the generated Python class; rename the method"
+                ));
+            } else if python_names::IMPORTED_MODULES.contains(&name) {
+                problems.push(format!(
+                    "Rust method `{name}` of resource `{class}` would hide the module `{name}`, which the generated Python class uses; rename the method"
                 ));
             } else if name.starts_with("__") && name.ends_with("__") {
                 problems.push(format!(

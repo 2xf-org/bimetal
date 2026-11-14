@@ -48,11 +48,14 @@ An exported future must be `Send` and `'static`. It can't hold an `Rc` or a `Ref
 
 ## Tokio
 
-On Python and the addon, your code runs inside Bimetal's Tokio runtime, so `tokio::spawn`, timers and I/O work:
+On Python and the addon, your code runs inside Bimetal's Tokio runtime, so `tokio::spawn`, timers and I/O work. The bank example's constructor spawns the task that settles its transfers, and a withdrawal waits on a timer:
 
 ```rust
-tokio::spawn(venue.run(opened));
-time::sleep(SETTLEMENT).await;
+pub async fn withdraw(&mut self, owner: String, amount: u64) -> Result<u64, TransferError> {
+    self.locked().check(&owner, amount)?;
+    tokio::time::sleep(SETTLEMENT).await;
+    self.locked().withdraw(&owner, amount)
+}
 ```
 
 The Wasm module has no Tokio runtime, and the JavaScript event loop runs your futures. Runtime-independent code, such as `tokio::sync`, works there. Code that needs Tokio's I/O, timers or `tokio::spawn` has three options: choose an implementation per target with `#[cfg(target_arch = "wasm32")]`, use the [Node.js backend](node.md), or use a current-thread runtime of your own.

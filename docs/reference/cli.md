@@ -63,38 +63,38 @@ bimetal build [--force]
 ```
 
 ```text
-Compiling greeter: contract discovery, Python extension, Node.js addon
+Compiling bank: contract discovery, Python extension, Node.js addon
   Compiled the contract discovery in …s
   Compiled the Python extension in …s
   Compiled the Node.js addon in …s
-Built greeter 0.1.0.
-  Python package greeter in python
-  npm package greeter in typescript
+Built bank 0.1.0.
+  Python package bank in python
+  npm package bank in typescript
 ```
 
 A build compiles what the enabled hosts need: contract discovery always, the WebAssembly module for a `[typescript]` table with the Wasm backend, the Python extension for `[python]`, and the addon for the Node.js backend. It installs the native artifacts after it writes the generated files.
 
-If the sources and the generated files both match the fingerprints in `bimetal.toml`, and nothing that only this machine's last build read changed, the command compiles nothing and prints `greeter 0.1.0 is up to date.` In a fresh clone, where only this platform's native artifacts are missing, it compiles only those. `--force` compiles everything and writes the packages again.
+If the sources and the generated files both match the fingerprints in `bimetal.toml`, and nothing that only this machine's last build read changed, the command compiles nothing and prints `bank 0.1.0 is up to date.` In a fresh clone, where only this platform's native artifacts are missing, it compiles only those. `--force` compiles everything and writes the packages again.
 
 With `--json`:
 
 ```json
 {
   "status": "ok",
-  "application": "greeter",
+  "application": "bank",
   "version": "0.1.0",
   "hosts": [
     {
       "host": "python",
-      "package": "greeter",
-      "directory": "/path/to/greeter/python",
-      "files": ["greeter/__init__.py", "greeter/_native.pyi", "…", "greeter/_native.abi3.so"]
+      "package": "bank",
+      "directory": "/path/to/bank/python",
+      "files": ["bank/__init__.py", "bank/api.py", "…", "bank/native.abi3.so"]
     },
     {
       "host": "typescript",
-      "package": "greeter",
-      "directory": "/path/to/greeter/typescript",
-      "files": ["greeter/api.d.ts", "greeter/api.js", "…", "greeter/native/native.node"]
+      "package": "bank",
+      "directory": "/path/to/bank/typescript",
+      "files": ["bank/api.d.ts", "bank/api.js", "…", "bank/native/native.node"]
     }
   ]
 }
@@ -125,8 +125,8 @@ bimetal check [--rebuild]
 
 ```text
 error: the generated files are not in sync with the Rust sources; run `bimetal build`
-  changed: python/greeter/api.py
-  stale: typescript/greeter/old/index.js
+  changed: python/bank/api.py
+  stale: typescript/bank/old/index.js
 ```
 
 It never writes generated files or `Cargo.lock`. Native artifacts are no part of the check, because each platform builds its own, and `check` compiles none. [Keeping packages current](../guides/current.md) says when to use each form.
@@ -136,9 +136,9 @@ With `--json`, a passing check prints `"status": "ok"` and the same `application
 ```json
 {
   "status": "error",
-  "error": "the generated files are not in sync with the Rust sources; run `bimetal build`\n  changed: python/greeter/api.py",
+  "error": "the generated files are not in sync with the Rust sources; run `bimetal build`\n  changed: python/bank/api.py",
   "missing": [],
-  "changed": ["python/greeter/api.py"],
+  "changed": ["python/bank/api.py"],
   "stale": []
 }
 ```

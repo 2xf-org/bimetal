@@ -10,66 +10,42 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use bimetal_ir::Namespace;
-use bimetal_ir::python_names::{BUILTINS, BUILTINS_ALIAS, DATETIME_ALIAS};
+use bimetal_ir::python_names::{BUILTINS, RUNTIME_MODULE};
 
 use crate::contract::Contract;
 
-use super::package::{MODELS_MODULE, RUNTIME_MODULE};
+use super::package::MODELS_MODULE;
 use super::render;
 
-/// The names that generated modules import from the standard library, and
-/// then from other packages, in the order of a module's imports. Each starts
-/// a statement: `from typing` imports the name, and `import numpy` imports
-/// the module under it.
-const STANDARD_IMPORTS: [(&str, &str); 9] = [
-    ("import builtins", BUILTINS_ALIAS),
-    ("import datetime", DATETIME_ALIAS),
-    ("from collections.abc", "Callable"),
-    ("from enum", "StrEnum"),
-    ("from typing", "Annotated"),
-    ("from typing", "Any"),
-    ("from typing", "Final"),
-    ("from typing", "Literal"),
-    ("from typing", "TypeAlias"),
-];
-const PACKAGE_IMPORTS: [(&str, &str); 9] = [
-    ("import numpy", "np"),
-    ("from numpy.typing", "NDArray"),
-    ("import pyarrow", "pa"),
-    ("from pydantic", "AwareDatetime"),
-    ("from pydantic", "BaseModel"),
-    ("from pydantic", "ConfigDict"),
-    ("from pydantic", "Field"),
-    ("from pydantic.functional_serializers", "PlainSerializer"),
-    ("from pydantic.functional_validators", "BeforeValidator"),
-];
+/// The modules that generated modules import whole, in the order of a
+/// module's imports: the standard library, then other packages. Each binds
+/// its first segment, one of [`python_names::IMPORTED_MODULES`], through
+/// which the code reaches its members, such as `typing.Literal`.
+///
+/// [`python_names::IMPORTED_MODULES`]: bimetal_ir::python_names::IMPORTED_MODULES
+const STANDARD_MODULES: [&str; 5] = ["builtins", "collections.abc", "datetime", "enum", "typing"];
+const PACKAGE_MODULES: [&str; 4] = ["numpy", "numpy.typing", "pyarrow", "pydantic"];
 
-/// The prefix of the aliases under which generated modules import the
-/// runtime's helpers, other namespaces' modules, and `builtins`. No export
-/// may start with it, so that each module may define the helper's name.
-pub(crate) const ALIAS_PREFIX: &str = "_bimetal_";
+/// The prefixes of the module constants that hold type adapters and the
+/// pyarrow importers of Arrow results, each followed by an index.
+pub(super) const ADAPTER_CONSTANT: &str = "BIMETAL_ADAPTER_";
+pub(super) const ARROW_CONSTANT: &str = "BIMETAL_ARROW_";
 
-/// Return the names that generated modules may import from outside the
-/// package. An export of the same name would replace the import.
-pub(crate) fn imported_names() -> impl Iterator<Item = &'static str> {
-    STANDARD_IMPORTS
-        .iter()
-        .chain(&PACKAGE_IMPORTS)
-        .map(|(_, name)| *name)
-}
+/// The width that a generated line fits in, as the formatter's line length.
+pub(super) const LINE_WIDTH: usize = 120;
 
 /// What one generated module imports, as its renderers spell each name.
 #[derive(Default)]
 pub(super) struct Imports {
-    /// Names from outside the package; see [`STANDARD_IMPORTS`].
+    /// Modules from outside the package; see [`STANDARD_MODULES`].
     external: BTreeSet<&'static str>,
     /// The models and buffer types of the module's own namespace, which
     /// `api.py` imports from `models.py`.
     models: BTreeSet<String>,
     /// The other namespaces' modules, as import statements.
     namespaces: BTreeSet<String>,
-    /// The runtime's names, as entries of the import from it.
-    runtime: BTreeSet<String>,
+    /// Whether the module uses the runtime.
+    runtime: bool,
     /// The module's constants, as their expressions and names, in the order
     /// of first use.
     constants: Vec<(String, String)>,
@@ -144,20 +120,30 @@ impl<'emit> PythonContext<'emit> {
             "`{name}` must be listed in BUILTINS, so that a name that hides it is detected"
         );
         if self.hidden_builtins.contains(name) {
-            format!("{}.{name}", self.import(BUILTINS_ALIAS))
+            self.import("builtins");
+            format!("builtins.{name}")
         } else {
             name.to_owned()
         }
     }
 
-    /// Spell `name`, which the module imports from outside the package.
-    pub(super) fn import(&self, name: &'static str) -> &'static str {
-        debug_assert!(
-            imported_names().any(|imported| imported == name),
-            "`{name}` must be listed with the statement that imports it"
-        );
-        self.imports.borrow_mut().external.insert(name);
-        name
+    /// Spell `path`, a module from outside the package or a member of one,
+    /// such as `typing.Literal`, and import the module.
+    pub(super) fn import(&self, path: &'static str) -> &'static str {
+        let module = STANDARD_MODULES
+            .iter()
+            .chain(&PACKAGE_MODULES)
+            .copied()
+            .filter(|module| {
+                path.strip_prefix(module)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+            })
+            .max_by_key(|module| module.len());
+        debug_assert!(module.is_some(), "`{path}` must be in a listed module");
+        if let Some(module) = module {
+            self.imports.borrow_mut().external.insert(module);
+        }
+        path
     }
 
     /// Spell `name`, a model or buffer type of the module's own namespace.
@@ -169,13 +155,10 @@ impl<'emit> PythonContext<'emit> {
     /// Spell the module `leaf` of another namespace, which the module
     /// imports under an alias that keeps the import from binding the
     /// package's first segment, which an export of the same name would
-    /// replace. The alias is one of [`python_names::MODULE_ALIAS_PREFIXES`],
-    /// then the namespace's index.
-    ///
-    /// [`python_names::MODULE_ALIAS_PREFIXES`]: bimetal_ir::python_names::MODULE_ALIAS_PREFIXES
+    /// replace. The alias is `bimetal_`, the leaf, and the namespace's index.
     pub(super) fn namespace_module(&self, namespace: &Namespace, leaf: &str) -> String {
         let alias = format!(
-            "{ALIAS_PREFIX}{leaf}_{}",
+            "bimetal_{leaf}_{}",
             self.contract.namespace_index(namespace)
         );
         self.imports.borrow_mut().namespaces.insert(format!(
@@ -185,69 +168,80 @@ impl<'emit> PythonContext<'emit> {
         alias
     }
 
-    /// Spell the runtime's helper `name`, which modules import under an
-    /// alias that starts with [`ALIAS_PREFIX`].
-    pub(super) fn runtime(&self, name: &'static str) -> String {
-        let alias = format!("{ALIAS_PREFIX}{name}");
-        self.imports
-            .borrow_mut()
-            .runtime
-            .insert(format!("{name} as {alias}"));
-        alias
-    }
-
-    /// Spell `name`, a public name of the runtime, which the module imports
-    /// as it is.
-    pub(super) fn runtime_export(&self, name: &'static str) -> &'static str {
-        self.imports.borrow_mut().runtime.insert(name.to_owned());
-        name
+    /// Spell `name`, a member of the runtime, and import the runtime.
+    pub(super) fn runtime(&self, name: &str) -> String {
+        self.imports.borrow_mut().runtime = true;
+        format!("{RUNTIME_MODULE}.{name}")
     }
 
     /// Spell a constant of the module whose value is `expression`, which the
     /// module defines once, below its imports, so that a call does not
-    /// evaluate it again. Its name is `prefix`, one of
-    /// [`python_names::MODULE_CONSTANT_PREFIXES`], and the constant's index.
-    ///
-    /// [`python_names::MODULE_CONSTANT_PREFIXES`]: bimetal_ir::python_names::MODULE_CONSTANT_PREFIXES
+    /// evaluate it again. Its name is `prefix`, [`ADAPTER_CONSTANT`] or
+    /// [`ARROW_CONSTANT`], and its index among the constants of that prefix.
     pub(super) fn constant(&self, prefix: &str, expression: String) -> String {
+        let index = self
+            .imports
+            .borrow()
+            .constants
+            .iter()
+            .filter(|(_, name)| {
+                name.strip_prefix(prefix)
+                    .is_some_and(|index| index.bytes().all(|byte| byte.is_ascii_digit()))
+            })
+            .count();
+        self.named_constant(format!("{prefix}{index}"), expression)
+    }
+
+    /// Spell a constant of the module named `name`, or `name` and a number
+    /// when another constant has that name, whose value is `expression`, as
+    /// [`Self::constant`] does, or the constant that already holds it.
+    pub(super) fn named_constant(&self, name: String, expression: String) -> String {
         let mut imports = self.imports.borrow_mut();
-        if let Some((_, name)) = imports
+        if let Some((_, existing)) = imports
             .constants
             .iter()
             .find(|(existing, _)| *existing == expression)
         {
-            return name.clone();
+            return existing.clone();
         }
-        let name = format!("{prefix}{}", imports.constants.len());
-        imports.constants.push((expression, name.clone()));
-        name
+        let taken = |name: &str| imports.constants.iter().any(|(_, other)| other == name);
+        let mut unique = name.clone();
+        let mut number = 1;
+        while taken(&unique) {
+            number += 1;
+            unique = format!("{name}_{number}");
+        }
+        imports.constants.push((expression, unique.clone()));
+        unique
     }
 
-    /// Return the module `leaf`, whose body is `body`, with the imports and
-    /// the constants that rendering it recorded.
+    /// Return the module `leaf`, whose docstring is `docstring` and whose body
+    /// is `body`, with the imports and the constants that rendering it
+    /// recorded.
     #[must_use]
-    pub(super) fn module(&self, leaf: &str, body: &str) -> String {
+    pub(super) fn module(&self, leaf: &str, docstring: &str, body: &str) -> String {
         let imports = self.imports.borrow();
-        let mut local = Vec::new();
+        let mut local: Vec<String> = imports.namespaces.iter().cloned().collect();
+        if imports.runtime {
+            local.push(format!("from {} import {RUNTIME_MODULE}", self.package));
+        }
+        let mut sibling = Vec::new();
         // `models.py` defines its own namespace's models.
         if leaf != MODELS_MODULE && !imports.models.is_empty() {
-            local.push(import_list(".models", &imports.models));
+            sibling.push(import_list(".models", &imports.models));
         }
-        local.extend(imports.namespaces.iter().cloned());
-        if !imports.runtime.is_empty() {
-            let runtime = format!("{}.{RUNTIME_MODULE}", self.package);
-            local.push(import_list(&runtime, &imports.runtime));
-        }
-        let mut source = String::from("from __future__ import annotations\n");
+        let mut source =
+            format!("\"\"\"\n{docstring}\n\"\"\"\n\nfrom __future__ import annotations\n");
         let constants = imports
             .constants
             .iter()
             .map(|(expression, name)| format!("{name} = {expression}"))
             .collect();
         for block in [
-            statements(&STANDARD_IMPORTS, &imports.external),
-            statements(&PACKAGE_IMPORTS, &imports.external),
+            statements(&STANDARD_MODULES, &imports.external),
+            statements(&PACKAGE_MODULES, &imports.external),
             local,
+            sibling,
             constants,
         ] {
             if !block.is_empty() {
@@ -259,28 +253,54 @@ impl<'emit> PythonContext<'emit> {
     }
 }
 
-/// Render the statements of `table` that import the `used` names, one per
-/// module.
+/// Render the statements that import the `used` modules of `table`, in its
+/// order.
 #[must_use]
-fn statements(table: &[(&str, &'static str)], used: &BTreeSet<&str>) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
-    let mut previous = "";
-    for &(statement, name) in table.iter().filter(|(_, name)| used.contains(name)) {
-        match lines.last_mut() {
-            Some(line) if statement == previous => {
-                let _ = write!(line, ", {name}");
-            }
-            _ if statement.starts_with("import ") => lines.push(format!("{statement} as {name}")),
-            _ => lines.push(format!("{statement} import {name}")),
-        }
-        previous = statement;
-    }
-    lines
+fn statements(table: &[&'static str], used: &BTreeSet<&str>) -> Vec<String> {
+    table
+        .iter()
+        .filter(|module| used.contains(*module))
+        .map(|module| format!("import {module}"))
+        .collect()
 }
 
-/// Render an import of several names from `module`, one per line.
+/// Sort `names` as ruff does: constants, then classes, then the rest, each
+/// group in order, ignoring case when `fold_case` holds, as isort does in an
+/// import and not in `__all__`.
 #[must_use]
-fn import_list(module: &str, names: &BTreeSet<String>) -> String {
+pub(super) fn ordered<'name>(
+    names: impl IntoIterator<Item = &'name String>,
+    fold_case: bool,
+) -> Vec<&'name str> {
+    let mut names: Vec<&str> = names.into_iter().map(String::as_str).collect();
+    names.sort_by_key(|name| {
+        let constant = name.len() > 1
+            && name.chars().any(char::is_alphabetic)
+            && !name.chars().any(char::is_lowercase);
+        let class = name.starts_with(|character: char| character.is_uppercase());
+        let folded = if fold_case {
+            name.to_lowercase()
+        } else {
+            String::new()
+        };
+        (!constant, !class, folded, *name)
+    });
+    names.dedup();
+    names
+}
+
+/// Render an import of several names from `module`, on one line when it fits
+/// and otherwise one name per line, in isort's order.
+#[must_use]
+pub(super) fn import_list<'name>(
+    module: &str,
+    names: impl IntoIterator<Item = &'name String>,
+) -> String {
+    let names = ordered(names, /* fold_case */ true);
+    let line = format!("from {module} import {}", names.join(", "));
+    if line.len() <= LINE_WIDTH {
+        return line;
+    }
     let mut statement = format!("from {module} import (\n");
     for name in names {
         let _ = writeln!(statement, "    {name},");

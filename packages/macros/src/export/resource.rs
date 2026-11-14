@@ -161,7 +161,7 @@ pub(super) struct ResourcePlan<'item> {
 
 impl<'item> ResourcePlan<'item> {
     /// Validate and classify the public, non-skipped functions of an impl
-    /// block, whose signatures, in order, are `signatures`.
+    /// block. `signatures` holds every function's signature, in order.
     fn new(item: &'item ItemImpl, signatures: &'item [syn::Signature]) -> syn::Result<Self> {
         let mut constructors = Vec::new();
         let mut methods = Vec::new();
@@ -358,8 +358,8 @@ impl Member<'_> {
 mod tests {
     use super::*;
 
-    /// The signatures of an impl block that names no `Self` in them, which
-    /// `expand_resource` plans with.
+    /// Return the signatures of an impl block's functions as written, without
+    /// the `Self` replacement that `expand_resource` makes.
     fn signatures(implementation: &ItemImpl) -> Vec<syn::Signature> {
         methods(implementation)
             .map(|method| method.sig.clone())

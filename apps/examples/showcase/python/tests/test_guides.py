@@ -1,4 +1,6 @@
-"""The Python samples of docs/guides, so that they run."""
+"""
+The Python samples of docs/guides, so that they run.
+"""
 
 from __future__ import annotations
 
@@ -72,6 +74,9 @@ class ErrorsTest(unittest.TestCase):
 
 
 def books(*titles: str) -> Shelf:
+    """
+    A fiction shelf with room for three books, holding `titles`.
+    """
     value = Shelf("fiction", 3)
     for title in titles:
         value.add(title)

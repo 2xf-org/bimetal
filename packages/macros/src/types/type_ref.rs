@@ -12,9 +12,8 @@ use crate::types::DirectType;
 
 /// Analyze a Rust type and render its host-neutral contract construction.
 ///
-/// `boundary` is the direct boundary that an attribute declares for the
-/// value, if any; without one, the type's `ContractType` implementation
-/// supplies the reference.
+/// `boundary` is the value's direct boundary, if any; without one, the
+/// type's `ContractType` implementation supplies the reference.
 pub(crate) fn type_ref_tokens(
     ty: &SynType,
     boundary: Option<Boundary>,
@@ -22,9 +21,8 @@ pub(crate) fn type_ref_tokens(
     if let Some(boundary) = boundary {
         return Ok(DirectType::parse(ty, boundary)?.type_ref_tokens());
     }
-    // An array inside a model crosses as Serde writes it, a tuple of its
-    // items, as a `Vec<u8>` there crosses as a list of integers. Serde writes
-    // arrays of at most 32 items.
+    // An array that does not cross as bytes crosses as Serde writes it, a
+    // tuple of its items, and Serde writes arrays of at most 32 items.
     let value = match ty {
         SynType::Reference(reference) => reference.elem.as_ref(),
         ty => ty,

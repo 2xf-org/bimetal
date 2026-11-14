@@ -20,7 +20,7 @@ use crate::contract::{self, Contract, NamespaceItems};
 use crate::documentation::{self, CallableDocumentation};
 use crate::literal;
 
-use super::context::PythonContext;
+use super::context::{ADAPTER_CONSTANT, LINE_WIDTH, PythonContext};
 use super::package::{API_MODULE, MODELS_MODULE};
 
 /// Return the generated Python alias of a numeric buffer of `element`, such
@@ -43,8 +43,9 @@ pub(crate) fn python_buffer_alias(element: BufferElement) -> &'static str {
 
 /// Render a contract type as a Python annotation in the current namespace.
 ///
-/// A date is an `AwareDatetime`, which type checkers read as `datetime` and
-/// Pydantic rejects without a UTC offset, because Rust requires one.
+/// A date-time is Pydantic's `AwareDatetime`, which type checkers read as
+/// `datetime` and Pydantic rejects without a UTC offset, because Rust
+/// requires one.
 pub(super) fn python_ref(reference: &TypeRef, context: &PythonContext<'_>) -> Result<String> {
     Ok(match reference {
         TypeRef::Unit => "None".to_owned(),
@@ -52,8 +53,8 @@ pub(super) fn python_ref(reference: &TypeRef, context: &PythonContext<'_>) -> Re
         TypeRef::Int { .. } => context.builtin("int"),
         TypeRef::Float { .. } => context.builtin("float"),
         TypeRef::String => context.builtin("str"),
-        TypeRef::DateTime => context.import("AwareDatetime").to_owned(),
-        TypeRef::Date => format!("{}.date", context.import(python_names::DATETIME_ALIAS)),
+        TypeRef::DateTime => context.import("pydantic.AwareDatetime").to_owned(),
+        TypeRef::Date => context.import("datetime.date").to_owned(),
         TypeRef::Duration => context.runtime("Duration"),
         TypeRef::Json => context.runtime("JsonValue"),
         TypeRef::Option { item } => format!("{} | None", python_ref(item, context)?),
@@ -89,10 +90,14 @@ pub(super) fn python_ref(reference: &TypeRef, context: &PythonContext<'_>) -> Re
         // pyarrow's stubs make `Array` generic in its scalar type.
         TypeRef::Arrow {
             value: ArrowKind::Array,
-        } => format!("{}.Array[{}]", context.import("pa"), context.import("Any")),
+        } => format!(
+            "{}.Array[{}]",
+            context.import("pyarrow"),
+            context.import("typing.Any")
+        ),
         TypeRef::Arrow { value } => format!(
             "{}.{}",
-            context.import("pa"),
+            context.import("pyarrow"),
             contract::arrow_spelling(*value).pyarrow
         ),
         TypeRef::Resource { identity } => python_resource_ref(identity, context)?,
@@ -102,7 +107,7 @@ pub(super) fn python_ref(reference: &TypeRef, context: &PythonContext<'_>) -> Re
                 .expect("a callback's signature ends with its return");
             format!(
                 "{}[[{}], {}]",
-                context.import("Callable"),
+                context.import("collections.abc.Callable"),
                 params
                     .iter()
                     .map(|param| python_ref(param, context))
@@ -136,16 +141,14 @@ pub(super) fn python_param(
     context: &PythonContext<'_>,
 ) -> Result<String> {
     let annotation = match &param.ty {
-        TypeRef::Arrow { value } => context
-            .runtime_export(contract::arrow_spelling(*value).protocol)
-            .to_owned(),
+        TypeRef::Arrow { value } => context.runtime(contract::arrow_spelling(*value).protocol),
         TypeRef::Option { item } if matches!(item.as_ref(), TypeRef::Arrow { .. }) => {
             let TypeRef::Arrow { value } = item.as_ref() else {
                 unreachable!("the guard checked the item");
             };
             format!(
                 "{} | None",
-                context.runtime_export(contract::arrow_spelling(*value).protocol)
+                context.runtime(contract::arrow_spelling(*value).protocol)
             )
         }
         reference => python_ref(reference, context)?,
@@ -199,8 +202,8 @@ fn date_literal(text: &str, context: &PythonContext<'_>) -> Result<String> {
         bail!("the date default `{text}` is not YYYY-MM-DD");
     };
     Ok(format!(
-        "{}.date({year}, {month}, {day})",
-        context.import(python_names::DATETIME_ALIAS)
+        "{}({year}, {month}, {day})",
+        context.import("datetime.date")
     ))
 }
 
@@ -347,6 +350,59 @@ pub(crate) fn python_namespace_module(package: &str, namespace: &Namespace) -> S
         .join(".")
 }
 
+/// Render `items` between `start`, which ends with an opening bracket, and
+/// `end`, which starts with the closing one, such as the arguments of a call:
+/// on one line when it fits, and otherwise one item per line, each followed
+/// by a comma, below `start`, whose line is indented by `indent`.
+#[must_use]
+pub(super) fn bracketed(start: &str, items: &[String], end: &str, indent: &str) -> String {
+    let line = format!("{start}{}{end}", items.join(", "));
+    if line.chars().count() <= LINE_WIDTH {
+        return line;
+    }
+    let mut text = format!("{start}\n");
+    for item in items {
+        let _ = writeln!(text, "{indent}    {item},");
+    }
+    let _ = write!(text, "{indent}{end}");
+    text
+}
+
+/// Render `annotation` after `start`, whose line is indented by `indent`: on
+/// one line when it fits, and otherwise with the items of its outermost
+/// subscript, such as the members of a `tuple[...]`, one per line.
+#[must_use]
+pub(super) fn python_annotation(start: &str, annotation: &str, indent: &str) -> String {
+    let line = format!("{start}{annotation}");
+    let Some((head, inner)) = annotation
+        .strip_suffix(']')
+        .and_then(|annotation| annotation.split_once('['))
+    else {
+        return line;
+    };
+    if line.chars().count() <= LINE_WIDTH {
+        return line;
+    }
+    let mut items = vec![String::new()];
+    let mut depth = 0usize;
+    for character in inner.chars() {
+        match character {
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                items.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        if let Some(item) = items.last_mut() {
+            item.push(character);
+        }
+    }
+    let items: Vec<String> = items.iter().map(|item| item.trim().to_owned()).collect();
+    bracketed(&format!("{start}{head}["), &items, "]", indent)
+}
+
 /// Separate the next Python top-level declaration with two blank lines.
 pub(super) fn begin_python_top_level(source: &mut String) {
     end_with_newlines(source, 3);
@@ -379,6 +435,45 @@ pub(super) fn python_scalar(value: &ScalarValue) -> String {
         ScalarValue::I64(value) => value.to_string(),
         ScalarValue::String(value) => literal::quoted(value),
     }
+}
+
+/// Render `value` as Python source between `start` and `end`, on one line
+/// when it fits, and otherwise with each item of its outermost list or map on
+/// a line of its own, laid out the same way, below `start`, whose line is
+/// indented by `indent`.
+#[must_use]
+pub(super) fn python_json_lines(start: &str, value: &Value, end: &str, indent: &str) -> String {
+    let line = format!("{start}{}{end}", python_json(value));
+    if line.chars().count() <= LINE_WIDTH {
+        return line;
+    }
+    let (open, close, items): (&str, &str, Vec<(String, &Value)>) = match value {
+        Value::Array(values) if !values.is_empty() => (
+            "[",
+            "]",
+            values.iter().map(|value| (String::new(), value)).collect(),
+        ),
+        Value::Object(values) if !values.is_empty() => (
+            "{",
+            "}",
+            values
+                .iter()
+                .map(|(key, value)| (format!("{}: ", literal::quoted(key)), value))
+                .collect(),
+        ),
+        _ => return line,
+    };
+    let inner = format!("{indent}    ");
+    let mut text = format!("{start}{open}\n");
+    for (key, item) in items {
+        let _ = writeln!(
+            text,
+            "{}",
+            python_json_lines(&format!("{inner}{key}"), item, ",", &inner)
+        );
+    }
+    let _ = write!(text, "{indent}{close}{end}");
+    text
 }
 
 /// Render arbitrary JSON as deterministic Python source.
@@ -426,21 +521,6 @@ pub(super) fn is_python_literal(reference: &TypeRef) -> bool {
     }
 }
 
-/// Render the adapter that validates a value of `reference`.
-pub(super) fn python_adapter(reference: &TypeRef, context: &PythonContext<'_>) -> Result<String> {
-    let adapter = context.runtime("type_adapter");
-    let annotation = python_adapter_type(reference, context)?;
-    let buffers = context
-        .contract
-        .reaches(reference, |item| matches!(item, TypeRef::Buffer { .. }))?;
-    let options = if buffers {
-        ", arbitrary_types=True"
-    } else {
-        ""
-    };
-    Ok(format!("{adapter}({annotation}{options})"))
-}
-
 /// Spell the module constant that validates and writes values of
 /// `reference`: a runtime `Adapter`, which builds Pydantic's adapter on first
 /// use, so a call neither builds the annotation nor looks the adapter up.
@@ -461,7 +541,7 @@ pub(super) fn python_adapter_constant(
         "{}(lambda: {annotation}{options})",
         context.runtime("Adapter")
     );
-    Ok(context.constant(python_names::ADAPTER_CONSTANT_PREFIX, expression))
+    Ok(context.constant(ADAPTER_CONSTANT, expression))
 }
 
 /// Whether the extension reads an argument of `reference` as Python holds it
@@ -506,9 +586,38 @@ pub(super) fn python_value(
     }
     let restored = python_restored(&value, reference, context)?;
     Ok(format!(
-        "{}.validate_python({restored}, strict=False)",
-        python_adapter(reference, context)?
+        "{}.validate({restored})",
+        python_adapter_constant(reference, context)?
     ))
+}
+
+/// Render `text` as a Python string in double quotes, or in single quotes
+/// when it holds a double quote and no single one, which then need no escape.
+#[must_use]
+pub(super) fn python_string(text: &str) -> String {
+    let quoted = literal::quoted(text);
+    if !text.contains('"') || text.contains('\'') {
+        return quoted;
+    }
+    let mut single = String::from("'");
+    let mut characters = quoted[1..quoted.len() - 1].chars();
+    while let Some(character) = characters.next() {
+        if character != '\\' {
+            single.push(character);
+            continue;
+        }
+        // A double quote needs no escape in single quotes.
+        match characters.next() {
+            Some('"') => single.push('"'),
+            Some(escaped) => {
+                single.push('\\');
+                single.push(escaped);
+            }
+            None => single.push('\\'),
+        }
+    }
+    single.push('\'');
+    single
 }
 
 /// Render a native value, restored when its type needs it.

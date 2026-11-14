@@ -3,7 +3,7 @@
 Apache Arrow values cross as Arrow values on every host. In Python, nothing is copied. Enable the `arrow` feature of `bimetal`:
 
 ```toml
-bimetal = { version = "=202611.13.0", features = ["arrow"] }
+bimetal = { version = "=202611.13.1", features = ["arrow"] }
 ```
 
 Then annotate a top-level parameter with `arrow`, or the export with `returns(arrow)`:
@@ -129,9 +129,7 @@ self.assertEqual(reader.read_next_batch().num_rows, 2)
 for _ in range(2):
     with self.assertRaises(pa.ArrowInvalid) as caught:
         reader.read_next_batch()
-    self.assertEqual(
-        str(caught.exception), "External error: stopped: the count stopped at batch 1"
-    )
+    self.assertEqual(str(caught.exception), "External error: stopped: the count stopped at batch 1")
 ```
 
 `External error: ` is arrow-rs's prefix. An `ArrowError` keeps its own text, and a panic reads `panic: ` and its message. After the first failure, every read fails the same way.

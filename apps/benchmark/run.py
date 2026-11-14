@@ -1,4 +1,5 @@
-"""Measure Bimetal on this machine and write the results as Markdown.
+"""
+Measure Bimetal on this machine and write the results as Markdown.
 
 Usage: run.py [--steps <step,...>] [--examples <name,...>] [--output <file>]
               [--warm-runs <n>] [--noop-runs <n>] [--max-load <load>]
@@ -26,8 +27,11 @@ The raw numbers go beside the report, in a file of the same name ending in
 """
 
 import argparse
+import collections.abc
+import datetime
 import json
 import os
+import pathlib
 import platform
 import re
 import resource
@@ -37,16 +41,13 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
-from datetime import datetime
-from pathlib import Path
-from typing import Any
+import typing
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "apps" / "examples"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "examples"))
 import showcase_node
 
-BENCH = Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+BENCH = pathlib.Path(__file__).resolve().parent
 WORK = ROOT / "target" / "bench"
 BIMETAL = ROOT / "target" / "release" / "bimetal"
 SHOWCASE = ROOT / "apps" / "examples" / "showcase"
@@ -67,9 +68,27 @@ EXPECTED_COPIES = {
 }
 
 
-def run(command: Sequence[str | Path], cwd: Path = ROOT, env: dict[str, str] | None = None) -> str:
-    """Run a command and return its stdout; on failure, show its output and
-    exit."""
+# ---------------------------------------------------------------------------
+# Commands and the machine
+# ---------------------------------------------------------------------------
+
+
+def run(
+    command: collections.abc.Sequence[str | pathlib.Path],
+    cwd: pathlib.Path = ROOT,
+    env: dict[str, str] | None = None,
+) -> str:
+    """
+    Run a command, and exit with its output if it fails.
+
+    Args:
+        command: The program and its arguments.
+        cwd: The directory to run it in.
+        env: Variables to set on top of this process's environment.
+
+    Returns:
+        What the command printed to stdout.
+    """
     result = subprocess.run(
         [str(part) for part in command],
         cwd=cwd,
@@ -83,12 +102,26 @@ def run(command: Sequence[str | Path], cwd: Path = ROOT, env: dict[str, str] | N
 
 
 def load_average() -> float:
+    """
+    Read the 1-minute load average.
+
+    Returns:
+        The load average, to two decimals.
+    """
     return round(os.getloadavg()[0], 2)
 
 
 def settle(limit: float, timeout: float = 600) -> None:
-    """Wait up to `timeout` seconds for the 1-minute load average to fall below
-    `limit`, which takes a minute or two after a build."""
+    """
+    Wait for the 1-minute load average to fall below a limit.
+
+    Notes:
+        That takes a minute or two after a build.
+
+    Args:
+        limit: The load average to wait for.
+        timeout: The most seconds to wait.
+    """
     deadline = time.monotonic() + timeout
     if load_average() >= limit:
         print(f"waiting for the load average, {load_average()}, to fall below {limit}", flush=True)
@@ -97,24 +130,40 @@ def settle(limit: float, timeout: float = 600) -> None:
 
 
 def first_line(command: list[str]) -> str:
+    """
+    Run a command and keep the first line it prints, such as a version.
+
+    Args:
+        command: The program and its arguments.
+
+    Returns:
+        The first line of its stdout.
+    """
     return run(command).strip().splitlines()[0]
 
 
-def context() -> dict[str, Any]:
+def context() -> dict[str, typing.Any]:
+    """
+    Describe the machine, the commit, and the tools that the numbers come from.
+
+    Returns:
+        The report's machine table, by row.
+    """
     if sys.platform == "darwin":
         cpu = run(["sysctl", "-n", "machdep.cpu.brand_string"]).strip()
         memory = int(run(["sysctl", "-n", "hw.memsize"]))
         system = f"macOS {run(['sw_vers', '-productVersion']).strip()} ({run(['sw_vers', '-buildVersion']).strip()})"
     else:
+        lines = pathlib.Path("/proc/cpuinfo").read_text().splitlines()
         cpu = next(
-            (line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines() if line.startswith("model name")),
+            (line.split(":", 1)[1].strip() for line in lines if line.startswith("model name")),
             platform.processor(),
         )
-        memory = int(Path("/proc/meminfo").read_text().split()[1]) * 1024
+        memory = int(pathlib.Path("/proc/meminfo").read_text().split()[1]) * 1024
         system = platform.platform()
     dirty = bool(run(["git", "status", "--porcelain"]).strip())
     return {
-        "date": datetime.now().astimezone().isoformat(timespec="minutes"),
+        "date": datetime.datetime.now().astimezone().isoformat(timespec="minutes"),
         "cpu": cpu,
         "cores": os.cpu_count(),
         "memory_gib": round(memory / (1 << 30)),
@@ -129,26 +178,53 @@ def context() -> dict[str, Any]:
     }
 
 
-def config_of(example: str) -> Path:
-    """The one bimetal.toml of an example, which may lie in one of its
-    packages."""
+# ---------------------------------------------------------------------------
+# Builds
+# ---------------------------------------------------------------------------
+
+
+def config_of(example: str) -> pathlib.Path:
+    """
+    Find the one bimetal.toml of an example, which may lie in one of its packages.
+
+    Args:
+        example: The example's directory name.
+
+    Returns:
+        The file's path.
+    """
     listed = run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", f"apps/examples/{example}"])
-    configs = [line for line in listed.splitlines() if Path(line).name == "bimetal.toml"]
+    configs = [line for line in listed.splitlines() if pathlib.Path(line).name == "bimetal.toml"]
     if len(configs) != 1:
         sys.exit(f"apps/examples/{example} must hold exactly one bimetal.toml, not {configs}")
     return ROOT / configs[0]
 
 
-def target_of(example: str) -> Path:
-    """The target directory of the example's builds in every step."""
+def target_of(example: str) -> pathlib.Path:
+    """
+    Name the target directory of the example's builds in every step.
+
+    Args:
+        example: The example's directory name.
+
+    Returns:
+        The directory.
+    """
     return WORK / f"target-{example}"
 
 
 class ProcessSampler(threading.Thread):
-    """Count, every 0.1 s, the rustc and cargo processes whose command line
-    names `marker`, such as a build's target directory."""
+    """
+    Count, every 0.1 s, the rustc and cargo processes whose command line names a marker.
+    """
 
     def __init__(self, marker: str) -> None:
+        """
+        Set up the sampler.
+
+        Args:
+            marker: Text that the command lines hold, such as a build's target directory.
+        """
         super().__init__(daemon=True)
         self.marker = marker
         self.done = threading.Event()
@@ -158,12 +234,22 @@ class ProcessSampler(threading.Thread):
     def run(self) -> None:
         while not self.done.is_set():
             listing = subprocess.run(["ps", "-axww", "-o", "args="], capture_output=True, text=True).stdout
-            programs = [Path(line.split()[0]).name for line in listing.splitlines() if self.marker in line and line.split()]
+            programs = [
+                pathlib.Path(line.split()[0]).name
+                for line in listing.splitlines()
+                if self.marker in line and line.split()
+            ]
             self.rustc.append(programs.count("rustc"))
             self.cargo.append(programs.count("cargo"))
             self.done.wait(0.1)
 
-    def summary(self) -> dict[str, Any]:
+    def summary(self) -> dict[str, typing.Any]:
+        """
+        Reduce the samples to the peak and mean counts.
+
+        Returns:
+            The peak rustc count, the mean while any rustc runs, and the peak cargo count.
+        """
         busy = [count for count in self.rustc if count > 0]
         return {
             "peak_rustc": max(self.rustc, default=0),
@@ -172,15 +258,33 @@ class ProcessSampler(threading.Thread):
         }
 
 
-def bimetal(arguments: list[str | Path], example: str, cwd: Path = ROOT) -> str:
-    """Run `bimetal` on an example, which builds into the example's target
-    directory."""
+def bimetal(arguments: list[str | pathlib.Path], example: str, cwd: pathlib.Path = ROOT) -> str:
+    """
+    Run `bimetal` on an example, which builds into the example's target directory.
+
+    Args:
+        arguments: The arguments to `bimetal`.
+        example: The example's directory name.
+        cwd: The directory to run it in.
+
+    Returns:
+        What `bimetal` printed to stdout.
+    """
     return run([BIMETAL, *arguments], cwd=cwd, env={"CARGO_TARGET_DIR": str(target_of(example))})
 
 
-def timed_bimetal(arguments: list[str], example: str, sample: bool) -> dict[str, Any]:
-    """Run `bimetal <arguments>` on an example and return its wall time and the
-    CPU time of its process tree, with process counts if `sample`."""
+def timed_bimetal(arguments: list[str], example: str, sample: bool) -> dict[str, typing.Any]:
+    """
+    Time `bimetal <arguments>` on an example.
+
+    Args:
+        arguments: The arguments to `bimetal`, before the lock and config flags.
+        example: The example's directory name.
+        sample: Whether to count rustc and cargo processes during the run.
+
+    Returns:
+        The wall time, the CPU time of the process tree, the load at the start, and the process counts if sampled.
+    """
     sampler = ProcessSampler(str(target_of(example))) if sample else None
     load = load_average()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -190,7 +294,7 @@ def timed_bimetal(arguments: list[str], example: str, sample: bool) -> dict[str,
     bimetal([*arguments, "--locked", "--config", config_of(example)], example)
     wall = time.perf_counter() - start
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    result: dict[str, Any] = {
+    result: dict[str, typing.Any] = {
         "wall_s": round(wall, 3),
         "cpu_s": round(after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime, 2),
         "load": load,
@@ -202,8 +306,20 @@ def timed_bimetal(arguments: list[str], example: str, sample: bool) -> dict[str,
     return result
 
 
-def measure_builds(examples: list[str], warm_runs: int, noop_runs: int, max_load: float) -> dict[str, Any]:
-    results: dict[str, Any] = {}
+def measure_builds(examples: list[str], warm_runs: int, noop_runs: int, max_load: float) -> dict[str, typing.Any]:
+    """
+    Time each example's cold, warm, and no-op builds, and its checks.
+
+    Args:
+        examples: The examples' directory names.
+        warm_runs: The forced builds after the cold one.
+        noop_runs: The no-op builds, and the checks.
+        max_load: The load average to wait for before each example's builds.
+
+    Returns:
+        Each example's timed runs, by kind.
+    """
+    results: dict[str, typing.Any] = {}
     for example in examples:
         shutil.rmtree(target_of(example), ignore_errors=True)
         settle(max_load)
@@ -217,9 +333,18 @@ def measure_builds(examples: list[str], warm_runs: int, noop_runs: int, max_load
     return results
 
 
-def prepare_showcase() -> dict[str, list[str | Path]]:
-    """Build the showcase for every host, and return the command that runs
-    each host's benchmark."""
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+
+
+def prepare_showcase() -> dict[str, list[str | pathlib.Path]]:
+    """
+    Build the showcase for every host.
+
+    Returns:
+        The command that runs each host's memory cases.
+    """
     print("memory: building the showcase", flush=True)
     bimetal(["build", "--locked", "--config", SHOWCASE / "bimetal.toml"], "showcase")
     run(["uv", "sync", "--locked", "--quiet", "--project", SHOWCASE / "python"])
@@ -234,13 +359,20 @@ def prepare_showcase() -> dict[str, list[str | Path]]:
     }
 
 
-def peak_rss(command: list[str | Path]) -> int:
-    """The peak resident size of a command, in bytes."""
-    flag, pattern, scale = ("-l", r"(\d+)\s+maximum resident set size", 1) if sys.platform == "darwin" else (
-        "-v",
-        r"Maximum resident set size \(kbytes\): (\d+)",
-        1024,
-    )
+def peak_rss(command: list[str | pathlib.Path]) -> int:
+    """
+    Measure the peak resident size of a command.
+
+    Args:
+        command: The program and its arguments.
+
+    Returns:
+        The peak resident size, in bytes.
+    """
+    if sys.platform == "darwin":
+        flag, pattern, scale = "-l", r"(\d+)\s+maximum resident set size", 1
+    else:
+        flag, pattern, scale = "-v", r"Maximum resident set size \(kbytes\): (\d+)", 1024
     result = subprocess.run(["/usr/bin/time", flag, *map(str, command)], capture_output=True, text=True, cwd=ROOT)
     found = re.search(pattern, result.stderr)
     if result.returncode != 0 or not found:
@@ -248,8 +380,23 @@ def peak_rss(command: list[str | Path]) -> int:
     return int(found[1]) * scale
 
 
-def measure_memory(hosts: dict[str, list[str | Path]], max_load: float, repeats: int = 3) -> dict[str, Any]:
-    results: dict[str, Any] = {}
+def measure_memory(
+    hosts: dict[str, list[str | pathlib.Path]],
+    max_load: float,
+    repeats: int = 3,
+) -> dict[str, typing.Any]:
+    """
+    Measure each memory case's peak resident size on each host, idle and busy.
+
+    Args:
+        hosts: The command that runs each host's memory cases.
+        max_load: The load average to wait for before each host.
+        repeats: The runs of each measurement, whose median counts.
+
+    Returns:
+        Each host's load at the start and its cases.
+    """
+    results: dict[str, typing.Any] = {}
     for host, command in hosts.items():
         settle(max_load)
         print(f"memory: {host}", flush=True)
@@ -263,13 +410,25 @@ def measure_memory(hosts: dict[str, list[str | Path]], max_load: float, repeats:
     return results
 
 
-def measure_sizes(examples: list[str]) -> list[dict[str, Any]]:
-    """Every artifact in the hosts' projects that `bimetal check --json`
-    reports, and the showcase copy's Node.js addon."""
+# ---------------------------------------------------------------------------
+# Sizes
+# ---------------------------------------------------------------------------
+
+
+def measure_sizes(examples: list[str]) -> list[dict[str, typing.Any]]:
+    """
+    Measure every artifact in the hosts' projects, and the showcase copy's Node.js addon.
+
+    Args:
+        examples: The examples' directory names.
+
+    Returns:
+        Each artifact's example, path in its project, and size in bytes.
+    """
     found = []
     for example in examples:
         report = json.loads(bimetal(["check", "--json", "--config", config_of(example)], example))
-        directories = [Path(host["directory"]) for host in report["hosts"]]
+        directories = [pathlib.Path(host["directory"]) for host in report["hosts"]]
         if example == "showcase" and NODE_COPY.is_dir():
             directories.append(NODE_COPY / "typescript")
         for directory in directories:
@@ -277,11 +436,31 @@ def measure_sizes(examples: list[str]) -> list[dict[str, Any]]:
                 parts = set(path.relative_to(directory).parts)
                 if path.is_file() and path.suffix in ARTIFACTS and not parts & {"node_modules", ".venv", "tests"}:
                     label = "showcase (Node.js copy)" if NODE_COPY in path.parents else example
-                    found.append({"example": label, "path": str(path.relative_to(directory)), "bytes": path.stat().st_size})
+                    found.append(
+                        {
+                            "example": label,
+                            "path": str(path.relative_to(directory)),
+                            "bytes": path.stat().st_size,
+                        },
+                    )
     return found
 
 
-def render(results: dict[str, Any]) -> str:
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+
+def render(results: dict[str, typing.Any]) -> str:
+    """
+    Render the report.
+
+    Args:
+        results: The machine, the load limit, and each step's results.
+
+    Returns:
+        The report's Markdown.
+    """
     info = results["context"]
     lines = [
         "# Bimetal benchmarks",
@@ -312,15 +491,17 @@ def render(results: dict[str, Any]) -> str:
         lines += [
             "## Builds",
             "",
-            f"`bimetal build --force --locked` with its own `CARGO_TARGET_DIR`: cold is the first build into an empty one,",
-            "warm the next builds into it. CPU is the user and system time of the whole process tree, and",
-            f"utilization divides it by wall time and {cores} cores. Rustc and cargo counts come from `ps` every 0.1 s.",
+            "`bimetal build --force --locked` with its own `CARGO_TARGET_DIR`: cold is the first build into an empty",
+            "one, warm the next builds into it. CPU is the user and system time of the whole process tree, and",
+            f"utilization divides it by wall time and {cores} cores. Rustc and cargo counts come from `ps` every",
+            "0.1 s.",
             "",
             "| Example | Build | Wall | CPU | Utilization | Peak rustc | Mean rustc | Peak cargo | Load |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for example, runs in results["builds"].items():
-            for label, entry in [("cold", runs["cold"]), *((f"warm {n + 1}", warm) for n, warm in enumerate(runs["warm"]))]:
+            labelled = [("cold", runs["cold"]), *((f"warm {n + 1}", warm) for n, warm in enumerate(runs["warm"]))]
+            for label, entry in labelled:
                 utilization = entry["cpu_s"] / (entry["wall_s"] * cores)
                 lines.append(
                     f"| {example} | {label} | {entry['wall_s']:.1f} s | {entry['cpu_s']:.1f} s | {utilization:.0%} | "
@@ -328,7 +509,10 @@ def render(results: dict[str, Any]) -> str:
                 )
         lines += [
             "",
-            "| Example | No-op `bimetal build` (median, min to max) | `bimetal check` (median, min to max) | Runs | Load |",
+            (
+                "| Example | No-op `bimetal build` (median, min to max) | `bimetal check` (median, min to max) "
+                "| Runs | Load |"
+            ),
             "| --- | --- | --- | --- | --- |",
         ]
         for example, runs in results["builds"].items():
@@ -359,9 +543,11 @@ def render(results: dict[str, Any]) -> str:
                 expected = EXPECTED_COPIES[host]["arrow" if case.startswith("arrow") else "bytes"]
                 single_call = data["calls"] == 1
                 flag = "extra copy?" if single_call and copies > expected + 0.5 else ""
+                limit = expected if single_call else "n/a"
                 lines.append(
-                    f"| {host} | {case} | {data['calls']} | {data['idle'] / MIB:.1f} MiB | {data['busy'] / MIB:.1f} MiB | "
-                    f"{difference / MIB:.1f} MiB | {copies:.2f} | {expected if single_call else 'n/a'} | {flag} | {entry['load']} |"
+                    f"| {host} | {case} | {data['calls']} | {data['idle'] / MIB:.1f} MiB | "
+                    f"{data['busy'] / MIB:.1f} MiB | {difference / MIB:.1f} MiB | {copies:.2f} | {limit} | {flag} | "
+                    f"{entry['load']} |"
                 )
         lines += [
             "",
@@ -372,16 +558,25 @@ def render(results: dict[str, Any]) -> str:
     if "sizes" in results:
         lines += ["## Artifact sizes", "", "| Example | Artifact | Size |", "| --- | --- | --- |"]
         for artifact in results["sizes"]:
-            lines.append(f"| {artifact['example']} | `{artifact['path']}` | {artifact['bytes'] / MIB:.2f} MiB ({artifact['bytes']:,} bytes) |")
+            size = artifact["bytes"]
+            lines.append(f"| {artifact['example']} | `{artifact['path']}` | {size / MIB:.2f} MiB ({size:,} bytes) |")
         lines.append("")
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """
+    Run the chosen steps, and write the report and its raw numbers.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--steps", default=",".join(STEPS))
-    parser.add_argument("--examples", default="greeter,showcase,trading")
-    parser.add_argument("--output", type=Path, default=WORK / "report.md")
+    parser.add_argument("--examples", default="bank,showcase,streams")
+    parser.add_argument("--output", type=pathlib.Path, default=WORK / "report.md")
     parser.add_argument("--warm-runs", type=int, default=2)
     parser.add_argument("--noop-runs", type=int, default=5)
     parser.add_argument("--max-load", type=float, default=2.0, help="the load average to wait for before each step")
@@ -393,7 +588,7 @@ def main() -> None:
     examples = options.examples.split(",")
     WORK.mkdir(parents=True, exist_ok=True)
     run(["cargo", "build", "--locked", "--release", "-p", "bimetal-cli"])
-    results: dict[str, Any] = {"context": context(), "max_load": options.max_load}
+    results: dict[str, typing.Any] = {"context": context(), "max_load": options.max_load}
     if "builds" in steps:
         results["builds"] = measure_builds(examples, options.warm_runs, options.noop_runs, options.max_load)
     if "memory" in steps:

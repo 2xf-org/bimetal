@@ -7,11 +7,11 @@ Python names stay in snake case. TypeScript functions, methods and parameters us
 | Rust name | Python | TypeScript |
 | --- | --- | --- |
 | A reserved word of the host, such as `class` | `class_value` | `class_` |
-| A name the generated wrapper uses itself, such as `bytes`, `str` or `int` | `bytes_`, `str_`, `int_` | Unchanged |
+| A name the generated wrapper uses itself: a builtin such as `bytes`, a module it imports such as `datetime` or `bimetal`, or a name that starts with `bimetal_` or `BIMETAL_` | `bytes_`, `datetime_`, `bimetal_result_` | Unchanged |
 
 ## Model fields in Python
 
-A field whose name is a Python keyword or a member of Pydantic's `BaseModel`, such as `class`, `json` or `model_dump`, gains `_value` in Python (`json_value`) and keeps its wire name. So does a field whose name starts with an underscore, which Pydantic would take for a private attribute, without the underscores: `_id` becomes `id_value`.
+A field whose name is a Python keyword, a member of Pydantic's `BaseModel`, or a module that the generated code imports, such as `class`, `json`, `model_dump` or `datetime`, gains `_value` in Python (`json_value`) and keeps its wire name. So does a field whose name starts with an underscore, which Pydantic would take for a private attribute, without the underscores: `_id` becomes `id_value`.
 
 A field's Python name can't be the wire name of another field of the model, such as two fields whose renames swap their names, because Pydantic would read the one for the other.
 
@@ -21,12 +21,13 @@ Exports and fields can have the names of other Python builtins, such as a functi
 
 `bimetal build` reports all of these at once, and names the Rust items involved. It checks only the enabled hosts.
 
-- An export whose name the generated package defines itself, such as `PanicException`, Pydantic's `Field`, `nativeReady` or `JsonValue`.
+- An export whose name the generated package defines itself, such as `PanicException`, `nativeReady` or `JsonValue`. In Python, that includes a module that the generated code imports, such as `typing` or `bimetal`, and a name that starts with `bimetal_` or `BIMETAL_`.
 - A TypeScript export named `then`, which would make the module a thenable that `await import(...)` calls.
 - A TypeScript export named `eval` or `arguments`, which a module can't bind.
 - A parameter with the name of a model or error of its own module, which the Python wrapper needs.
+- A resource method named like a module that the generated Python class uses, such as `datetime`.
 - A package or folder name that can't be a Python module after `-` becomes `_`, such as `2024-feeds`.
-- A Rust module or folder that becomes a Python module the generated package defines itself, such as one named `models` or `api`.
+- A Rust module or folder that becomes a Python module the generated package defines itself, such as one named `models` or `api`, or `bimetal` or `native` at the root.
 - Two namespaces that become one module of a host, such as the Rust module `xf_sources::venues` and the folder `sources/venues`.
 - Names that collide after renaming.
 

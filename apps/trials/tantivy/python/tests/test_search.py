@@ -1,18 +1,13 @@
-"""Tantivy through the generated Python package."""
+"""
+Tantivy through the generated Python package.
+"""
+
+from __future__ import annotations
 
 import tempfile
 import unittest
 
-from search import (
-    BulkWriter,
-    FieldKind,
-    FieldSpec,
-    Index,
-    SearchError,
-    Searcher,
-    Writer,
-    first_text,
-)
+from search import BulkWriter, FieldKind, FieldSpec, Index, Searcher, SearchError, Writer, first_text
 
 FIELDS = [
     FieldSpec(name="title", kind=FieldKind.Text, stored=True),
@@ -85,10 +80,7 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(len(self.searcher.search("sea", ["title"], 1)), 1)
 
     def test_for_over_hits(self) -> None:
-        titles = [
-            first_text(hit.document, "title")
-            for hit in self.searcher.hits("the OR of", page_size=2)
-        ]
+        titles = [first_text(hit.document, "title") for hit in self.searcher.hits("the OR of", page_size=2)]
         self.assertEqual(sorted(titles), sorted(book["title"] for book in BOOKS))
 
     def test_a_bad_query_is_typed_and_carries_its_reason(self) -> None:

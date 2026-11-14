@@ -177,7 +177,7 @@ The command refuses a name that it cannot make safe, and it reports all such nam
 
 A \emph{wrapper} is the native function that a host calls. One function plans the wrapper for every host, so each feature has one implementation rather than three. The macros check each exported signature once, for the contract and for every host. The planned wrapper then decodes the arguments, obtains the resource, calls the author's function and converts the result. This plan is the same for synchronous and asynchronous calls, and for free functions and methods. Where hosts differ, the planner calls an interface named \ttt{HostBackend}, and it never branches on the host itself.
 
-Figure~\ref{fig:call} follows one call to \ttt{greet} from the generated code to the author's function and back. The generated code runs first: in Python it validates a dictionary as the model and then dumps the model, and in TypeScript it checks the outermost type of each argument. The wrapper then decodes each value once and checks its field rules before it calls the author's function. On the way back, the wrapper checks and encodes the result, and the generated code validates it in Python or freezes it in TypeScript. Section~\ref{sec:costs} reports what the generated code costs compared with the wrapper alone.
+Figure~\ref{fig:call} follows one call to \ttt{greet} from the generated code to the author's function and back. The generated code runs first. In Python it passes each argument as it is, and calls again with Pydantic's dump of an argument that the extension cannot read, such as a dictionary that a caller passes for a model, while in TypeScript it checks the outermost type of each argument. The wrapper then decodes each value once and checks its field rules before it calls the author's function. On the way back, the wrapper checks the result's field rules and makes its host value, which in Python is already an instance of each model's class, so the generated code returns it in Python and freezes it in TypeScript. Section~\ref{sec:costs} reports what the generated code costs compared with the wrapper alone.
 
 \begin{figure}[t]
 \centering
@@ -447,7 +447,7 @@ Build time is the third cost. A first build compiles every dependency once for e
 
 \emph{Three interfaces need \ttt{unsafe} code.} These are Node-API's calls, the C Data Interface and the discovery interface. Tests and code review check this code, and the tests do not run under a sanitizer or Miri.
 
-\emph{Generated code costs time on every call.} The generated Python validates models in both directions, whether or not a caller needs it, and a caller cannot turn this off.
+\emph{Checks cost time on every call.} Rust checks the field rules of every argument and result, whether or not a caller needs it, and a caller cannot turn this off. Each call also runs generated code, unless a Python export is brief and passes its values on as they are, and in Python a value that holds a numeric buffer goes through Pydantic in both directions.
 
 \emph{The contract has gaps.} The command does not enforce A3 inside an export. Bimetal does not support untagged or adjacently tagged enums, tuple variants that hold other than one value, \ttt{\#[serde(flatten)]}, generic types, \ttt{u128}, maps with keys other than strings, bytes inside a model, keyword-only arguments or asynchronous callbacks. In TypeScript, only an asynchronous export can take a stream of record batches.
 

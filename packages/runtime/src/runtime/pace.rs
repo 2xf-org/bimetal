@@ -21,8 +21,8 @@ use std::time::Instant;
 pub(crate) const HAND_OFF: u64 = 25_000;
 
 /// The most work that a call does on the caller's thread while no other call
-/// of its export runs on a worker: 2.5 times the hand-off, so that the
-/// hand-off adds at most 40% to the work it moves.
+/// of its export runs on a worker, so that the hand-off adds at most 40% to
+/// the work it moves.
 pub(crate) const INLINE: u64 = HAND_OFF * 5 / 2;
 
 /// While an export works for less than a quarter of the hand-off, one call

@@ -49,8 +49,8 @@ enum Wake {
     Threadsafe { event_loop: Py<PyAny> },
 }
 
-/// A loop that has had a call wait, kept alive by its entry so that no other
-/// loop takes its address, and its mailbox.
+/// A loop that has had a call wait, and its mailbox. The entry keeps the loop
+/// alive, so that no other loop takes its address.
 struct Entry {
     event_loop: Py<PyAny>,
     mailbox: Arc<Mailbox>,
@@ -70,7 +70,9 @@ impl Mailbox {
     ///
     /// # Errors
     ///
-    /// Returns the error of Python when the loop cannot watch the mailbox.
+    /// Returns an `OSError` when the socket pair cannot be made, and the error
+    /// of Python when the loop cannot watch the mailbox or a known loop cannot
+    /// say whether it is closed.
     pub(crate) fn of(event_loop: &Bound<'_, PyAny>) -> PyResult<Arc<Self>> {
         let py = event_loop.py();
         let owners: Vec<Py<PyAny>> = {
@@ -121,7 +123,7 @@ impl Mailbox {
     }
 
     /// A new mailbox for `event_loop`, which watches its socket on Unix, or
-    /// which `call_soon_threadsafe` wakes when the loop has no readers.
+    /// which `call_soon_threadsafe` wakes when the loop lacks `add_reader`.
     fn watched(event_loop: &Bound<'_, PyAny>) -> PyResult<Arc<Self>> {
         #[cfg(unix)]
         {
@@ -176,8 +178,8 @@ impl Mailbox {
             Wake::Socket { writer, .. } => {
                 use std::io::Write;
 
-                // A full socket wakes the loop already, and the socket of a
-                // closed loop has no reader, whose calls nobody awaits.
+                // A full socket wakes the loop already, and nobody awaits the
+                // calls of a closed loop.
                 let _ = (&*writer).write(&[0]);
             }
             Wake::Threadsafe { .. } => {

@@ -1,4 +1,5 @@
-"""Time the probe's crossings from Python, for apps/benchmark/lab.py.
+"""
+Time the probe's crossings from Python, for apps/benchmark/lab.py.
 
 Usage: lab_python.py <project> <rounds> <samples> [<case>...]
 
@@ -16,15 +17,21 @@ A named case that this host does not define is skipped.
 """
 
 import asyncio
+import collections.abc
+import datetime
 import functools
+import importlib
+import importlib.util
 import itertools
 import json
+import queue
 import sys
 import threading
 import time
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
-from typing import Any
+import types
+import typing
+
+import pyarrow
 
 # The calls of one sample take about this long.
 SAMPLE_NS = 1_000_000
@@ -33,16 +40,50 @@ CALLERS = 32
 # Rounds of `spin` that take about 170 µs on one core of an Apple M5.
 HEAVY_ROUNDS = 100_000
 
-Sync = Callable[[], object]
-Async = Callable[[], Awaitable[object]]
+Sync = collections.abc.Callable[[], object]
+Async = collections.abc.Callable[[], collections.abc.Awaitable[object]]
 
 
-def native_of(wrapper: Callable[..., object]) -> Callable[..., object]:
-    """The native function that a generated wrapper calls: a global of its
-    module whose value is a builtin, or the extension attribute it names. A
-    brief function that the module binds is the native function itself."""
-    from probe import _native
+# ---------------------------------------------------------------------------
+# Native functions
+# ---------------------------------------------------------------------------
 
+
+def submodule(name: str, old: str) -> types.ModuleType:
+    """
+    Import a module of the generated `probe` package.
+
+    Notes:
+        A base build of `lab.py --base` may predate the module's current name.
+
+    Args:
+        name: The module's name, such as `native`.
+        old: Its name in older builds, such as `_native`.
+
+    Returns:
+        The module.
+    """
+    found = name if importlib.util.find_spec(f"probe.{name}") else old
+    return importlib.import_module(f"probe.{found}")
+
+
+def native_of(wrapper: collections.abc.Callable[..., object]) -> collections.abc.Callable[..., object]:
+    """
+    Find the native function that a generated wrapper calls.
+
+    Notes:
+        It is a global of the wrapper's module whose value is a builtin, or the extension attribute that the
+        wrapper names. A brief function that the module binds is the native function itself.
+
+    Args:
+        wrapper: A function of the generated package.
+
+    Returns:
+        The native function.
+
+    Raises:
+        SystemExit: If the wrapper calls no native function.
+    """
     code = getattr(wrapper, "__code__", None)
     if code is None:
         return wrapper
@@ -52,14 +93,26 @@ def native_of(wrapper: Callable[..., object]) -> Callable[..., object]:
             return value
     for constant in code.co_consts:
         if isinstance(constant, str) and constant.startswith("__bimetal_function_"):
-            return getattr(_native, constant)
+            return getattr(submodule("native", "_native"), constant)
     raise SystemExit(f"no native function in {wrapper.__name__}")
 
 
-def passed(runtime: Any, annotation: Any, value: Any) -> Any:
-    """What a generated wrapper passes first for `value`: the value itself
-    where the extension reads models as they are, and otherwise its dump, by
-    this runtime's adapter or the older `dump_host` of a base build."""
+def passed(runtime: types.ModuleType, annotation: typing.Any, value: typing.Any) -> typing.Any:
+    """
+    Compute what a generated wrapper passes first for a value.
+
+    Notes:
+        That is the value itself where the extension reads models as they are, and otherwise its dump, by this
+        runtime's adapter or the older `dump_host` of a base build.
+
+    Args:
+        runtime: The generated package's runtime module.
+        annotation: The parameter's type.
+        value: The argument.
+
+    Returns:
+        What the wrapper passes to the native function.
+    """
     if hasattr(runtime, "Revalidate"):
         return value
     adapter = getattr(runtime, "Adapter", None)
@@ -68,9 +121,15 @@ def passed(runtime: Any, annotation: Any, value: Any) -> Any:
     return adapter(lambda: annotation).dump(value)
 
 
+# ---------------------------------------------------------------------------
+# Floors and contention
+# ---------------------------------------------------------------------------
+
+
 class Contender(threading.Thread):
-    """A thread that runs Python code until stopped, so that every other
-    thread competes with it for the interpreter lock."""
+    """
+    A thread that runs Python code until stopped, so that every other thread competes with it for the interpreter lock.
+    """
 
     def __init__(self) -> None:
         super().__init__(daemon=True)
@@ -83,26 +142,64 @@ class Contender(threading.Thread):
 
 
 class Waker(threading.Thread):
-    """A Python thread that settles futures through `call_soon_threadsafe`,
-    the least that a call that hands its work to another thread costs."""
+    """
+    A thread that settles futures through `call_soon_threadsafe`.
+
+    Notes:
+        It is the least that a call that hands its work to another thread costs.
+    """
 
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__(daemon=True)
         self.loop = loop
-        self.queue: Any = __import__("queue").SimpleQueue()
+        self.queue: queue.SimpleQueue[asyncio.Future[object] | None] = queue.SimpleQueue()
 
     def run(self) -> None:
         while (future := self.queue.get()) is not None:
             self.loop.call_soon_threadsafe(future.set_result, 1)
 
-    def wake(self) -> Awaitable[object]:
+    def wake(self) -> collections.abc.Awaitable[object]:
+        """
+        Hand a future to the thread to settle.
+
+        Returns:
+            The future.
+        """
         future = self.loop.create_future()
         self.queue.put(future)
         return future
 
 
+def ready(loop: asyncio.AbstractEventLoop) -> collections.abc.Awaitable[object]:
+    """
+    Make a future that is already settled.
+
+    Args:
+        loop: The running event loop.
+
+    Returns:
+        The future.
+    """
+    future = loop.create_future()
+    future.set_result(1)
+    return future
+
+
+# ---------------------------------------------------------------------------
+# Timing
+# ---------------------------------------------------------------------------
+
+
 def batch_size(call: Sync) -> int:
-    """How many calls take about SAMPLE_NS."""
+    """
+    Count how many calls take about SAMPLE_NS.
+
+    Args:
+        call: The case's call.
+
+    Returns:
+        The number of calls, a power of two.
+    """
     count = 1
     while True:
         start = time.perf_counter_ns()
@@ -114,6 +211,15 @@ def batch_size(call: Sync) -> int:
 
 
 async def async_batch_size(call: Async) -> int:
+    """
+    Count how many awaited calls take about SAMPLE_NS.
+
+    Args:
+        call: The case's call.
+
+    Returns:
+        The number of calls, a power of two.
+    """
     count = 1
     while True:
         start = time.perf_counter_ns()
@@ -125,6 +231,18 @@ async def async_batch_size(call: Async) -> int:
 
 
 def time_sync(call: Sync, batch: int, samples: int, per_call: int) -> list[float]:
+    """
+    Time batches of a call.
+
+    Args:
+        call: The case's call.
+        batch: The calls in one sample.
+        samples: The samples to take.
+        per_call: The calls that one call of the case makes.
+
+    Returns:
+        Each sample's nanoseconds per call.
+    """
     timed = []
     for _ in range(samples):
         start = time.perf_counter_ns()
@@ -135,6 +253,18 @@ def time_sync(call: Sync, batch: int, samples: int, per_call: int) -> list[float
 
 
 async def time_async(call: Async, batch: int, samples: int, per_call: int) -> list[float]:
+    """
+    Time batches of an awaited call.
+
+    Args:
+        call: The case's call.
+        batch: The calls in one sample.
+        samples: The samples to take.
+        per_call: The calls that one call of the case makes.
+
+    Returns:
+        Each sample's nanoseconds per call.
+    """
     timed = []
     for _ in range(samples):
         start = time.perf_counter_ns()
@@ -144,14 +274,25 @@ async def time_async(call: Async, batch: int, samples: int, per_call: int) -> li
     return timed
 
 
-def cases(loop: asyncio.AbstractEventLoop) -> dict[str, tuple[bool, Callable[[], Any], int]]:
-    """Each case: whether it awaits, the call, and how many calls one call
-    of it makes."""
-    import pyarrow
+# ---------------------------------------------------------------------------
+# Cases
+# ---------------------------------------------------------------------------
 
+
+def cases(loop: asyncio.AbstractEventLoop) -> dict[str, tuple[bool, collections.abc.Callable[[], typing.Any], int]]:
+    """
+    Set up every case.
+
+    Args:
+        loop: The running event loop.
+
+    Returns:
+        Each case by name: whether it awaits, the call, and how many calls one call of it makes.
+    """
+    # The probe loads from the project that main puts on the path.
     import probe
-    from probe import _runtime
 
+    runtime = submodule("bimetal", "_runtime")
     rows = [
         probe.Row(
             id=index,
@@ -159,13 +300,13 @@ def cases(loop: asyncio.AbstractEventLoop) -> dict[str, tuple[bool, Callable[[],
             score=index * 0.5,
             active=index % 2 == 0,
             tags=["a", "b"],
-            created_at=datetime(2026, 7, 14, 12, 0, tzinfo=UTC),
+            created_at=datetime.datetime(2026, 7, 14, 12, 0, tzinfo=datetime.UTC),
         )
         for index in range(100)
     ]
     point = probe.Point(x=3.0, y=4.0)
-    passed_rows = passed(_runtime, list[probe.Row], rows)
-    passed_point = passed(_runtime, probe.Point, point)
+    passed_rows = passed(runtime, list[probe.Row], rows)
+    passed_point = passed(runtime, probe.Point, point)
     hundred = list(range(100))
     words = ["alpha", "beta", "gamma", "alpha", "delta", "beta", "alpha", "omega", "pi", "rho"]
     text = "x" * 100
@@ -268,7 +409,7 @@ def cases(loop: asyncio.AbstractEventLoop) -> dict[str, tuple[bool, Callable[[],
             sync("batch-rows", p(probe.batch_rows, batch)),
             sync("batch-rows-raw", p(raw(probe.batch_rows), batch)),
             sync("stream-100x10", read_stream),
-            awaited("floor-ready", p(_ready, loop)),
+            awaited("floor-ready", p(ready, loop)),
             awaited("ready", p(probe.ready, 1)),
             awaited("ready-raw", p(raw(probe.ready), 1)),
             awaited("ready-numbers-100", p(probe.ready_numbers, 100)),
@@ -286,13 +427,15 @@ def cases(loop: asyncio.AbstractEventLoop) -> dict[str, tuple[bool, Callable[[],
     )
 
 
-def _ready(loop: asyncio.AbstractEventLoop) -> Awaitable[object]:
-    future = loop.create_future()
-    future.set_result(1)
-    return future
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
 
 
 async def main() -> None:
+    """
+    Time the chosen cases, and print each one's samples as a JSON line.
+    """
     arguments = sys.argv[1:]
     if len(arguments) < 3:
         raise SystemExit(__doc__)

@@ -4,12 +4,12 @@
 
 ```toml
 [application]
-name = "greeter"
+name = "bank"
 additional_packages = []
 namespaces = "packages"
 
 [python]
-package = "greeter"
+package = "bank"
 project = "python"
 
 [typescript]
@@ -19,16 +19,16 @@ backend = "wasm"
 [generated]
 source_fingerprint = "…"
 output_fingerprint = "…"
-inputs = ["src/greeting.txt", "src/lib.rs"]
+inputs = ["src/ledger.rs", "src/lib.rs"]
 
 [generated.python]
 project = "python"
-files = ["greeter/api.py", "…"]
+files = ["bank/api.py", "…"]
 dependencies = ["pydantic"]
 
 [generated.typescript]
 project = "typescript"
-files = ["greeter/api.js", "greeter/api.d.ts", "…"]
+files = ["bank/api.js", "bank/api.d.ts", "…"]
 dependencies = []
 ```
 
@@ -52,7 +52,7 @@ Each host table turns its host on, even when it's empty, and Bimetal needs at le
 
 | Table | Setting | Default | Meaning |
 | --- | --- | --- | --- |
-| `[python]` | `package` | `name`, with `-` replaced by `_` | The Python import package, such as `greeter` or `acme.tools` |
+| `[python]` | `package` | `name`, with `-` replaced by `_` | The Python import package, such as `bank` or `acme.tools` |
 | | `project` | `"python"` | The Python project, which holds `pyproject.toml` |
 | `[typescript]` | `project` | `"typescript"` | The npm project, which holds `package.json`, whose `name` is the npm package name |
 | | `backend` | `"wasm"` | `"wasm"` runs the Rust code as a WebAssembly module, and `"node"` as a native Node.js addon, which only Node.js and Electron load |
@@ -72,6 +72,6 @@ Bimetal writes these tables. Don't edit them, and commit them with the generated
 
 An application without a WebAssembly module lists in `inputs` what the contract discovery build reads, which compiles for this platform. A file that only code for one operating system reads, such as an `include_str!` under `#[cfg(target_os = "linux")]`, then makes `check` fail on the others.
 
-No record lists a native artifact: the Python extension is the one beside the `_native.pyi` stub, and the Node.js addon the one beside `runtime.js`.
+No record lists a native artifact: the Python extension is the one beside the `native.pyi` stub, with the stub's name, and the Node.js addon the one beside `runtime.js`.
 
 What else a build reads belongs to this machine. Bimetal records it in `.bimetal/`, and `build` compiles everything again when it changes. `check` leaves it out, so it passes on every host. [Reproducible output](../internals/reproducible.md) lists which inputs belong to the checkout and which to this machine.

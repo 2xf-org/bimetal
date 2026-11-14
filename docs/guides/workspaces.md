@@ -11,36 +11,35 @@ Set `project` to put a host's project anywhere outside the Cargo package, and mo
 project = "../python"
 ```
 
-[`apps/examples/trading`](../../apps/examples/trading) is laid out this way, as a larger application often is. Its workspace has the models in `crates/core` and the engine in `crates/engine`, and the projects sit at the top, beside `crates/`:
+A larger application is often laid out this way, with its models in one package of the workspace and its API in another, and the projects at the top, beside `crates/`:
 
 ```text
-trading/
+app/
 ├── Cargo.toml
 ├── crates/
 │   ├── core/
-│   └── engine/
+│   └── api/
 │       ├── bimetal.toml
 │       └── src/
 ├── python/
-└── node/
+└── typescript/
 ```
 
 ```toml
 [application]
-additional_packages = ["trading-core"]
+additional_packages = ["app-core"]
 
 [python]
 project = "../../python"
 
 [typescript]
-project = "../../node"
-backend = "node"
+project = "../../typescript"
 ```
 
-`bimetal build` finds that `bimetal.toml` from `crates/engine` and the folders below it, the way Cargo finds `Cargo.toml`. From the top of the workspace, pass `--config`:
+`bimetal build` finds that `bimetal.toml` from `crates/api` and the folders below it, the way Cargo finds `Cargo.toml`. From the top of the workspace, pass `--config`:
 
 ```bash
-bimetal build --config crates/engine/bimetal.toml
+bimetal build --config crates/api/bimetal.toml
 ```
 
 A project can't be the folder of `bimetal.toml` or one of its parents, can't be inside Cargo's target directory, and can't be another host's project or inside it.

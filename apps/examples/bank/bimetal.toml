@@ -1,0 +1,123 @@
+# Bimetal configuration. Edit the tables above [generated]; `bimetal build`
+# maintains [generated].
+
+[application]
+# Every setting is optional:
+# name = "bank"                   # defaults to the Cargo package name
+# additional_packages = []        # other workspace crates to link
+
+# Each host table turns on that host's package.
+
+[python]
+# package = "bank"                # defaults to the name with underscores
+# project = "python"              # relative to this file
+
+[typescript]
+# project = "typescript"          # relative to this file
+backend = "node"                  # a native Node.js addon; "wasm" by default
+
+[generated]
+# Fingerprint of the Rust/Cargo sources and the tables above.
+source_fingerprint = "1ec74ed2b9d78068cb97440d9ccbedd3"
+
+# Fingerprint of the published files; lets build and check no-op when current.
+output_fingerprint = "98aa447ed41503bf022f8e7e489a7fd3"
+
+# Files that the WebAssembly build, or contract discovery without one, reads,
+# such as Rust sources and include_str! files, relative to the Cargo workspace.
+# source_fingerprint covers them.
+inputs = [
+    "../../../packages/ir/src/disambiguate.rs",
+    "../../../packages/ir/src/discovery.rs",
+    "../../../packages/ir/src/hash.rs",
+    "../../../packages/ir/src/lib.rs",
+    "../../../packages/ir/src/manifest.rs",
+    "../../../packages/ir/src/namespace.rs",
+    "../../../packages/ir/src/python_names.rs",
+    "../../../packages/ir/src/typescript_names.rs",
+    "../../../packages/macros/src/application.rs",
+    "../../../packages/macros/src/attributes.rs",
+    "../../../packages/macros/src/error.rs",
+    "../../../packages/macros/src/export/boundary.rs",
+    "../../../packages/macros/src/export/constant.rs",
+    "../../../packages/macros/src/export/function.rs",
+    "../../../packages/macros/src/export/host_backend.rs",
+    "../../../packages/macros/src/export/mod.rs",
+    "../../../packages/macros/src/export/node.rs",
+    "../../../packages/macros/src/export/python.rs",
+    "../../../packages/macros/src/export/resource.rs",
+    "../../../packages/macros/src/export/wasm.rs",
+    "../../../packages/macros/src/export/wrapper.rs",
+    "../../../packages/macros/src/lib.rs",
+    "../../../packages/macros/src/model.rs",
+    "../../../packages/macros/src/registration.rs",
+    "../../../packages/macros/src/types/callable.rs",
+    "../../../packages/macros/src/types/direct.rs",
+    "../../../packages/macros/src/types/field.rs",
+    "../../../packages/macros/src/types/field_options.rs",
+    "../../../packages/macros/src/types/mod.rs",
+    "../../../packages/macros/src/types/native_name.rs",
+    "../../../packages/macros/src/types/result_types.rs",
+    "../../../packages/macros/src/types/type_ref.rs",
+    "../../../packages/macros/src/types/validation.rs",
+    "../../../packages/runtime/src/arrow.rs",
+    "../../../packages/runtime/src/arrow/arrow_value.rs",
+    "../../../packages/runtime/src/arrow/record_batch_stream.rs",
+    "../../../packages/runtime/src/arrow/table.rs",
+    "../../../packages/runtime/src/contract_type.rs",
+    "../../../packages/runtime/src/convert.rs",
+    "../../../packages/runtime/src/lib.rs",
+    "../../../packages/runtime/src/registry.rs",
+    "../../../packages/runtime/src/registry/finite.rs",
+    "../../../packages/runtime/src/runtime.rs",
+    "../../../packages/runtime/src/runtime/callback.rs",
+    "../../../packages/runtime/src/runtime/contract_error.rs",
+    "../../../packages/runtime/src/runtime/resource.rs",
+    "../../../packages/runtime/src/runtime/rules.rs",
+    "../../../packages/runtime/src/runtime/value_error.rs",
+    "src/ledger.rs",
+    "src/lib.rs",
+]
+
+[generated.python]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "python"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "bank/__init__.py",
+    "bank/api.py",
+    "bank/bimetal.py",
+    "bank/models.py",
+    "bank/native.pyi",
+    "bank/py.typed",
+]
+
+# Packages that the generated code imports; pyproject.toml must depend on them.
+dependencies = [
+    "pydantic",
+    "pyarrow",
+]
+
+[generated.typescript]
+# The project that Bimetal generated the files in, relative to bimetal.toml.
+project = "typescript"
+
+# Files owned by Bimetal and safe to overwrite or remove, relative to the project.
+files = [
+    "bank/api.d.ts",
+    "bank/api.js",
+    "bank/arrow.js",
+    "bank/index.d.ts",
+    "bank/index.js",
+    "bank/models.d.ts",
+    "bank/models.js",
+    "bank/runtime.d.ts",
+    "bank/runtime.js",
+]
+
+# Packages that the generated code imports; package.json must list them in
+# peerDependencies.
+dependencies = [
+    "apache-arrow",
+]

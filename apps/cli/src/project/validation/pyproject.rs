@@ -38,7 +38,7 @@ pub(crate) fn validate_python_project(
 struct Expected<'project> {
     /// The version that Cargo.toml declares.
     version: &'project str,
-    /// The dotted import package, such as `greeter` or `acme.tools`.
+    /// The dotted import package, such as `bank` or `acme.tools`.
     package: &'project str,
     /// The packages that the generated code imports.
     dependencies: &'project [HostDependency],

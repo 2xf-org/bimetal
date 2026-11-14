@@ -31,7 +31,7 @@ scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
 # Print the path of the one bimetal.toml in the example directory $1, which
-# may lie in one of its packages, as trading's lies in crates/engine.
+# may lie in one of the packages of its workspace.
 bimetal_config() {
   local configs
   configs="$(git ls-files --cached --others --exclude-standard -- "$1" | grep -E '(^|/)bimetal\.toml$' || true)"
@@ -97,7 +97,7 @@ check_scaffold() {
   "$bimetal" new "$app" --bimetal-path "$PWD" >/dev/null
   (cd "$app" && CARGO_TARGET_DIR="$target" RUSTUP_TOOLCHAIN="$toolchain" "$bimetal" build >/dev/null)
   (cd "$app/python" && uv run --quiet --project . python -c \
-    'from hello_bimetal import greet; assert greet("Ada").message == "Hello, Ada!"')
+    'import hello_bimetal; assert hello_bimetal.greet("Ada").message == "Hello, Ada!"')
   (cd "$app/typescript" && node --input-type=module -e \
     'const { greet } = await import("./hello-bimetal/index.js"); if (greet("Ada").message !== "Hello, Ada!") process.exit(1);')
   printf 'scaffolded, built, and called %s\n' "$(basename "$app")"

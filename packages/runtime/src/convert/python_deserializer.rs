@@ -37,8 +37,8 @@ pub(crate) fn from_python<T: DeserializeOwned>(
     })
 }
 
-/// Why a value cannot be read as it is. A Python error that is not an
-/// `Exception`, such as a `KeyboardInterrupt`, keeps its error.
+/// Why a value cannot be read as it is, with the Python error that stopped
+/// the read, if one did.
 #[derive(Debug)]
 pub(crate) struct Error(pub(crate) Option<PyErr>);
 
@@ -141,7 +141,7 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_> {
                 visitor.visit_str(text.as_str())
             }
             Plan::Duration => {
-                // Pydantic reads a duration strictly, so a bool is none.
+                // Pydantic reads a duration strictly, so it refuses a bool.
                 if self.value.is_instance_of::<PyBool>() {
                     return Err(Error(None));
                 }

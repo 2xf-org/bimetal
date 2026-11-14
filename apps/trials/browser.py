@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Open a trial's page in headless Chrome, and report what the page found.
+"""
+Open a trial's page in headless Chrome, and report what the page found.
 
 Usage: apps/trials/browser.py <trial>
 
@@ -23,11 +24,23 @@ CHROME_PATHS = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
 
 
 def find_chrome() -> str | None:
+    """
+    Find Chrome or Chromium on the path or in its usual place.
+
+    Returns:
+        The browser's executable, or None if it is not installed.
+    """
     found = shutil.which("google-chrome") or shutil.which("chromium")
     return found or next((path for path in CHROME_PATHS if pathlib.Path(path).exists()), None)
 
 
 def main() -> int:
+    """
+    Serve the trials, open the trial's page, and wait for its results.
+
+    Returns:
+        The exit status: 0 when the page passes or Chrome is missing, and 1 otherwise.
+    """
     chrome = find_chrome()
     if chrome is None:
         print("browser: skipped, Chrome is not installed")
@@ -35,9 +48,13 @@ def main() -> int:
     results: queue.Queue[dict] = queue.Queue()
 
     class Handler(http.server.SimpleHTTPRequestHandler):
+        """
+        Serve the trials' files, and queue the results that a page posts.
+        """
+
         protocol_version = "HTTP/1.1"
 
-        def do_POST(self) -> None:
+        def do_POST(self) -> None:  # noqa: N802
             body = self.rfile.read(int(self.headers["Content-Length"]))
             results.put(json.loads(body))
             self.send_response(204)

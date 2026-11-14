@@ -1,4 +1,8 @@
-"""DataFusion through the generated Python package."""
+"""
+DataFusion through the generated Python package.
+"""
+
+from __future__ import annotations
 
 import unittest
 
@@ -16,6 +20,9 @@ TRADES = pa.record_batch(
 
 
 def session() -> Session:
+    """
+    A session that holds `TRADES` as the `trades` table.
+    """
     result = Session()
     result.add_batch("trades", TRADES)
     return result
@@ -23,9 +30,7 @@ def session() -> Session:
 
 class QueryTests(unittest.IsolatedAsyncioTestCase):
     async def test_query_returns_a_pyarrow_table(self) -> None:
-        table = await session().query(
-            "select symbol, sum(size) as volume from trades group by symbol order by symbol"
-        )
+        table = await session().query("select symbol, sum(size) as volume from trades group by symbol order by symbol")
         self.assertIsInstance(table, pa.Table)
         self.assertEqual(table.column("symbol").to_pylist(), ["AAPL", "MSFT", "NVDA"])
         self.assertEqual(table.column("volume").to_pylist(), [600, 50, 10])

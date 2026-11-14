@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-/// Short text on the stack, such as the RFC 3339 text of a date-time.
+/// Text of up to [`Self::CAPACITY`] bytes, such as a date-time's.
 pub(crate) struct ShortText {
     bytes: [u8; Self::CAPACITY],
     length: usize,

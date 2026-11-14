@@ -48,8 +48,6 @@ struct Expected<'project> {
 /// Check one parsed `package.json`, and report every problem at once.
 fn validate_package(path: &Path, package: &Value, expected: &Expected<'_>) -> Result<()> {
     let mut problems = Vec::new();
-    // `name` is the npm package name, which the application name stands in
-    // for until it is set.
     if package["name"].as_str().is_none() {
         problems.push(format!(
             "must set `\"name\"`, the npm package name, such as `\"name\": {}`",
