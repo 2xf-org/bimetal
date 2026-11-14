@@ -1,37 +1,65 @@
-"""Check the packages that one example would publish, and install each one
-into a new project, where it must load; docs/internals/testing.md#the-examples says what
-each host's check covers.
+"""
+Check the packages that one example would publish, and install each one into a new project, where it must load.
 
 Usage: check-packages.py <report> <directory>
 
 <report> holds what `bimetal check --json` printed for the example: its
 hosts, with their packages, projects, and files. <directory> is an empty
 directory outside the repository, so that no setting of the repository
-applies to the new projects.
+applies to the new projects. docs/internals/testing.md#the-examples says what
+each host's check covers.
 """
 
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
 
 
 def fail(message: str) -> None:
+    """
+    Exit with a failure of the package check.
+
+    Args:
+        message: What failed.
+    """
     sys.exit(f"package check failed: {message}")
 
 
-def run(command: list[str], cwd: Path) -> str:
-    """Run a command, which on Windows may be a `.cmd` file such as npm's,
-    and return what it prints to stdout. Its stderr shows as it runs."""
+def run(command: list[str], cwd: pathlib.Path) -> str:
+    """
+    Run a command, which on Windows may be a `.cmd` file such as npm's.
+
+    Notes:
+        Its stderr shows as it runs.
+
+    Args:
+        command: The program and its arguments.
+        cwd: The directory to run it in.
+
+    Returns:
+        What the command printed to stdout.
+    """
     executable = shutil.which(command[0]) or command[0]
     return subprocess.run([executable, *command[1:]], check=True, stdout=subprocess.PIPE, cwd=cwd, text=True).stdout
 
 
-def check_python(project: Path, package: str, files: list[str], directory: Path) -> str:
-    """Build and check the wheel, and import it from a new environment."""
+def check_python(project: pathlib.Path, package: str, files: list[str], directory: pathlib.Path) -> str:
+    """
+    Build and check the wheel, and import it from a new environment.
+
+    Args:
+        project: The Python project.
+        package: The import name of its package.
+        files: The files that the wheel must hold.
+        directory: An empty directory for the wheel and the environment.
+
+    Returns:
+        The wheel's file name.
+    """
     dist = directory / "dist"
     run(["uv", "build", "--quiet", "--wheel", "--out-dir", str(dist)], project)
     wheels = list(dist.glob("*.whl"))
@@ -54,14 +82,27 @@ def check_python(project: Path, package: str, files: list[str], directory: Path)
     # The environment's directory holds no source tree, so the import finds the
     # installed package.
     imported = run([str(python), "-c", f"import {package}; print({package}.__file__)"], environment).strip()
-    if not Path(imported).resolve().is_relative_to(environment.resolve()):
+    if not pathlib.Path(imported).resolve().is_relative_to(environment.resolve()):
         fail(f"{package} was imported from {imported}, not from the installed wheel")
     return wheel.name
 
 
-def check_typescript(project: Path, package: str, files: list[str], directory: Path) -> str:
-    """Pack and check the tarball, and import it from a new npm project."""
-    [pack] = json.loads(run(["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", str(directory)], project))
+def check_typescript(project: pathlib.Path, package: str, files: list[str], directory: pathlib.Path) -> str:
+    """
+    Pack and check the tarball, and import it from a new npm project.
+
+    Args:
+        project: The npm project.
+        package: The npm package's name.
+        files: The files that the tarball must hold.
+        directory: An empty directory for the tarball and the project.
+
+    Returns:
+        The tarball's file name.
+    """
+    [pack] = json.loads(
+        run(["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", str(directory)], project),
+    )
     contents = {entry["path"] for entry in pack["files"]}
     for required in ["package.json", *files]:
         if required not in contents:
@@ -83,17 +124,20 @@ def check_typescript(project: Path, package: str, files: list[str], directory: P
         "console.log(fileURLToPath(import.meta.resolve(name)));"
     )
     imported = run(["node", "--input-type=module", "-e", script, package], consumer).strip()
-    if not Path(imported).resolve().is_relative_to(consumer.resolve()):
+    if not pathlib.Path(imported).resolve().is_relative_to(consumer.resolve()):
         fail(f"{package} was imported from {imported}, not from the installed tarball")
     return pack["filename"]
 
 
 def main() -> None:
-    report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    directory = Path(sys.argv[2])
+    """
+    Check every host's package in the report.
+    """
+    report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+    directory = pathlib.Path(sys.argv[2])
     checked = []
     for host in report["hosts"]:
-        project = Path(host["directory"])
+        project = pathlib.Path(host["directory"])
         destination = directory / host["host"]
         destination.mkdir(parents=True)
         check = {"python": check_python, "typescript": check_typescript}[host["host"]]

@@ -55,7 +55,7 @@ Before you hand off, run all four:
 
 ## The examples
 
-`mise run example` builds each example, and takes its hosts and their projects from `bimetal check --json`, so a project may lie anywhere, as trading's do. For each example, it runs:
+`mise run example` builds each example, and takes its hosts and their projects from `bimetal check --json`, so a project may lie anywhere. For each example, it runs:
 
 - the Python tests, then `mypy --strict` and strict pyright on the generated package;
 - the TypeScript tests, which also type-check against the generated declarations;
@@ -96,7 +96,7 @@ CI runs the gate on Linux x86_64: `--gate apps/benchmark/lab-gate.json` fails wh
 | macOS arm64 (`macos-latest`) | | Yes | `check-examples` | Yes |
 | Windows x86_64 (`windows-latest`) | | Yes | `example`, on `main` only | Reported, on `main` only |
 
-Pull requests run Linux x86_64 and macOS, and on Windows only the tests, while `main` runs every row in full. Linux x86_64 also runs [the crossing lab's gate](#the-crossing-lab). A final step loads greeter's Python package on Python 3.13, and on the oldest Node.js allowed, greeter's npm package, which uses the addon, and the showcase's, which uses the Wasm module. Every job starts with the setup steps in `.github/actions/setup`. No job of this workflow reads a secret, and its token can only read the repository, so a pull request from a fork has nothing to take. Each action is named by a commit, which Dependabot updates.
+Pull requests run Linux x86_64 and macOS, and on Windows only the tests, while `main` runs every row in full. Linux x86_64 also runs [the crossing lab's gate](#the-crossing-lab). A final step loads the bank's Python package on Python 3.13, and on the oldest Node.js allowed, the bank's npm package, which uses the addon, and the showcase's, which uses the Wasm module. Every job starts with the setup steps in `.github/actions/setup`. No job of this workflow reads a secret, and its token can only read the repository, so a pull request from a fork has nothing to take. Each action is named by a commit, which Dependabot updates.
 
 On Windows, mise runs a task through `cmd.exe`, so the `test` task has plain commands for it, and Git Bash runs `apps/examples/run`. On `main`, before it builds anything, it runs `bimetal check` on each example in the fresh clone, which fails the job if the committed fingerprints don't hold there, and then `bimetal check --rebuild`. That comparison doesn't stop the job, because the Wasm module can differ there, as [Reproducible output](reproducible.md#windows) says. Then it runs `example` rather than `check-examples`.
 
@@ -133,7 +133,7 @@ The Python boundary tests need the `python` feature, and the test binary must fi
 | A trap without a panic ends the module the same way | `apps/examples/showcase/typescript/tests/trap.test.ts` |
 | A trap inside a host callback is still a trap | `apps/examples/showcase/typescript/tests/callback-trap.test.ts` |
 | A package works in a browser, through a loader, and through Vite | `browser.test.ts`, `vite.test.ts` |
-| Each host holds up under load | `apps/examples/trading` |
+| Each host holds up under load | `apps/examples/bank` |
 
 ## What's not tested
 

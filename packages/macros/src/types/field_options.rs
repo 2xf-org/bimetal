@@ -389,8 +389,6 @@ fn validate_field_presence(
             ));
         }
     }
-    // A field of another type is required already unless it has a default,
-    // which `required` would contradict.
     if options.required && type_ref::option_item(&field.ty).is_none() {
         return Err(syn::Error::new(
             field.ty.span(),

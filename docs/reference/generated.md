@@ -6,12 +6,12 @@ Bimetal writes generated files only inside the hosts' projects: in `<project>/<p
 
 | Python | Holds |
 | --- | --- |
-| `__init__.py` | The public API of the root |
+| `__init__.py` | The public API of the root, which imports the namespaces below it |
 | `api.py` | Functions, classes and error classes, which call the native library |
 | `models.py` | Pydantic models |
-| `_runtime.py` | Private helpers, and the contract hash the extension must match |
-| `_native.pyi` | A stub for the extension |
-| `_native.abi3.so`, `_native.pyd` | The extension, installed and not committed |
+| `bimetal.py` | The runtime: it loads the extension, holds the contract hash the extension must match, and the helpers the other modules share |
+| `native.pyi` | A stub for the extension |
+| `native.abi3.so`, `native.pyd` | The extension, installed and not committed |
 | `py.typed` | Says the package is typed |
 | `<module>/` | The same for each namespace |
 
@@ -36,7 +36,7 @@ If a new generated path would overwrite a file Bimetal doesn't own, the build st
 
 A listed file the sources no longer generate is stale, and so is every file of a host whose table is gone, or of a project that moved. `check` lists every one, and `build` deletes it if it's Bimetal's: a text file that starts with the banner, or `native_bg.wasm`. It keeps any other file, which `[generated]` then no longer lists.
 
-The native artifacts of every platform go with the generated file they belong to: the `_native` extension with its stub, and `native.node` with its `runtime.js`, and when a switch to the Wasm backend adds `native_bg.wasm`. A directory inside a project that the deletions empty goes too, even when Python's `__pycache__` is left in it. The project itself stays.
+The native artifacts of every platform go with the generated file they belong to: the extension with its stub, which has its name, and `native.node` with its `runtime.js`, and when a switch to the Wasm backend adds `native_bg.wasm`. A directory inside a project that the deletions empty goes too, even when Python's `__pycache__` is left in it. The project itself stays.
 
 ## How a build writes
 

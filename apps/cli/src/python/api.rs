@@ -10,24 +10,25 @@ use std::fmt::Write;
 use anyhow::Result;
 use bimetal_ir::python_names;
 use bimetal_ir::{
-    CallableDef, ErrorDef, MethodDef, Namespace, ParamDef, Protocol, ResourceDef, TypeRef,
-    TypeShape,
+    CallableDef, ErrorDef, MethodDef, ParamDef, Protocol, ResourceDef, TypeRef, TypeShape,
 };
 
 use crate::contract::{self, Contract, NamespaceItems};
 use crate::documentation::{CallableDocumentation, CallableReturn};
 use crate::literal;
 
-use super::context::PythonContext;
+use super::context::{ARROW_CONSTANT, LINE_WIDTH, PythonContext};
 use super::package::API_MODULE;
 use super::render;
 
 /// The raw value that the native call returns.
-const NATIVE_RESULT: &str = "__bimetal_native";
+const NATIVE_RESULT: &str = "bimetal_native";
 /// The validated value that a wrapper returns, typed with its annotation.
-const RESULT: &str = "__bimetal_result";
+const RESULT: &str = "bimetal_result";
 /// The instance that a resource factory creates.
-const INSTANCE: &str = "__bimetal_instance";
+const INSTANCE: &str = "bimetal_instance";
+/// Each item of a returned list of resources.
+const ITEM: &str = "bimetal_item";
 
 /// The attribute of a generated resource class that holds its native value.
 const NATIVE_RESOURCE: &str = "native_resource";
@@ -54,26 +55,48 @@ pub(super) fn python_api(
     defined.extend(items.api_names().into_iter().map(|name| name.python));
     let context = &context.within(defined.iter().map(String::as_str));
     let mut source = String::new();
-    if *context.namespace == Namespace::root() {
-        // The root re-exports these, so users can name them.
-        for name in python_root_exports(context.contract) {
-            context.runtime_export(name);
+    // Constants come first, below the imports.
+    for constant in &items.constants {
+        render::begin_python_alias(&mut source);
+        render::emit_python_comment_docs(&mut source, constant.docs.as_deref(), "#: ");
+        let value = render::python_json(&constant.value);
+        let annotation = format!(
+            "{}[{}]",
+            context.import("typing.Final"),
+            render::python_ref(&constant.ty, context)?
+        );
+        if render::is_python_literal(&constant.ty) {
+            let _ = writeln!(source, "{}: {annotation} = {value}", constant.host_name);
+        } else {
+            let start = format!("{}: {annotation} = ", constant.host_name);
+            let restored = render::python_restored(&value, &constant.ty, context)?;
+            emit_python_validation(&mut source, &start, "", &constant.ty, context, &restored)?;
         }
     }
     for error in &items.errors {
         let code_alias = contract::error_code_alias(error);
         render::begin_python_top_level(&mut source);
-        let _ = writeln!(
-            source,
+        let start = format!(
             "{code_alias}: {} = {}[",
-            context.import("TypeAlias"),
-            context.import("Literal")
+            context.import("typing.TypeAlias"),
+            context.import("typing.Literal")
         );
-        for code in &error.codes {
-            render::emit_python_comment_docs(&mut source, code.docs.as_deref(), "    # ");
-            let _ = writeln!(source, "    {},", literal::quoted(&code.code));
+        // Documented codes keep a line each, below their comments.
+        if error.codes.iter().all(|code| code.docs.is_none()) {
+            let codes: Vec<String> = error
+                .codes
+                .iter()
+                .map(|code| literal::quoted(&code.code))
+                .collect();
+            let _ = writeln!(source, "{}", render::bracketed(&start, &codes, "]", ""));
+        } else {
+            let _ = writeln!(source, "{start}");
+            for code in &error.codes {
+                render::emit_python_comment_docs(&mut source, code.docs.as_deref(), "    # ");
+                let _ = writeln!(source, "    {},", literal::quoted(&code.code));
+            }
+            source.push_str("]\n");
         }
-        source.push_str("]\n");
         render::begin_python_top_level(&mut source);
         let _ = writeln!(
             source,
@@ -87,7 +110,7 @@ pub(super) fn python_api(
         emit_python_error_members(&mut source, error, &code_alias, context)?;
     }
     for function in &items.functions {
-        let call = native(&function.native_name, context);
+        let call = native(&function.callable.rust_name, &function.native_name, context);
         emit_python_function(
             &mut source,
             &function.callable,
@@ -100,24 +123,11 @@ pub(super) fn python_api(
     for resource in &items.resources {
         emit_python_resource(&mut source, resource, context)?;
     }
-    for constant in &items.constants {
-        render::begin_python_top_level(&mut source);
-        render::emit_python_comment_docs(&mut source, constant.docs.as_deref(), "#: ");
-        let value = render::python_json(&constant.value);
-        let annotation = format!(
-            "{}[{}]",
-            context.import("Final"),
-            render::python_ref(&constant.ty, context)?
-        );
-        if render::is_python_literal(&constant.ty) {
-            let _ = writeln!(source, "{}: {annotation} = {value}", constant.host_name);
-        } else {
-            let _ = write!(source, "{}: {annotation} = ", constant.host_name);
-            let restored = render::python_restored(&value, &constant.ty, context)?;
-            emit_python_validation(&mut source, &constant.ty, context, &restored)?;
-        }
-    }
-    Ok(context.module(API_MODULE, &source))
+    let docstring = format!(
+        "The functions, classes and constants of `{}`, which call the extension.",
+        render::python_namespace_module(context.package, context.namespace)
+    );
+    Ok(context.module(API_MODULE, &docstring, &source))
 }
 
 /// Render an error class's attributes and constructor.
@@ -163,13 +173,17 @@ fn emit_python_error_members(
         .join(", ");
     let _ = writeln!(
         source,
-        "    details: {union} | None\n    {DETAILS_MODELS} = {{{entries}}}\n\n    def __init__(\n        self,\n        code: {code_alias},\n        message: {string},\n        details: {union} | None = None,\n    ) -> None:\n        {}().__init__(message)\n        self.code = code\n        self.details = details",
+        "    details: {union} | None\n    {DETAILS_MODELS}: {}[{}[{}, {}]] = {{{entries}}}\n\n    def __init__(\n        self,\n        code: {code_alias},\n        message: {string},\n        details: {union} | None = None,\n    ) -> None:\n        {}().__init__(message)\n        self.code = code\n        self.details = details",
+        context.import("typing.ClassVar"),
+        context.builtin("dict"),
+        context.builtin("str"),
+        context.import("typing.Any"),
         context.builtin("super"),
     );
     Ok(())
 }
 
-/// Return the runtime names that the package root re-exports: the panic
+/// Return the runtime names that the package root exports: the panic
 /// exception, and the protocols that Arrow parameters accept.
 #[must_use]
 pub(super) fn python_root_exports(contract: &Contract<'_>) -> Vec<&'static str> {
@@ -252,10 +266,27 @@ fn emit_python_callable(
         &format!("{indent}    "),
     )?;
     let unit = matches!(returns, TypeRef::Unit);
+    let arrow = python_arrow_result(returns, context);
+    let wraps = contract::nodes(returns).any(|node| matches!(node, TypeRef::Resource { .. }));
+    // The extension makes the value as Pydantic would validate it, so only a
+    // NumPy buffer is left to restore and validate.
+    let validates = !python_direct_bytes(returns)
+        && context
+            .contract
+            .reaches(returns, |item| matches!(item, TypeRef::Buffer { .. }))?;
+    let direct = !unit && arrow.is_none() && !wraps && !validates;
+    // The native functions return `Any`, so a typed local gives the return
+    // its type, which costs nothing: Python never evaluates its annotation.
+    let (target, annotation) = match (unit, direct) {
+        (true, _) => (None, None),
+        (false, true) => (Some(RESULT), Some(return_type.as_str())),
+        (false, false) => (Some(NATIVE_RESULT), None),
+    };
     emit_python_native_call(
         source,
         &format!("{indent}    "),
-        (!unit).then_some(NATIVE_RESULT),
+        target,
+        annotation,
         &NativeCall {
             callable: call,
             args: &call_params,
@@ -263,45 +294,41 @@ fn emit_python_callable(
         },
         context,
     );
-    // The adapters return `Any`, so a typed local gives the return its type.
-    // It costs nothing: Python never evaluates a local's annotation.
     if unit {
         let _ = writeln!(source, "{indent}    return None");
-    } else if let Some(arrow) = python_arrow_result(returns, context) {
+    } else if direct {
+        let _ = writeln!(source, "{indent}    return {RESULT}");
+    } else if let Some(arrow) = arrow {
         let _ = writeln!(
             source,
             "{indent}    {RESULT}: {return_type} = {arrow}\n{indent}    return {RESULT}"
         );
-    } else if contract::nodes(returns).any(|node| matches!(node, TypeRef::Resource { .. })) {
+    } else if wraps {
         let wrapped = python_wrapped(NATIVE_RESULT, returns, context)?;
         let _ = writeln!(
             source,
             "{indent}    {RESULT}: {return_type} = {wrapped}\n{indent}    return {RESULT}"
         );
-    } else if python_direct_bytes(returns)
-        || !context
-            .contract
-            .reaches(returns, |item| matches!(item, TypeRef::Buffer { .. }))?
-    {
-        // The extension makes the value as Pydantic would validate it, so only a
-        // NumPy buffer is left to restore and validate.
-        let _ = writeln!(
-            source,
-            "{indent}    {RESULT}: {return_type} = {NATIVE_RESULT}\n{indent}    return {RESULT}"
-        );
     } else {
-        let _ = write!(source, "{indent}    {RESULT}: {return_type} = ");
+        let start = format!("{indent}    {RESULT}: {return_type} = ");
         let restored = render::python_restored(NATIVE_RESULT, returns, context)?;
-        emit_python_validation(source, returns, context, &restored)?;
+        emit_python_validation(
+            source,
+            &start,
+            &format!("{indent}    "),
+            returns,
+            context,
+            &restored,
+        )?;
         let _ = writeln!(source, "{indent}    return {RESULT}");
     }
     Ok(())
 }
 
-/// Whether the module binds the native function `call` in place of a free
-/// function: a brief synchronous one whose arguments pass as they are, under
-/// their Rust names, with none that a caller may omit, and whose result
-/// returns as the extension makes it.
+/// Whether the module binds the native function in place of a free function:
+/// a brief synchronous one whose arguments pass as they are, under their Rust
+/// names, with none that a caller may omit, and whose result returns as the
+/// extension makes it.
 fn binds_native(
     callable: &CallableDef,
     returns: &TypeRef,
@@ -336,8 +363,8 @@ fn binds_native(
             .reaches(returns, |item| matches!(item, TypeRef::Buffer { .. }))?)
 }
 
-/// Whether a call returns bytes through the direct binary boundary, which
-/// makes Python `bytes`, or an option of them.
+/// Whether a call returns bytes, or an option of them, through the direct
+/// binary boundary that makes Python `bytes`.
 fn python_direct_bytes(returns: &TypeRef) -> bool {
     match returns {
         TypeRef::Bytes | TypeRef::FixedBytes { .. } => true,
@@ -349,9 +376,9 @@ fn python_direct_bytes(returns: &TypeRef) -> bool {
 /// Render the pyarrow value of a call that returns an Arrow value or an option
 /// of one, or `None` for any other call.
 ///
-/// Strict type checkers report the unknown types in pyarrow's stubs, so the
-/// import goes through `getattr`, which returns `Any`, once, into a constant
-/// of the module.
+/// Strict type checkers report the unknown types in pyarrow's stubs, so a
+/// module constant reaches the class once through `getattr`, which returns
+/// `Any`.
 fn python_arrow_result(returns: &TypeRef, context: &PythonContext<'_>) -> Option<String> {
     let (value, optional) = match returns {
         TypeRef::Arrow { value } => (value, false),
@@ -366,11 +393,11 @@ fn python_arrow_result(returns: &TypeRef, context: &PythonContext<'_>) -> Option
         .split_first()
         .expect("an import path names at least a pyarrow attribute");
     let import = context.constant(
-        python_names::ARROW_CONSTANT_PREFIX,
+        ARROW_CONSTANT,
         format!(
             "{}({}, {}){}",
             context.builtin("getattr"),
-            context.import("pa"),
+            context.import("pyarrow"),
             literal::quoted(attribute),
             methods
                 .iter()
@@ -399,8 +426,8 @@ fn python_wrapped(value: &str, returns: &TypeRef, context: &PythonContext<'_>) -
             python_wrapped(value, item, context)?
         ),
         TypeRef::List { item } => format!(
-            "[{} for __bimetal_item in {value}]",
-            python_wrapped("__bimetal_item", item, context)?
+            "[{} for {ITEM} in {value}]",
+            python_wrapped(ITEM, item, context)?
         ),
         _ => value.to_owned(),
     })
@@ -436,7 +463,8 @@ fn python_params(
     Ok((declarations, arguments))
 }
 
-/// Emit a compact or Black-compatible multiline Python function signature.
+/// Emit a Python function signature, on one line when it fits, and
+/// otherwise one parameter per line.
 fn emit_python_signature(
     source: &mut String,
     indent: &str,
@@ -455,7 +483,7 @@ fn emit_python_signature(
         "{indent}{keyword} {name}({}) -> {return_type}:",
         all_params.join(", ")
     );
-    if compact.chars().count() <= 88 {
+    if compact.chars().count() <= LINE_WIDTH {
         let _ = writeln!(source, "{compact}");
         return;
     }
@@ -474,26 +502,58 @@ struct NativeCall<'call> {
     awaited: bool,
 }
 
-/// Make one native call, and assign its result to `target` if there is one.
-/// The extension raises a typed error as its class.
+/// Emit one native call that assigns its result to `target`, if any, which
+/// the first attempt declares with `annotation`, if any.
 fn emit_python_native_call(
     source: &mut String,
     indent: &str,
     target: Option<&str>,
+    annotation: Option<&str>,
     call: &NativeCall<'_>,
     context: &PythonContext<'_>,
 ) {
-    let assign = target.map_or_else(String::new, |target| format!("{target} = "));
     let awaited = if call.awaited { "await " } else { "" };
-    emit_python_attempts(source, indent, &format!("{assign}{awaited}"), call, context);
+    let head = |annotation: Option<&str>| match (target, annotation) {
+        (Some(target), Some(annotation)) => format!("{target}: {annotation} = {awaited}"),
+        (Some(target), None) => format!("{target} = {awaited}"),
+        (None, _) => awaited.to_owned(),
+    };
+    // A local whose annotation leaves the call no room on its line is
+    // declared on a line of its own.
+    let annotation = match (target, annotation) {
+        (Some(target), Some(annotation))
+            if format!("{indent}{}{}(", head(Some(annotation)), call.callable)
+                .chars()
+                .count()
+                > LINE_WIDTH =>
+        {
+            let _ = writeln!(
+                source,
+                "{}",
+                render::python_annotation(&format!("{indent}{target}: "), annotation, indent)
+            );
+            None
+        }
+        _ => annotation,
+    };
+    emit_python_attempts(
+        source,
+        indent,
+        &head(annotation),
+        &head(None),
+        call,
+        context,
+    );
 }
 
-/// Emit the native call, and when an argument may need Pydantic's dump, a
-/// second call with the dumps for when the extension raises `Revalidate`.
+/// Emit the native call, starting with `head`, and when an argument may need
+/// Pydantic's dump, an `except Revalidate` retry with the dumps, starting with
+/// `retry_head`.
 fn emit_python_attempts(
     source: &mut String,
     indent: &str,
     head: &str,
+    retry_head: &str,
     call: &NativeCall<'_>,
     context: &PythonContext<'_>,
 ) {
@@ -519,14 +579,15 @@ fn emit_python_attempts(
     let _ = writeln!(source, "{indent}except {}:", context.runtime("Revalidate"));
     emit_python_call(
         source,
-        &format!("{inner}{head}"),
+        &format!("{inner}{retry_head}"),
         &inner,
         call.callable,
         &call.args.dumped,
     );
 }
 
-/// Emit a compact or multiline Python call expression.
+/// Emit a Python call, on one line when it fits, and otherwise one argument
+/// per line.
 fn emit_python_call(
     source: &mut String,
     prefix: &str,
@@ -535,7 +596,7 @@ fn emit_python_call(
     args: &[String],
 ) {
     let compact = format!("{prefix}{callable}({})", args.join(", "));
-    if compact.chars().count() <= 88 {
+    if compact.chars().count() <= LINE_WIDTH {
         let _ = writeln!(source, "{compact}");
         return;
     }
@@ -546,27 +607,42 @@ fn emit_python_call(
     let _ = writeln!(source, "{indent})");
 }
 
-/// Validate a restored native value against its generated annotation.
+/// Emit the line that starts with `start`, indented by `indent`, and ends with
+/// the validation of `value`, a restored native value, against its generated
+/// annotation.
 fn emit_python_validation(
     source: &mut String,
+    start: &str,
+    indent: &str,
     reference: &TypeRef,
     context: &PythonContext<'_>,
     value: &str,
 ) -> Result<()> {
     let adapter = render::python_adapter_constant(reference, context)?;
-    let _ = writeln!(source, "{adapter}.validate({value})");
+    let _ = writeln!(
+        source,
+        "{}",
+        render::bracketed(
+            &format!("{start}{adapter}.validate("),
+            &[value.to_owned()],
+            ")",
+            indent
+        )
+    );
     Ok(())
 }
 
 /// Spell the native function or class `native_name`, which a constant of the
 /// module holds, so a call does not look it up again.
-fn native(native_name: &str, context: &PythonContext<'_>) -> String {
-    context.constant(
-        python_names::NATIVE_CONSTANT_PREFIX,
+/// The constant is `BIMETAL_`, the Python name `name` in capitals, and
+/// `_NATIVE`.
+fn native(name: &str, native_name: &str, context: &PythonContext<'_>) -> String {
+    context.named_constant(
+        format!("BIMETAL_{}_NATIVE", name.to_uppercase()),
         format!(
             "{}({}, {})",
             context.builtin("getattr"),
-            context.runtime("native"),
+            context.runtime(python_names::NATIVE_MODULE),
             literal::quoted(native_name)
         ),
     )
@@ -598,12 +674,16 @@ fn emit_python_resource(
     }
     // Declared in the class, because a class whose constructors are all
     // async never assigns it in `__init__`.
-    let _ = writeln!(source, "    {NATIVE_RESOURCE}: {}\n", context.import("Any"));
+    let _ = writeln!(
+        source,
+        "    {NATIVE_RESOURCE}: {}\n",
+        context.import("typing.Any")
+    );
     // Only a constructor or a factory calls the native class. A resource that
     // other exports return never names it, so asking for it would import
     // `native` unused.
     let native_class = if resource.constructor.is_some() || !resource.factories.is_empty() {
-        native(&resource.native_name, context)
+        native(&resource.name, &resource.native_name, context)
     } else {
         String::new()
     };
@@ -612,7 +692,7 @@ fn emit_python_resource(
         source,
         "\n    @{}\n    def {WRAP}(cls, native: {}) -> {}:\n        {INSTANCE} = cls.__new__(cls)\n        {INSTANCE}.{NATIVE_RESOURCE} = native\n        return {INSTANCE}",
         context.builtin("classmethod"),
-        context.import("Any"),
+        context.import("typing.Any"),
         resource.name,
     );
     for factory in &resource.factories {
@@ -733,7 +813,7 @@ fn emit_python_with(
     }
     let _ = writeln!(
         source,
-        "\n    def __exit__(\n        self, exception_type: {object}, *_: {object}\n    ) -> None:"
+        "\n    def __exit__(self, exception_type: {object}, *_: {object}) -> None:"
     );
     if needs_async {
         source.push_str("        self.close()\n");
@@ -754,7 +834,7 @@ fn emit_python_with(
     source.push_str(&entering(enter_await));
     let _ = writeln!(
         source,
-        "\n    async def __aexit__(\n        self, exception_type: {object}, *_: {object}\n    ) -> None:"
+        "\n    async def __aexit__(self, exception_type: {object}, *_: {object}) -> None:"
     );
     source.push_str(&exiting(exit_await));
     Ok(())
@@ -928,6 +1008,7 @@ fn emit_python_init(
         source,
         "        ",
         Some(&format!("self.{NATIVE_RESOURCE}")),
+        None,
         &NativeCall {
             callable: native_class,
             args: &calls,
@@ -973,6 +1054,7 @@ fn emit_python_factory(
         source,
         "        ",
         Some(&format!("{INSTANCE}.{NATIVE_RESOURCE}")),
+        None,
         &NativeCall {
             callable: &format!("{native_class}.{}", factory.host_name),
             args: &calls,
@@ -1029,8 +1111,7 @@ fn python_host_argument(
     if python_reads_directly(&param.ty) {
         return Ok((name.to_owned(), name.to_owned()));
     }
-    // The extension reads no buffer, and no enum with data, as Python holds
-    // it.
+    // The extension cannot read a buffer, or an enum with data, as Python holds it.
     let unread = context.contract.reaches(&param.ty, |item| match item {
         TypeRef::Buffer { .. } => true,
         TypeRef::Named { identity } => {
@@ -1069,7 +1150,7 @@ fn python_host_argument(
 }
 
 /// Render the argument of a parameter that crosses as a host object: a
-/// resource's native object, or the function that wraps a callback.
+/// resource's native object, or a callback paired with its result's adapter.
 fn python_object_argument(
     reference: &TypeRef,
     name: &str,
@@ -1088,8 +1169,8 @@ fn python_object_argument(
             let (returns, params) = signature
                 .split_last()
                 .expect("a callback's signature ends with its return");
-            // The extension makes the arguments as Pydantic would, unless one reaches
-            // a numeric buffer, and reads the result, or else the adapter's dump of it.
+            // The extension makes the arguments as Pydantic would, unless one
+            // reaches a numeric buffer.
             let mut restored = false;
             for param in params {
                 restored |= context
@@ -1109,6 +1190,8 @@ fn python_object_argument(
             } else {
                 name.to_owned()
             };
+            // The extension reads the result as it is, or else this adapter's
+            // dump of it.
             Some(format!(
                 "({function}, {})",
                 render::python_adapter_constant(returns, context)?
@@ -1122,8 +1205,9 @@ fn python_object_argument(
 mod tests {
     use std::cell::RefCell;
 
-    use bimetal_ir::python_names;
-    use bimetal_ir::{ArrowKind, BufferElement, FunctionDef, Manifest, MethodDef, TypeDef};
+    use bimetal_ir::{
+        ArrowKind, BufferElement, FunctionDef, Manifest, MethodDef, Namespace, TypeDef,
+    };
 
     use super::*;
     use crate::fixtures;
@@ -1167,31 +1251,24 @@ mod tests {
 
         assert!(
             source.starts_with(concat!(
+                "\"\"\"\nThe functions, classes and constants of `test`, which call the extension.\n\"\"\"\n\n",
                 "from __future__ import annotations\n\n",
-                "from pydantic import AwareDatetime\n\n",
-                "from .models import (\n    Point,\n)\n",
-                "from test._runtime import (\n",
-                "    Adapter as _bimetal_Adapter,\n",
-                "    Dumped as _bimetal_Dumped,\n",
-                "    PanicException,\n",
-                "    Revalidate as _bimetal_Revalidate,\n",
-                "    native as _bimetal_native,\n",
-                ")\n\n",
-                "_bimetal_native_0 = getattr(_bimetal_native, \"native_touch\")\n",
-                "_bimetal_adapter_1 = _bimetal_Adapter(lambda: Point)\n\n\n",
-                "def touch(point: Point) -> AwareDatetime:\n",
+                "import pydantic\n\n",
+                "from test import bimetal\n\n",
+                "from .models import Point\n\n",
+                "BIMETAL_TOUCH_NATIVE = getattr(bimetal.native, \"native_touch\")\n",
+                "BIMETAL_ADAPTER_0 = bimetal.Adapter(lambda: Point)\n\n\n",
+                "def touch(point: Point) -> pydantic.AwareDatetime:\n",
             )),
             "{source}"
         );
         assert!(
             source.contains(concat!(
                 "    try:\n",
-                "        __bimetal_native = _bimetal_native_0(point)\n",
-                "    except _bimetal_Revalidate:\n",
-                "        __bimetal_native = _bimetal_native_0(\n",
-                "            _bimetal_Dumped(_bimetal_adapter_1.dump(point)),\n",
-                "        )\n",
-                "    __bimetal_result: AwareDatetime = __bimetal_native\n",
+                "        bimetal_result: pydantic.AwareDatetime = BIMETAL_TOUCH_NATIVE(point)\n",
+                "    except bimetal.Revalidate:\n",
+                "        bimetal_result = BIMETAL_TOUCH_NATIVE(bimetal.Dumped(BIMETAL_ADAPTER_0.dump(point)))\n",
+                "    return bimetal_result\n",
             )),
             "{source}"
         );
@@ -1208,7 +1285,7 @@ mod tests {
         let source = render_api(&manifest);
 
         assert!(source.contains("has no constructor; other exports return it"));
-        assert!(!source.contains("native as _bimetal_native"), "{source}");
+        assert!(!source.contains("bimetal.native"), "{source}");
     }
 
     #[test]
@@ -1234,18 +1311,20 @@ mod tests {
 
         let source = render_api(&manifest);
 
-        assert!(source.starts_with(
-            "from __future__ import annotations\n\nimport builtins as _bimetal_builtins\nfrom typing import Any\n"
-        ));
-        assert!(source.contains("\ndef list() -> _bimetal_builtins.list[str]:\n"));
         assert!(
-            source
-                .contains("    __bimetal_result: _bimetal_builtins.list[str] = __bimetal_native\n")
+            source.contains(
+                "from __future__ import annotations\n\nimport builtins\nimport typing\n\nfrom test import bimetal\n"
+            ),
+            "{source}"
         );
-        assert!(source.contains("    def names(self) -> _bimetal_builtins.list[str]:\n"));
+        assert!(source.contains("\ndef list() -> builtins.list[str]:\n"));
+        assert!(
+            source.contains("    bimetal_result: builtins.list[str] = BIMETAL_LIST_NATIVE()\n")
+        );
+        assert!(source.contains("    def names(self) -> builtins.list[str]:\n"));
         // Other builtins stay plain.
         assert!(
-            source.contains("\n_bimetal_native_0 = getattr(_bimetal_native, \"native_list\")\n")
+            source.contains("\nBIMETAL_LIST_NATIVE = getattr(bimetal.native, \"native_list\")\n")
         );
         assert!(source.contains("\ndef test() -> None:\n"));
     }
@@ -1255,16 +1334,16 @@ mod tests {
         let source = render_api(&fixtures::recorder_manifest());
 
         assert!(!source.contains("builtins"));
-        assert!(source.contains("        self, exception_type: object, *_: object\n"));
+        assert!(
+            source
+                .contains("    def __exit__(self, exception_type: object, *_: object) -> None:\n")
+        );
     }
 
     #[test]
-    fn generated_locals_use_the_prefix_that_rust_parameters_cannot() {
-        for local in [NATIVE_RESULT, RESULT, INSTANCE] {
-            assert!(
-                local.starts_with(python_names::WRAPPER_LOCAL_PREFIX),
-                "{local}"
-            );
+    fn generated_locals_have_names_that_parameters_give_up() {
+        for local in [NATIVE_RESULT, RESULT, INSTANCE, ITEM] {
+            assert!(python_names::is_reserved(local), "{local}");
         }
     }
 
@@ -1292,9 +1371,10 @@ mod tests {
                     fixtures::typed_param("point", fixtures::named("Point")),
                     fixtures::typed_param("test", string()),
                     fixtures::typed_param("type", string()),
-                    fixtures::typed_param("_Recorder__bimetal_native", string()),
-                    fixtures::typed_param("_bimetal_models_0", string()),
-                    fixtures::typed_param("_bimetal_adapter_2", string()),
+                    fixtures::typed_param("datetime", string()),
+                    fixtures::typed_param("bimetal", string()),
+                    fixtures::typed_param("bimetal_models_0", string()),
+                    fixtures::typed_param("BIMETAL_ADAPTER_2", string()),
                 ],
                 TypeRef::String,
             ),
@@ -1314,15 +1394,17 @@ mod tests {
         // The documentation names the parameter as Python does.
         assert!(source.contains("    Args:\n        bytes_: The bytes to reverse.\n"));
         assert!(
-            source.contains("_bimetal_native_0 = getattr(_bimetal_native, \"native_reverse\")\n")
+            source
+                .contains("BIMETAL_REVERSE_NATIVE = getattr(bimetal.native, \"native_reverse\")\n")
         );
-        assert!(source.contains("    __bimetal_native = _bimetal_native_0(bytes_)\n"));
-        // The package's first segment is imported under an alias, so it
-        // hides nothing, and the module's constants keep their names.
-        assert!(source.contains("    value: str,\n    int__: int,\n    int_: int,\n    point: Point,\n    test: str,\n    type_: str,\n    _Recorder__bimetal_native_: str,\n    _bimetal_models_0_: str,\n    _bimetal_adapter_2_: str,\n) -> str:"));
+        assert!(source.contains("    bimetal_result: bytes = BIMETAL_REVERSE_NATIVE(bytes_)\n"));
+        // The module binds only `bimetal` of the package, so a parameter named
+        // like the package hides nothing, while one named like a module that
+        // the wrapper uses, or like the module's constants, gives way.
+        assert!(source.contains("    value: str,\n    int__: int,\n    int_: int,\n    point: Point,\n    test: str,\n    type_: str,\n    datetime_: str,\n    bimetal_: str,\n    bimetal_models_0_: str,\n    BIMETAL_ADAPTER_2_: str,\n) -> str:"), "{source}");
         // Undocumented parameters appear only in the signature.
         assert!(!source.contains("        int__: "));
-        assert!(source.contains("            value,\n            int__,\n            int_,\n            _bimetal_Dumped(_bimetal_adapter_2.dump(point)),\n            test,\n            type_,\n            _Recorder__bimetal_native_,\n            _bimetal_models_0_,\n            _bimetal_adapter_2_,\n"), "{source}");
+        assert!(source.contains("            value,\n            int__,\n            int_,\n            bimetal.Dumped(BIMETAL_ADAPTER_0.dump(point)),\n            test,\n            type_,\n            datetime_,\n            bimetal_,\n            bimetal_models_0_,\n            BIMETAL_ADAPTER_2_,\n"), "{source}");
         assert!(source.contains("def from_default(cls, cls_: str, value: int) -> Recorder:"));
         assert!(source.contains("        Args:\n            cls_: The class name.\n"));
     }
@@ -1343,14 +1425,18 @@ mod tests {
         let source = render_api(&manifest);
 
         assert!(
-            source.contains("def filter(rows: ArrowStreamExportable) -> pa.RecordBatchReader:")
+            source.contains(
+                "def filter(rows: bimetal.ArrowStreamExportable) -> pyarrow.RecordBatchReader:"
+            ),
+            "{source}"
         );
         assert!(
-            source
-                .contains("\n_bimetal_arrow_1 = getattr(pa, \"RecordBatchReader\").from_stream\n")
+            source.contains(
+                "\nBIMETAL_ARROW_0 = getattr(pyarrow, \"RecordBatchReader\").from_stream\n"
+            )
         );
         assert!(source.contains(
-            "    __bimetal_result: pa.RecordBatchReader = _bimetal_arrow_1(__bimetal_native)"
+            "    bimetal_result: pyarrow.RecordBatchReader = BIMETAL_ARROW_0(bimetal_native)"
         ));
     }
 
@@ -1384,12 +1470,12 @@ mod tests {
 
         assert!(
             source.contains(concat!(
-                "        _bimetal_native_0(point, stamp, at, data, count)\n",
-                "    except _bimetal_Revalidate:\n",
-                "        _bimetal_native_0(\n",
-                "            _bimetal_Dumped(_bimetal_adapter_1.dump(point)),\n",
-                "            _bimetal_Dumped(_bimetal_adapter_2.dump(stamp)),\n",
-                "            _bimetal_Dumped(_bimetal_adapter_3.dump(at)),\n",
+                "        BIMETAL_TOUCH_NATIVE(point, stamp, at, data, count)\n",
+                "    except bimetal.Revalidate:\n",
+                "        BIMETAL_TOUCH_NATIVE(\n",
+                "            bimetal.Dumped(BIMETAL_ADAPTER_0.dump(point)),\n",
+                "            bimetal.Dumped(BIMETAL_ADAPTER_1.dump(stamp)),\n",
+                "            bimetal.Dumped(BIMETAL_ADAPTER_2.dump(at)),\n",
                 "            data,\n",
                 "            count,\n",
             )),
@@ -1423,14 +1509,11 @@ mod tests {
         let source = render_api(&manifest);
 
         assert!(source.contains(concat!(
-            "        __bimetal_native = _bimetal_native_0(near)\n",
-            "    except _bimetal_Revalidate:\n",
-            "        __bimetal_native = _bimetal_native_0(\n",
-            "            None if near is None else _bimetal_Dumped(_bimetal_adapter_1.dump(near)),\n",
+            "        bimetal_result: int = BIMETAL_COUNT_NATIVE(near)\n",
+            "    except bimetal.Revalidate:\n",
+            "        bimetal_result = BIMETAL_COUNT_NATIVE(None if near is None else bimetal.Dumped(BIMETAL_ADAPTER_0.dump(near)))\n",
+            "    return bimetal_result\n",
         )), "{source}");
-        assert!(source.contains(
-            "    __bimetal_result: int = __bimetal_native\n    return __bimetal_result\n"
-        ));
         assert!(!source.contains(".validate("));
 
         let strings = || TypeRef::List {
@@ -1488,7 +1571,7 @@ mod tests {
         let source = render_api(&manifest);
 
         assert!(
-            source.contains("    __bimetal_result: list[Point] = __bimetal_native\n"),
+            source.contains("    bimetal_result: list[Point] = BIMETAL_POINTS_NATIVE()\n"),
             "{source}"
         );
         assert!(!source.contains(".validate("), "{source}");
@@ -1519,11 +1602,12 @@ mod tests {
         let source = render_api(&manifest);
 
         assert!(
-            source.contains("    __bimetal_result: Blob = __bimetal_native\n"),
+            source.contains("    bimetal_result: Blob = BIMETAL_BLOB_NATIVE()\n"),
             "{source}"
         );
+        // The validation leaves no room for the value on its line.
         assert!(source.contains(
-            "_bimetal_adapter_2.validate(_bimetal_restore_host(__bimetal_native, [\"named\", \"test::test::Samples\"]))\n"
+            "    bimetal_result: Samples = BIMETAL_ADAPTER_0.validate(\n        bimetal.restore_host(bimetal_native, [\"named\", \"test::test::Samples\"]),\n    )\n"
         ), "{source}");
     }
 
@@ -1578,8 +1662,7 @@ mod tests {
                 .lines()
                 .zip(source.lines().skip(1))
                 .any(|(line, next)| {
-                    line.starts_with("@_bimetal_bound(")
-                        && next.starts_with(&format!("def {name}("))
+                    line.starts_with("@bimetal.bound(") && next.starts_with(&format!("def {name}("))
                 })
         };
         assert!(bound("add"), "{source}");

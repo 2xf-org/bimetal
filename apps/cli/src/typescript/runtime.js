@@ -1,11 +1,6 @@
 // The adapters. `prepareHost` and `restoreHost` walk a value with its schema,
 // `[kind, ...]` or null, and a `named` schema names a model's schema in
 // `nativeSchemas`.
-//
-// `prepareHost` returns the caller's value itself where nothing in it
-// changes, and copies an array or an object only once one of its items
-// changes, or when an object is not a plain one. `restoreHost` changes the
-// value that Rust made, which nothing else holds, in place, and freezes it.
 
 // A number crosses as a float unless it is a safe integer; a wider integer
 // that must stay exact is a bigint.
@@ -60,7 +55,7 @@ function prepareEntries(value, prepare) {
   return prepared ?? value;
 }
 
-// Assigning `__proto__` would set the prototype, so that key is defined.
+// Assigning `__proto__` would set the prototype, so that key is defined as a property.
 function defineEntry(target, key, item) {
   if (key === "__proto__") {
     Object.defineProperty(target, key, { value: item, writable: true, enumerable: true, configurable: true });
@@ -119,8 +114,8 @@ export function prepareHost(value, spec = null) {
   return value;
 }
 
-// The `[key, spec]` pairs of the fields whose specs do anything, by the object of field specs,
-// which has no prototype, so V8 keeps it in slow mode, where each `for...in` sorts its keys.
+// The `[key, spec]` pairs of the fields that have a spec, by field-spec object: those have no
+// prototype, so V8 keeps them in dictionary mode, where each enumeration sorts the keys.
 const specifiedFields = new WeakMap();
 
 function specified(fields) {
@@ -132,8 +127,7 @@ function specified(fields) {
   return entries;
 }
 
-// Serde reads a missing `Option` field as `None`, so each `Option` field
-// that its model marks `required`, which `required` lists, must be present.
+// Serde reads a missing `Option` field as `None`, so the fields in `required` must be present.
 function requirePresent(value, required) {
   if (required === undefined) return;
   for (const key of required) {
@@ -207,7 +201,7 @@ function restoreFields(value, fields) {
   return Object.freeze(target);
 }
 
-// Whether a spec restores nothing but freezing, by the spec.
+// Whether a spec only freezes, by spec.
 const onlyFreezes = new WeakMap();
 
 // The addon makes frozen objects, arrays and maps, so nothing is left to restore
@@ -221,7 +215,7 @@ function freezesOnly(spec) {
   return known;
 }
 
-// A spec that the walk has seen adds nothing that it does not check already.
+// A spec seen earlier in the walk is checked where it was first met.
 function specFreezesOnly(spec, seen) {
   if (spec == null || seen.has(spec)) return true;
   seen.add(spec);

@@ -710,8 +710,8 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
                     context.arrow("arrowToIpc"),
                     literal::quoted(contract::arrow_spelling(*value).key)
                 ),
-                // The module reads a scalar, a list or tuple of them, or a typed array
-                // as JavaScript holds it, once `checkArgument` checked its outer type.
+                // Once `checkArgument` checked its outer type, the module reads such
+                // a value as it is.
                 reference if reads_directly(reference) => name,
                 reference => format!(
                     "{}({name}, {})",
@@ -725,10 +725,8 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
 }
 
 /// Whether the module reads an argument of this type as JavaScript holds it,
-/// so that `prepareHost` would return it unchanged: a boolean, a number, a
-/// bigint, a string, a date's text, a typed array, and lists, tuples and
-/// options of them. A `Date`, a duration, JSON and every object go through
-/// `prepareHost`.
+/// so that `prepareHost` would return it unchanged. A `Date`, a duration, JSON
+/// and every object go through `prepareHost`.
 fn reads_directly(reference: &TypeRef) -> bool {
     contract::nodes(reference).all(|item| {
         matches!(

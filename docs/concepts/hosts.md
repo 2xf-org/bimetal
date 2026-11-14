@@ -5,7 +5,7 @@ A *host* is a language your Rust runs inside. Bimetal has two host languages and
 | | Python extension | Wasm module | Node.js addon |
 | --- | --- | --- | --- |
 | Turned on by | `[python]` | `[typescript]`, by default | `[typescript]` with `backend = "node"` |
-| The compiled file | `_native.abi3.so`, or `.pyd` on Windows | `native/native_bg.wasm` | `native/native.node` |
+| The compiled file | `native.abi3.so`, or `.pyd` on Windows | `native/native_bg.wasm` | `native/native.node` |
 | Runs in | CPython 3.11 and newer | Node.js, browsers, bundlers | Node.js and Electron |
 | Built on | PyO3 | wasm-bindgen | Node-API, through `napi-sys` |
 | One file per | Platform | Nothing: it serves every platform | Platform |
@@ -17,7 +17,7 @@ A *host* is a language your Rust runs inside. Bimetal has two host languages and
 
 Use the default, Wasm, unless you can't. One package then works everywhere, and a clone needs no compiler.
 
-Use `backend = "node"` when your Rust doesn't compile to `wasm32-unknown-unknown`, as with code that runs Tokio's multi-threaded runtime, or when you need threads. The trade-off is that browsers can't load it, and you need one build per platform. [`apps/examples/trading`](../../apps/examples/trading) takes this path. The calls, values and errors are the same on both backends. Only panics and stack overflows behave differently.
+Use `backend = "node"` when your Rust doesn't compile to `wasm32-unknown-unknown`, as with code that runs Tokio's multi-threaded runtime, or when you need threads. The trade-off is that browsers can't load it, and you need one build per platform. [`apps/examples/bank`](../../apps/examples/bank) takes this path. The calls, values and errors are the same on both backends. Only panics and stack overflows behave differently.
 
 You can't have both from one `bimetal.toml`. An application that wants both can keep a second `bimetal.toml`, as [`showcase_node.py`](../../apps/examples/showcase_node.py) does for a copy of the showcase.
 

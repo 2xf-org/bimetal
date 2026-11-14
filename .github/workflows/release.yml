@@ -75,13 +75,13 @@ jobs:
           rustup target add "$TARGET"
       - name: Build the command
         run: cargo build --locked --release -p bimetal-cli --target "$TARGET"
-      # An archive holds the command and the licences, in a folder of the
+      # An archive holds the command and the licence, in a folder of the
       # archive's own name.
       - name: Pack the archive
         run: |
           name="bimetal-$GITHUB_REF_NAME-$TARGET"
           mkdir "$name"
-          cp LICENSE-MIT LICENSE-APACHE README.md "$name"
+          cp LICENSE README.md "$name"
           if [ "$RUNNER_OS" = Windows ]; then
             cp "target/$TARGET/release/bimetal.exe" "$name"
             7z a "$name.zip" "$name"

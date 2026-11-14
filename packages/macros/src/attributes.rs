@@ -20,7 +20,7 @@ pub(super) enum Boundary {
     Arrow,
     /// A numeric buffer (`buffer`).
     Buffer,
-    /// Bytes, which a byte sequence that is a whole value crosses as.
+    /// Bytes, for a `Vec<u8>`, `[u8]` or `[u8; N]` that is a whole value.
     Bytes,
 }
 

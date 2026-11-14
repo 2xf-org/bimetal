@@ -1,4 +1,8 @@
-"""Typst through the generated Python package."""
+"""
+Typst through the generated Python package.
+"""
+
+from __future__ import annotations
 
 import unittest
 

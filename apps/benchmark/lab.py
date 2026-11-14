@@ -1,5 +1,5 @@
-"""The crossing lab: build the probe, time every crossing on each host, and
-compare against a base version of Bimetal or against the gate's limits.
+"""
+The crossing lab: time every crossing of the probe on each host, against a base version or the gate's limits.
 
 Usage: lab.py [--hosts python,wasm,node] [--base <git-ref>] [--rounds <n>]
               [--samples <n>] [--cases <case,...>] [--gate <file>]
@@ -25,33 +25,56 @@ alike. --gate checks the current build against a JSON file of limits by host
 and case: a multiple of `noop-raw`, or for a key `<case>/<other>`, a multiple
 of the other case, and exits with an error when one is exceeded.
 
-The raw samples go to target/lab/results.json, and the report to standard
-output and to --output if given.
+The per-round medians go to target/lab/results.json, and the report to
+standard output and to --output if given.
 """
 
 import argparse
+import io
 import json
 import os
+import pathlib
 import shutil
 import statistics
 import subprocess
 import sys
 import tarfile
-import io
-from pathlib import Path
-from typing import Any
+import typing
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 LAB = ROOT / "target" / "lab"
-PROBE = Path("apps") / "benchmark" / "probe"
+PROBE = pathlib.Path("apps") / "benchmark" / "probe"
+# The probe's files that each copy of it needs.
+PROBE_FILES = (
+    "Cargo.toml",
+    "Cargo.lock",
+    "src",
+    "python/pyproject.toml",
+    "python/pdm_build.py",
+    "typescript/package.json",
+)
 SHOWCASE = ROOT / "apps" / "examples" / "showcase"
 HOSTS = ("python", "wasm", "node")
 REFERENCE = "noop-raw"
 
 
-def run(command: list[str | Path], cwd: Path = ROOT, env: dict[str, str] | None = None) -> str:
-    """Run a command and return its stdout; on failure, show its output and
-    exit."""
+# ---------------------------------------------------------------------------
+# Builds
+# ---------------------------------------------------------------------------
+
+
+def run(command: list[str | pathlib.Path], cwd: pathlib.Path = ROOT, env: dict[str, str] | None = None) -> str:
+    """
+    Run a command, and exit with its output if it fails.
+
+    Args:
+        command: The program and its arguments.
+        cwd: The directory to run it in.
+        env: Variables to set on top of this process's environment.
+
+    Returns:
+        What the command printed to stdout.
+    """
     result = subprocess.run(
         [str(part) for part in command],
         cwd=cwd,
@@ -64,9 +87,19 @@ def run(command: list[str | Path], cwd: Path = ROOT, env: dict[str, str] | None 
     return result.stdout
 
 
-def extract(ref: str) -> Path:
-    """The checkout of `ref` in target/lab/base, extracted again only when
-    the ref names another commit, so its builds stay incremental."""
+def extract(ref: str) -> pathlib.Path:
+    """
+    Extract a git ref into target/lab/base.
+
+    Notes:
+        It extracts again only when the ref names another commit, so the base's builds stay incremental.
+
+    Args:
+        ref: The git ref to compare against.
+
+    Returns:
+        The checkout of the ref.
+    """
     commit = run(["git", "rev-parse", "--verify", f"{ref}^{{commit}}"]).strip()
     base = LAB / "base"
     marker = base / ".lab-commit"
@@ -74,7 +107,12 @@ def extract(ref: str) -> Path:
         return base
     shutil.rmtree(base, ignore_errors=True)
     base.mkdir(parents=True)
-    archive = subprocess.run(["git", "archive", "--format=tar", commit], cwd=ROOT, check=True, capture_output=True).stdout
+    archive = subprocess.run(
+        ["git", "archive", "--format=tar", commit],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(base, filter="data")
     marker.write_text(commit)
@@ -82,7 +120,15 @@ def extract(ref: str) -> Path:
 
 
 def config(hosts: list[str]) -> str:
-    """The probe's bimetal.toml for the hosts of one copy."""
+    """
+    Return the probe's bimetal.toml for the hosts of one copy.
+
+    Args:
+        hosts: The hosts that the copy builds.
+
+    Returns:
+        The file's text.
+    """
     tables = []
     if "python" in hosts:
         tables.append("[python]\n")
@@ -93,12 +139,25 @@ def config(hosts: list[str]) -> str:
     return "\n".join(tables)
 
 
-def build(checkout: Path, hosts: list[str]) -> dict[str, Path]:
-    """Build the CLI of `checkout` and the probe of `checkout` with it, and
-    return each host's project. The addon needs a copy of its own, since one
-    build has one TypeScript backend."""
+def build(checkout: pathlib.Path, hosts: list[str]) -> dict[str, pathlib.Path]:
+    """
+    Build the CLI of a checkout, and the probe of that checkout with it.
+
+    Notes:
+        The addon needs a copy of its own, since one build has one TypeScript backend.
+
+    Args:
+        checkout: The checkout whose CLI and probe to build.
+        hosts: The hosts to build the probe for.
+
+    Returns:
+        Each host's project.
+    """
     run(["cargo", "build", "--locked", "--release", "-p", "bimetal-cli"], cwd=checkout)
-    copies = {"probe": [host for host in hosts if host in ("python", "wasm")], "probe-node": [host for host in hosts if host == "node"]}
+    copies = {
+        "probe": [host for host in hosts if host in ("python", "wasm")],
+        "probe-node": [host for host in hosts if host == "node"],
+    }
     projects = {}
     for name, copy_hosts in copies.items():
         if not copy_hosts:
@@ -107,7 +166,7 @@ def build(checkout: Path, hosts: list[str]) -> dict[str, Path]:
         # on the runtime and the checkout's rust-toolchain.toml resolve.
         copy = checkout / "target" / "lab" / name
         source = checkout / PROBE
-        for path in ("Cargo.toml", "Cargo.lock", "src", "python/pyproject.toml", "python/pdm_build.py", "typescript/package.json"):
+        for path in PROBE_FILES:
             destination = copy / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             if (source / path).is_dir():
@@ -134,15 +193,36 @@ def build(checkout: Path, hosts: list[str]) -> dict[str, Path]:
 
 
 def prepare_hosts(hosts: list[str]) -> None:
-    """Install the showcase's Python and npm projects, whose interpreter and
-    node_modules the probe uses."""
+    """
+    Install the showcase's Python and npm projects, whose interpreter and node_modules the probe uses.
+
+    Args:
+        hosts: The hosts to time.
+    """
     if "python" in hosts:
         run(["uv", "sync", "--locked", "--quiet", "--project", SHOWCASE / "python"])
     if any(host in hosts for host in ("wasm", "node")) and not (SHOWCASE / "typescript" / "node_modules").is_dir():
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=SHOWCASE / "typescript")
 
 
-def driver(host: str, project: Path, samples: int, cases: list[str]) -> list[str | Path]:
+# ---------------------------------------------------------------------------
+# Timing
+# ---------------------------------------------------------------------------
+
+
+def driver(host: str, project: pathlib.Path, samples: int, cases: list[str]) -> list[str | pathlib.Path]:
+    """
+    Build the command that times one round of a host's cases.
+
+    Args:
+        host: The host to time.
+        project: The host's project in one build of the probe.
+        samples: The samples of each case.
+        cases: The cases to time, or none for all of them.
+
+    Returns:
+        The command.
+    """
     if host == "python":
         python = SHOWCASE / "python" / ".venv" / "bin" / "python"
         return [python, ROOT / "apps" / "benchmark" / "lab_python.py", project, 1, samples, *cases]
@@ -150,8 +230,26 @@ def driver(host: str, project: Path, samples: int, cases: list[str]) -> list[str
     return [node, ROOT / "apps" / "benchmark" / "lab_node.mjs", project, 1, samples, *cases]
 
 
-def measure(builds: dict[str, dict[str, Path]], host: str, rounds: int, samples: int, cases: list[str]) -> dict[str, dict[str, list[float]]]:
-    """Each build's per-round median of every case on `host`."""
+def measure(
+    builds: dict[str, dict[str, pathlib.Path]],
+    host: str,
+    rounds: int,
+    samples: int,
+    cases: list[str],
+) -> dict[str, dict[str, list[float]]]:
+    """
+    Time every case on a host in each build, the builds taking turns round after round.
+
+    Args:
+        builds: Each build's projects by host.
+        host: The host to time.
+        rounds: The rounds to run.
+        samples: The samples of each case in one round.
+        cases: The cases to time, or none for all of them.
+
+    Returns:
+        Each build's per-round median of every case.
+    """
     medians: dict[str, dict[str, list[float]]] = {build: {} for build in builds}
     order = list(builds)
     for index in range(rounds):
@@ -165,7 +263,21 @@ def measure(builds: dict[str, dict[str, Path]], host: str, rounds: int, samples:
     return medians
 
 
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+
 def duration(nanoseconds: float) -> str:
+    """
+    Format a time in the largest unit it fills.
+
+    Args:
+        nanoseconds: The time.
+
+    Returns:
+        The time in nanoseconds, microseconds, or milliseconds.
+    """
     if nanoseconds >= 1e6:
         return f"{nanoseconds / 1e6:.2f} ms"
     if nanoseconds >= 1e3:
@@ -174,6 +286,15 @@ def duration(nanoseconds: float) -> str:
 
 
 def summarize(per_round: dict[str, list[float]]) -> dict[str, dict[str, float]]:
+    """
+    Reduce one build's per-round medians to each case's time.
+
+    Args:
+        per_round: Each case's per-round medians.
+
+    Returns:
+        Each case's median over rounds, and its median multiple of `noop-raw` when that case was timed.
+    """
     reference = per_round.get(REFERENCE)
     summary = {}
     for case, values in per_round.items():
@@ -185,6 +306,20 @@ def summarize(per_round: dict[str, list[float]]) -> dict[str, dict[str, float]]:
 
 
 def render(host: str, medians: dict[str, dict[str, list[float]]]) -> list[str]:
+    """
+    Render one host's table of the report.
+
+    Notes:
+        With a base build, the table compares the two builds. Without one, it gives each case's wrapper share and
+        its multiple of `noop-raw`.
+
+    Args:
+        host: The host.
+        medians: Each build's per-round medians on the host.
+
+    Returns:
+        The table's Markdown lines.
+    """
     current = summarize(medians["current"])
     lines = [f"### {host}", ""]
     if "base" in medians:
@@ -203,7 +338,7 @@ def render(host: str, medians: dict[str, dict[str, list[float]]]) -> list[str]:
                 f"{ratio:.2f} | {low:.2f} to {high:.2f} | {verdict} |"
             )
     else:
-        lines += ["| Case | Time | Wrapper | × noop-raw |", "| --- | --- | --- | --- |"]
+        lines += ["| Case | Time | Wrapper | × noop-raw |", "| --- | --- | --- | --- |"]  # noqa: RUF001
         for case, entry in current.items():
             raw = current.get(f"{case}-raw")
             wrapper = duration(entry["median_ns"] - raw["median_ns"]) if raw else ""
@@ -212,10 +347,21 @@ def render(host: str, medians: dict[str, dict[str, list[float]]]) -> list[str]:
     return [*lines, ""]
 
 
-def gate(limits_file: Path, results: dict[str, Any]) -> list[str]:
-    """The cases whose time exceeds its limit: a multiple of noop-raw, or of
-    another case for a key `<case>/<other>`, the median of the rounds'
-    ratios."""
+def gate(limits_file: pathlib.Path, results: dict[str, typing.Any]) -> list[str]:
+    """
+    Check the current build against the gate's limits.
+
+    Notes:
+        A limit is a multiple of `noop-raw`, or of another case for a key `<case>/<other>`, and applies to the
+        median of the rounds' ratios.
+
+    Args:
+        limits_file: The JSON file of limits by host and case.
+        results: Each host's per-round medians of each build.
+
+    Returns:
+        A line for each case that exceeds its limit or was not timed.
+    """
     limits = json.loads(limits_file.read_text())
     failures = []
     for host, cases in limits.items():
@@ -230,19 +376,31 @@ def gate(limits_file: Path, results: dict[str, Any]) -> list[str]:
                 continue
             found = statistics.median(value / base for value, base in zip(per_round[case], per_round[other]))
             if found > limit:
-                failures.append(f"{host} {case}: {found:.2f} × {other}, above the limit of {limit}")
+                failures.append(f"{host} {case}: {found:.2f} × {other}, above the limit of {limit}")  # noqa: RUF001
     return failures
 
 
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """
+    Build the probe, time it, and write the report.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--hosts", default=",".join(HOSTS))
     parser.add_argument("--base", help="a git ref to compare against")
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--samples", type=int, default=15)
     parser.add_argument("--cases", default="", help="the cases to time; all by default")
-    parser.add_argument("--gate", type=Path, help="a JSON file of limits, as multiples of noop-raw, by host and case")
-    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--gate",
+        type=pathlib.Path,
+        help="a JSON file of limits, as multiples of noop-raw, by host and case",
+    )
+    parser.add_argument("--output", type=pathlib.Path)
     options = parser.parse_args()
     hosts = options.hosts.split(",")
     unknown = set(hosts) - set(HOSTS)
@@ -260,7 +418,7 @@ def main() -> None:
     builds = {"current": build(ROOT, hosts)}
     if options.base:
         builds["base"] = build(extract(options.base), hosts)
-    results: dict[str, Any] = {}
+    results: dict[str, typing.Any] = {}
     report = ["# Crossing lab", ""]
     for host in hosts:
         medians = measure(builds, host, options.rounds, options.samples, cases)

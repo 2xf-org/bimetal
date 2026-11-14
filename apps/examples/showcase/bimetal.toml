@@ -12,10 +12,10 @@ additional_packages = ["showcase-geometry"]
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "1bfbc67663a998effd04f4b88f9b4d19"
+source_fingerprint = "34ace4a6d9a2ef2daaed182f2e1b85cf"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "3f0396a0742aa4c937cfaae1f8899c00"
+output_fingerprint = "34c0d5ab1aed858878689cbf6232eee4"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -86,9 +86,8 @@ project = "python"
 # Files owned by Bimetal and safe to overwrite or remove, relative to the project.
 files = [
     "showcase/__init__.py",
-    "showcase/_native.pyi",
-    "showcase/_runtime.py",
     "showcase/api.py",
+    "showcase/bimetal.py",
     "showcase/columns/__init__.py",
     "showcase/columns/api.py",
     "showcase/columns/models.py",
@@ -96,6 +95,7 @@ files = [
     "showcase/geometry/api.py",
     "showcase/geometry/models.py",
     "showcase/models.py",
+    "showcase/native.pyi",
     "showcase/py.typed",
     "showcase/shelf/__init__.py",
     "showcase/shelf/api.py",

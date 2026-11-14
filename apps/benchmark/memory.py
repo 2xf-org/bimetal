@@ -1,5 +1,5 @@
-"""Run one memory case of apps/benchmark/run.py in the showcase's Python
-package.
+"""
+Run one memory case of apps/benchmark/run.py in the showcase's Python package.
 
 Usage: memory.py <project> memory <case> <calls>
 
@@ -9,16 +9,32 @@ can report the process's peak memory.
 """
 
 import sys
-from typing import Any
+import typing
 
 ROWS = 1_000_000
 
 
 def bytes_input(length: int) -> bytes:
+    """
+    Make the input of a bytes case.
+
+    Args:
+        length: The input's length, a multiple of 256.
+
+    Returns:
+        The input.
+    """
     return bytes(range(256)) * (length // 256)
 
 
-def arrow_input() -> Any:
+def arrow_input() -> typing.Any:
+    """
+    Make the input of the arrow case: a batch of ROWS rows with a float64 and an int64 column.
+
+    Returns:
+        The record batch.
+    """
+    # Only the arrow case imports pyarrow, which would otherwise add to the bytes cases' peak memory.
     import numpy
     import pyarrow
 
@@ -30,14 +46,34 @@ def arrow_input() -> Any:
     )
 
 
-def split_batch(batch: Any) -> None:
-    from showcase.columns import split
+def split_batch(batch: typing.Any) -> None:
+    """
+    Split a batch through the showcase, and check the rows that come back.
 
-    if split(batch, ROWS).num_rows != ROWS:
+    Args:
+        batch: The record batch.
+
+    Raises:
+        SystemExit: If the split returns another row count.
+    """
+    from showcase import columns
+
+    if columns.split(batch, ROWS).num_rows != ROWS:
         raise SystemExit("split returned the wrong row count")
 
 
 def memory(case: str, calls: int) -> None:
+    """
+    Set up a case's input, and make its calls.
+
+    Args:
+        case: The case's name.
+        calls: The calls to make, or zero for the idle process.
+
+    Raises:
+        SystemExit: If the case is unknown.
+    """
+    # The showcase loads from the project that main puts on the path.
     import showcase
 
     if case in ("bytes-1mb", "bytes-100mb"):
@@ -53,6 +89,9 @@ def memory(case: str, calls: int) -> None:
 
 
 def main() -> None:
+    """
+    Run the case that the command line names.
+    """
     arguments = sys.argv[1:]
     if len(arguments) != 4 or arguments[1] != "memory":
         raise SystemExit(__doc__)

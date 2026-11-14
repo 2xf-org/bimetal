@@ -12,7 +12,7 @@ use crate::export::wrapper::{self, Wrapper};
 use crate::types::Signature;
 
 /// Emit the PyO3 wrapper and inventory registration for a free function,
-/// documented by `docs`.
+/// which carries `docs` when it is brief.
 pub(super) fn function(
     signature: &Signature<'_>,
     function_ident: &Ident,
@@ -29,8 +29,8 @@ pub(super) fn function(
         return_ty,
         body,
     } = wrapper::plan_free(signature, backend, &quote!(self::#function_ident));
-    // The module may bind a brief function as its own, so that one carries its
-    // Rust name and docs; the extension's attribute is the native name either way.
+    // The generated module may bind a brief function to this one, which then carries
+    // the Rust name and docs; the extension module's attribute keeps the native name.
     let (name, docs) = if signature.brief {
         let docs = docs.map(|docs| quote!(#[doc = #docs]));
         (signature.rust_name.as_str(), docs)

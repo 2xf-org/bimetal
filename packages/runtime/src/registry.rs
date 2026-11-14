@@ -269,9 +269,9 @@ where
     None
 }
 
-/// Return the default of a parameter of the contract type `reference`,
-/// `value`, as the hosts write it in their signatures: as Serde writes it, but
-/// a duration as its nanoseconds, which the hosts pass for one.
+/// Return `value`, the default of a parameter of the contract type
+/// `reference`, as the hosts write it in their signatures: as Serde writes it,
+/// but a duration as its nanoseconds, which the hosts pass for one.
 ///
 /// # Panics
 ///

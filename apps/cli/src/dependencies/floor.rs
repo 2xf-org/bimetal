@@ -87,7 +87,7 @@ impl Floor {
     }
 
     /// Whether this floor allows a release older than `needed`. A floor that
-    /// nothing can read allows none that anything here can tell.
+    /// cannot be read counts as allowing none.
     pub(crate) fn below(&self, needed: &Self) -> bool {
         match (self, needed) {
             (Self::Unread, _) | (_, Self::Any | Self::Unread) => false,

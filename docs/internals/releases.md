@@ -22,7 +22,7 @@ Tag the commit `vYYYYMM.DD.N`, such as `v202611.10.0`, and push the tag. `.githu
 | Job | What it does |
 | --- | --- |
 | Check the version | Fails unless the tag, the workspace version and the three requirements agree |
-| One per platform | Builds the command for Linux x86_64 and arm64, macOS arm64 and x86_64, and Windows x86_64, and packs each with the licences |
+| One per platform | Builds the command for Linux x86_64 and arm64, macOS arm64 and x86_64, and Windows x86_64, and packs each with the licence |
 | Publish | Publishes `bimetal-ir`, `bimetal-macros`, `bimetal` and `bimetal-cli` to crates.io, then creates the GitHub release, named after the tag, with the archives, their `SHA256SUMS`, how to install the version, and GitHub's list of what changed since the release before |
 
 crates.io keeps a version for ever, so publishing comes after every build. The crates.io token is the `CARGO_REGISTRY_TOKEN` secret of the `release` environment, which only the publish job names, so no other job or workflow can read it. If it fails after the crates are published, create the GitHub release by hand from the run's archives, because a second run can't publish the same version.

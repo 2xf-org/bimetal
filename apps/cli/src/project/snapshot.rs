@@ -272,9 +272,8 @@ fn host_package(
     })
 }
 
-/// The npm package name that the `package.json` of `project` declares, if it
-/// declares one. The application name stands in until it does, and the
-/// validation of `package.json` reports a missing or unreadable file.
+/// The npm package name that the `package.json` of `project` declares, if
+/// any. The validation of `package.json` reports a missing or unreadable file.
 fn npm_name(project: &Path) -> Option<String> {
     let source = std::fs::read_to_string(project.join("package.json")).ok()?;
     let manifest: serde_json::Value = serde_json::from_str(&source).ok()?;

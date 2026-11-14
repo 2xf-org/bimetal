@@ -319,7 +319,7 @@ impl<T: ContractType + ?Sized> ContractType for &T {
     }
 }
 
-// Serde writes a path as its text, and refuses to write one that isn't UTF-8.
+// Serde writes a path as its text, and refuses to write one that is not UTF-8.
 impl ContractType for Path {
     type Crossing = crossing::Serde;
 

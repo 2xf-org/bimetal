@@ -130,8 +130,8 @@ struct Promise(sys::napi_deferred);
 unsafe impl Send for Promise {}
 
 /// The worker's end of one call, which hands its outcome to the JavaScript
-/// thread once, and releases the call's hold on the event loop when it drops,
-/// whether or not the call's future finished.
+/// thread once. The call's hold on the event loop goes with the outcome, or
+/// with the drop of a sender that never sent.
 struct Sender {
     courier: Courier,
     promise: Option<Promise>,
@@ -173,11 +173,11 @@ impl Sender {
 
 impl Drop for Sender {
     fn drop(&mut self) {
-        // A call whose future never finished releases its hold too, so the event loop
-        // doesn't wait for it forever; its promise stays pending.
         if self.promise.is_none() {
             return;
         }
+        // A call whose future never finished releases its hold too, so the event
+        // loop does not wait for it forever; its promise stays pending.
         let hold = self.hold;
         if let Err(job) = self.courier.post(Box::new(move |env| release(env, hold))) {
             env::discard(job);

@@ -5,9 +5,9 @@
 //! The module initializer makes it, so a call that waits, or a callback
 //! argument, makes no thread-safe function of its own. Node.js runs up to 999
 //! waiting jobs each time the event loop wakes (`kMaxIterationCount` in its
-//! `node_api.cc`), so results that finish together settle in one turn. The function does not keep the event loop alive by
-//! itself: each pending call that should, as a pending timer does, holds it
-//! until its job runs.
+//! `node_api.cc`), so results that finish together settle in one turn. The
+//! function does not keep the event loop alive by itself: each pending call
+//! that should, as a pending timer does, holds it until its job runs.
 
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -83,7 +83,8 @@ impl Station {
             drop(unsafe { Arc::from_raw(finalize_data) });
             return Err(error);
         }
-        // The finalizer runs on this thread, so not before this.
+        // The finalizer runs on this thread, so it cannot empty the slot before this
+        // fills it.
         *slot.lock().expect(UNPOISONED) = Some(Function(function));
         napi!(env, napi_unref_threadsafe_function(function))?;
         Ok(Self {
@@ -126,8 +127,8 @@ impl Courier {
         let job = Box::into_raw(Box::new(job));
         let slot = self.slot.lock().expect(UNPOISONED);
         let status = slot.map(|function| {
-            // SAFETY: Node.js can't finalize the function of this full slot while this
-            // thread holds its lock; the queue never blocks, and takes the box on success.
+            // SAFETY: Node.js cannot finalize the function while this thread holds the
+            // full slot's lock; the unbounded queue never blocks, and takes the box on success.
             unsafe {
                 sys::napi_call_threadsafe_function(
                     function.0,

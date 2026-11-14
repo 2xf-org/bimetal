@@ -1,6 +1,6 @@
 # Tutorial
 
-This tutorial writes a small greeter in Rust: a function with typed input and output, an error callers can branch on, and a guestbook that keeps its state in Rust between calls. Then it calls all of them from Python and TypeScript. Everything here is in [`apps/examples/greeter`](../apps/examples/greeter), whose tests run these samples.
+This tutorial writes a bank account in Rust, a class whose balance stays in Rust and an error that callers branch on, and calls it from Python and TypeScript. Then it adds a bank that moves money between accounts, with models, a field rule and async calls. Everything here is in [`apps/examples/bank`](../apps/examples/bank), whose tests run these programs and check what they print.
 
 You need Rust 1.94 or newer with the Wasm target (`rustup target add wasm32-unknown-unknown`), Python 3.11 or newer, and Node.js 20.16 or newer. [Limits and requirements](reference/limits.md) has the details.
 
@@ -15,13 +15,13 @@ Each [release](https://github.com/2xf-org/bimetal/releases) also has the command
 ## Create the application
 
 ```bash
-bimetal new greeter
+bimetal new bank
 ```
 
 That writes a Cargo package and a project for each host:
 
 ```text
-greeter/
+bank/
 ├── Cargo.toml
 ├── bimetal.toml           turns on each host
 ├── src/lib.rs           your API
@@ -31,69 +31,46 @@ greeter/
 
 All of these files are yours. Bimetal adds a package inside each project when it builds.
 
-## Write a function
+## Write an account
 
-Replace `src/lib.rs`. A *model* is a type that crosses to the hosts. Derive `Model` beside Serde's traits:
-
-```rust
-use bimetal::Model;
-use serde::{Deserialize, Serialize};
-
-/// How warmly to greet someone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Model)]
-#[serde(rename_all = "snake_case")]
-pub enum Tone {
-    /// "Hi, Ada."
-    Casual,
-    /// "Good day, Ada."
-    Formal,
-}
-
-/// A request to greet one person.
-#[derive(Debug, Clone, Serialize, Deserialize, Model)]
-#[serde(rename_all = "camelCase")]
-pub struct GreetingRequest {
-    /// The person to greet.
-    #[bimetal(min_length = 1, max_length = 64)]
-    pub name: String,
-    /// How warmly to greet them.
-    pub tone: Tone,
-    /// End the greeting with an exclamation mark.
-    #[serde(default)]
-    pub excited: bool,
-}
-```
-
-`#[bimetal(min_length = 1, max_length = 64)]` is a rule that every host enforces. Doc comments become Python docstrings and TypeScript JSDoc.
-
-An error is an enum that derives `bimetal::Error`:
+Replace `src/lib.rs`. `#[bimetal::export]` on an `impl` block makes a class whose value stays in Rust between calls, and `#[bimetal(constructor)]` marks what creates it. An error is an enum that derives `bimetal::Error`, with `thiserror` in `Cargo.toml` for its message:
 
 ```rust
-/// Failures that callers handle by their stable `code`.
 #[derive(Debug, thiserror::Error, bimetal::Error)]
-pub enum GreeterError {
-    /// The name contained only whitespace.
-    #[error("the name is blank")]
-    BlankName,
-    /// The guestbook already holds `GUESTBOOK_CAPACITY` names.
-    #[error("the guestbook is full")]
-    GuestbookFull,
+pub enum AccountError {
+    #[error("insufficient funds")]
+    InsufficientFunds,
+}
+
+#[derive(Default)]
+pub struct Account {
+    balance: u32,
+}
+
+#[bimetal::export]
+impl Account {
+    #[bimetal(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn deposit(&mut self, amount: u32) {
+        self.balance += amount;
+    }
+
+    pub fn withdraw(&mut self, amount: u32) -> Result<(), AccountError> {
+        if amount > self.balance {
+            return Err(AccountError::InsufficientFunds);
+        }
+        self.balance -= amount;
+        Ok(())
+    }
+
+    pub fn balance(&self) -> u32 {
+        self.balance
+    }
 }
 ```
-
-Then export a function:
-
-```rust
-/// Greet one person.
-#[bimetal::export]
-pub fn greet(request: GreetingRequest) -> Result<Greeting, GreeterError> {
-    let name = request.name.trim();
-    if name.is_empty() {
-        return Err(GreeterError::BlankName);
-    }
-```
-
-The example has the rest, with `Greeting`, a model of the same kind, and `thiserror` in `Cargo.toml`.
 
 ## Build
 
@@ -104,13 +81,13 @@ bimetal build
 The first build compiles every dependency for each host and takes a while. Later builds reuse them, and a build where nothing changed compiles nothing:
 
 ```text
-Compiling greeter: contract discovery, WebAssembly module, Python extension
+Compiling bank: contract discovery, WebAssembly module, Python extension
   Compiled the contract discovery in …s
   Compiled the WebAssembly module in …s
   Compiled the Python extension in …s
-Built greeter 0.1.0.
-  Python package greeter in python
-  npm package greeter in typescript
+Built bank 0.1.0.
+  Python package bank in python
+  npm package bank in typescript
 ```
 
 Bimetal compiled your Rust once for each host, read the API from the compiled code, and wrote a package into each project. [Packages and projects](concepts/packages.md) shows what it wrote.
@@ -120,72 +97,123 @@ Bimetal compiled your Rust once for each host, read the API from the compiled co
 `python/` is an ordinary project, so `uv run --project python python` or `pip install ./python` both work:
 
 ```python
-from greeter import GreeterError, GreetingRequest, Tone, greet
+from bank import Account, AccountError
 
-greeting = greet(GreetingRequest(name="Ada", tone=Tone.Formal, excited=True))
-print(greeting.message)
+account = Account()
+account.deposit(100)
+account.withdraw(30)
+print(account.balance())  # 70
+
+try:
+    account.withdraw(500)
+except AccountError as error:
+    print(error.code)  # insufficient_funds
 ```
 
-`GreetingRequest` is a frozen Pydantic model and `Tone` is a `StrEnum`. The package ships `py.typed` and passes `mypy --strict`, so your editor knows every type. The `min_length` rule runs where the model is built:
-
-```python
-with self.assertRaises(ValidationError):
-    GreetingRequest(name="", tone=Tone.Casual)
-```
-
-The error from Rust is a class with a stable `code`, which is what you branch on:
-
-```python
-with self.assertRaises(GreeterError) as caught:
-    greet(GreetingRequest(name="   ", tone=Tone.Casual))
-self.assertEqual(caught.exception.code, "blank_name")
-```
+Each variant of the error is a stable `code`, which is what you branch on. The package ships `py.typed` and passes `mypy --strict`, so your editor knows every type. The balance lives in Rust until the account is garbage-collected, or until `close()` or the end of a `with` block frees it.
 
 ## Call it from TypeScript
 
-`typescript/` is an ordinary npm package. Models are plain objects with the types of your Rust:
+`typescript/` is an ordinary npm package, and the class has the same methods:
 
 ```ts
-import { GUESTBOOK_CAPACITY, GreeterError, Guestbook, Tone, greet } from "greeter";
+import { Account, AccountError } from "bank";
 
-assert.equal(greet({ name: "Ada", tone: Tone.Casual }).message, "Hi, Ada.");
+const account = new Account();
+account.deposit(100);
+account.withdraw(30);
+console.log(account.balance()); // 70
+
+try {
+  account.withdraw(500);
+} catch (error) {
+  if (error instanceof AccountError) console.log(error.code); // insufficient_funds
+}
 ```
 
-By default the package runs your Rust as a WebAssembly module, so the same package works in Node.js and in a browser. A browser loads the module asynchronously, so a page first awaits `nativeReady`, as [Browsers](guides/browser.md) explains.
+By default the package runs your Rust as a WebAssembly module, so the same package works in Node.js and in a browser. A browser loads the module asynchronously, so a page first awaits `nativeReady`, as [Browsers](guides/browser.md) explains. `using account = new Account()` frees the Rust value when the block ends.
 
-## Keep state in Rust
+## Move money between accounts
 
-A *resource* is a Rust value that stays alive between calls. Put `#[bimetal::export]` on its `impl` block:
+A *model* is a type that crosses as data. Derive `Model` beside Serde's traits:
 
 ```rust
-/// The names signed for one event, kept in Rust between host calls.
-pub struct Guestbook {
-    event: String,
-    names: Vec<String>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Model)]
+pub struct Opening {
+    #[bimetal(min_length = 1, max_length = 32)]
+    pub owner: String,
+    pub balance: u64,
 }
 
-#[bimetal::export]
-impl Guestbook {
-    /// Open an empty guestbook.
-    #[bimetal(constructor)]
-    #[must_use]
-    pub fn new(event: String) -> Self {
+/// Money to move from one account to another.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Model)]
+pub struct Transfer {
+    pub sender: String,
+    pub recipient: String,
+    #[bimetal(ge = 1)]
+    pub amount: u64,
+}
 ```
 
-Run `bimetal build` again, and each host has a class. `with` in Python and `using` in TypeScript free the Rust value when the block ends:
+`#[bimetal(ge = 1)]` is a *field rule*, which every host enforces: Pydantic refuses a transfer of nothing where it is built, and Rust refuses it before your code runs. Doc comments become Python docstrings and TypeScript JSDoc. An error's variant can carry fields, which its message uses:
+
+```rust
+#[derive(Debug, thiserror::Error, bimetal::Error)]
+pub enum TransferError {
+    #[error("`{owner}` has no account")]
+    UnknownAccount { owner: String },
+    #[error("{needed} cents are needed, but the account has {available}")]
+    InsufficientFunds { needed: u64, available: u64 },
+    #[error("the transfer would take the balance past the largest amount")]
+    Overflow,
+}
+```
+
+The example's `Bank` keeps every balance, and a Tokio task settles its transfers one at a time, so `transfer` is an `async fn`:
+
+```rust
+#[bimetal::export]
+impl Bank {
+    /// Send a transfer to the settlement task, and wait until it settles.
+    pub async fn transfer(&self, transfer: Transfer) -> Result<Receipt, TransferError> {
+        let (outcome, received) = oneshot::channel();
+        self.requests
+            .send(Request { transfer, outcome })
+            .await
+            .expect("the settlement task runs while the bank is open");
+        received
+            .await
+            .expect("the settlement task answers every transfer it receives")
+    }
+}
+```
+
+WebAssembly can't run Tokio's threads, so the example sets `backend = "node"` under `[typescript]` in `bimetal.toml`, and its npm package runs as a native Node.js addon. [Hosts](concepts/hosts.md) compares the two backends. In Python, `transfer` is a coroutine:
 
 ```python
-with Guestbook("launch") as guestbook:
-    guestbook.sign("Ada")
-    self.assertEqual(guestbook.names(), ["Ada"])
+async def main() -> None:
+    with Bank([Opening(owner="Ada", balance=100), Opening(owner="Grace", balance=0)]) as bank:
+        receipt = await bank.transfer(Transfer(sender="Ada", recipient="Grace", amount=30))
+        print(receipt.id, bank.statement().balances)  # 1 {'Ada': 70, 'Grace': 30}
+
+        try:
+            await bank.transfer(Transfer(sender="Grace", recipient="Ada", amount=500))
+        except TransferError as error:
+            print(error.code)  # insufficient_funds
 ```
 
+In TypeScript, it returns a `Promise`, and a model is a plain object. A `u64` is a `bigint`:
+
 ```ts
-using guestbook = new Guestbook("launch");
-for (const name of ["Ada", "Grace", "Linus"].slice(0, GUESTBOOK_CAPACITY)) {
-  guestbook.sign(name);
-}
+using bank = new Bank([
+  { owner: "Ada", balance: 100n },
+  { owner: "Grace", balance: 0n },
+]);
+const receipt = await bank.transfer({ sender: "Ada", recipient: "Grace", amount: 30n });
+console.log(receipt.id, bank.statement().balances); // 1n { Ada: 70n, Grace: 30n }
 ```
+
+The example's bank also streams receipts as they settle, holds itself alone through a withdrawal, and returns its ledger as an Arrow table. Its tests run a thousand transfers at once, from threads, a forked process and Node.js workers.
 
 ## Keep the packages current
 

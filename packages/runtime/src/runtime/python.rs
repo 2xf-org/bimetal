@@ -1,7 +1,7 @@
 //! Registration and async support for the generated Python extension module.
 //!
 //! An async export runs to its first wait on the caller's thread, and from
-//! there on the shared runtime of [`executor`](super::executor). One that
+//! there on the shared runtime of [`executor`]. One that
 //! takes a `Callback` or a stream starts on the runtime.
 //! [`awaitable`] settles an asyncio future with its result, which its
 //! [`deferred`] conversion makes on the event loop's thread, where the
@@ -52,8 +52,8 @@ pub fn register(
 ) -> PyResult<()> {
     let contract_hash = registry::contract_hash(package_name, package_version)
         .map_err(|error| PyImportError::new_err(error.to_string()))?;
-    // The generated package's runtime module, beside this one, registers
-    // the classes that results are made of.
+    // The generated package's runtime module, beside this one, registers its
+    // model and error classes.
     if let Some((package, _)) = module.name()?.to_str()?.rsplit_once('.') {
         let _ = crate::convert::python_plan::PACKAGE.set(package.to_owned());
     }

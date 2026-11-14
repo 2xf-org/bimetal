@@ -1,7 +1,13 @@
-"""Call every export of the showcase contract through the compiled extension."""
+"""
+Call every export of the showcase contract through the compiled extension.
+"""
+
+from __future__ import annotations
 
 import asyncio
+import datetime
 import math
+import pathlib
 import re
 import shutil
 import subprocess
@@ -10,39 +16,25 @@ import tempfile
 import threading
 import unittest
 import warnings
-from datetime import UTC, date, datetime, timedelta, timezone
-from pathlib import Path
 
 import numpy as np
 import pyarrow as pa
-from pydantic import ValidationError
+import pydantic
 
 import showcase
-from showcase.columns import (
-    ColumnError,
-    add_totals,
-    batches,
-    count_rows,
-    split,
-    sum_column,
-    with_note,
-)
-from showcase.columns import totals as stream_totals
-from showcase.columns import describe as describe_schema
-from showcase.columns import scale as scale_column
 from showcase import (
     CONTRACT_VERSION,
     DEFAULT_LABEL,
-    ArrowArrayExportable,
-    ArrowSchemaExportable,
-    ArrowStreamExportable,
     FIRST_STROKE,
     NO_STROKES,
     PAUSE,
+    ArrowArrayExportable,
+    ArrowSchemaExportable,
+    ArrowStreamExportable,
+    Entry,
     EventCreated,
     EventDeleted,
     EventMoved,
-    Entry,
     Holiday,
     Ledger,
     LockedError,
@@ -71,12 +63,12 @@ from showcase import (
     echo_record,
     echo_settings,
     find_item,
+    fingerprint,
     finish,
+    item_at,
     longer,
     next_day,
     observe,
-    fingerprint,
-    item_at,
     parse_priority,
     ping,
     qualify,
@@ -92,12 +84,19 @@ from showcase import (
     touch,
     wrap,
 )
+from showcase.columns import ColumnError, add_totals, batches, count_rows, split, sum_column, with_note
+from showcase.columns import describe as describe_schema
+from showcase.columns import scale as scale_column
+from showcase.columns import totals as stream_totals
 from showcase.geometry import GeometryError, Point, direction, distance
 from showcase.text import Phrase, Words, phrase
 from showcase.text import list as list_words
 
 
 def record(**changes: object) -> Record:
+    """
+    A record with every field set, with `changes` in place of the values they name.
+    """
     values: dict[str, object] = {
         "id": "r-1",
         "label": "First",
@@ -108,8 +107,8 @@ def record(**changes: object) -> Record:
         "tags": ["a", "b"],
         "counters": {"views": 3},
         "ranges": {"week": (1, 7)},
-        "created_at": datetime(2026, 7, 22, 12, 0, tzinfo=UTC),
-        "local_time": datetime(2026, 7, 22, 9, 0, tzinfo=timezone(timedelta(hours=-3))),
+        "created_at": datetime.datetime(2026, 7, 22, 12, 0, tzinfo=datetime.UTC),
+        "local_time": datetime.datetime(2026, 7, 22, 9, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-3))),
         "metadata": {"nested": [1, "two", None], "wide": 2**63},
         "checksum": [0, 255],
         "location": Point(x=1.5, y=-2.0),
@@ -156,8 +155,8 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(Numbers.model_validate(numbers.model_dump()), numbers)
 
     def test_dates_need_a_utc_offset(self) -> None:
-        with self.assertRaises(ValidationError):
-            record(created_at=datetime(2026, 7, 22, 12, 0))
+        with self.assertRaises(pydantic.ValidationError):
+            record(created_at=datetime.datetime(2026, 7, 22, 12, 0))
 
     def test_records_round_trip_every_field_type(self) -> None:
         original = record()
@@ -165,12 +164,12 @@ class ModelTest(unittest.TestCase):
         echoed = echo_record(original)
 
         self.assertEqual(echoed, original)
-        self.assertEqual(echoed.local_time.utcoffset(), timedelta(hours=-3))
+        self.assertEqual(echoed.local_time.utcoffset(), datetime.timedelta(hours=-3))
         self.assertEqual(echoed.ranges["week"], (1, 7))
         self.assertIsInstance(echoed.location, Point)
 
     def test_models_are_frozen(self) -> None:
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(pydantic.ValidationError):
             record().label = "changed"  # type: ignore[misc]
 
     def test_field_rules_reject_invalid_values(self) -> None:
@@ -183,7 +182,7 @@ class ModelTest(unittest.TestCase):
             {"priority": "urgent"},
         ]
         for changes in invalid:
-            with self.subTest(changes=changes), self.assertRaises(ValidationError):
+            with self.subTest(changes=changes), self.assertRaises(pydantic.ValidationError):
                 record(**changes)
 
     def test_rust_checks_the_rules_of_models_that_pydantic_did_not_validate(self) -> None:
@@ -192,7 +191,7 @@ class ModelTest(unittest.TestCase):
 
         with self.assertRaises(ValueError) as caught:
             echo_record(unchecked)
-        self.assertNotIsInstance(caught.exception, ValidationError)
+        self.assertNotIsInstance(caught.exception, pydantic.ValidationError)
         self.assertEqual(
             str(caught.exception),
             "echo_record() argument 'record': `label` must have at most 40 characters, got 41",
@@ -202,7 +201,7 @@ class ModelTest(unittest.TestCase):
         values = record().model_dump()
         del values["note"]
 
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(pydantic.ValidationError):
             Record(**values)
 
     def test_defaults_and_literals(self) -> None:
@@ -221,37 +220,29 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(theme_of(settings), "dark")
         self.assertIsNone(theme_of(Settings(version="v1", theme=None)))
         self.assertEqual(record().revision, 0)
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(pydantic.ValidationError):
             Settings(version="v2")  # type: ignore[arg-type]
 
     def test_tagged_unions_pick_the_variant_by_tag(self) -> None:
         self.assertEqual(describe(EventCreated(record_id="r-1")), "created r-1")
-        self.assertEqual(
-            describe(EventMoved(record_id="r-1", to=Point(x=2.0, y=3.0))), "moved r-1 to 2, 3"
-        )
-        self.assertEqual(
-            describe(EventDeleted(record_id="r-1", reason="duplicate")), "deleted r-1: duplicate"
-        )
+        self.assertEqual(describe(EventMoved(record_id="r-1", to=Point(x=2.0, y=3.0))), "moved r-1 to 2, 3")
+        self.assertEqual(describe(EventDeleted(record_id="r-1", reason="duplicate")), "deleted r-1: duplicate")
 
     def test_external_unions_cross_in_serde_form_and_pick_the_variant_by_name(self) -> None:
         line = StrokeLineTo(to=Point(x=3.0, y=4.0), width=0.5)
-        self.assertEqual(
-            line.model_dump(by_alias=True), {"line_to": {"to": {"x": 3.0, "y": 4.0}, "width": 0.5}}
-        )
+        self.assertEqual(line.model_dump(by_alias=True), {"line_to": {"to": {"x": 3.0, "y": 4.0}, "width": 0.5}})
         self.assertEqual(StrokeLift().model_dump(), "lift")
         self.assertEqual(FIRST_STROKE, StrokeMoveTo(value=Point(x=0.0, y=0.0)))
-        self.assertEqual(
-            retrace([StrokeMoveTo(value=Point(x=1.0, y=2.0)), line, StrokeLift()]),
-            [StrokeLift(), line, StrokeMoveTo(value=Point(x=1.0, y=2.0))],
-        )
+        start = StrokeMoveTo(value=Point(x=1.0, y=2.0))
+        self.assertEqual(retrace([start, line, StrokeLift()]), [StrokeLift(), line, start])
         # Values in the wire form are read as their variants.
         wire: list[object] = ["lift", {"move_to": {"x": 1.0, "y": 2.0}}]
         self.assertEqual(
             retrace(wire),  # type: ignore[arg-type]
-            [StrokeMoveTo(value=Point(x=1.0, y=2.0)), StrokeLift()],
+            [start, StrokeLift()],
         )
         unknown: list[object] = [{"curve_to": {"x": 1.0}}]
-        with self.assertRaisesRegex(ValidationError, "does not match any of the expected tags"):
+        with self.assertRaisesRegex(pydantic.ValidationError, "does not match any of the expected tags"):
             retrace(unknown)  # type: ignore[arg-type]
         # Serde also reads a variant without data from its name with null.
         named: list[object] = [{"lift": None}]
@@ -277,14 +268,14 @@ class ModelTest(unittest.TestCase):
         )
         self.assertEqual(NO_STROKES, ())
         self.assertEqual(PAUSE, 1_500_000_000)
-        self.assertEqual(next_day(date(2028, 2, 28)), date(2028, 2, 29))
-        self.assertEqual(next_day(), date(2028, 2, 29))
-        self.assertEqual(next_day(date=date(2028, 12, 31)), date(2029, 1, 1))
-        christmas = observe(Holiday(date=date(2027, 12, 25)))
-        self.assertEqual(christmas, Holiday(date=date(2027, 12, 25), observed=date(2027, 12, 27)))
+        self.assertEqual(next_day(datetime.date(2028, 2, 28)), datetime.date(2028, 2, 29))
+        self.assertEqual(next_day(), datetime.date(2028, 2, 29))
+        self.assertEqual(next_day(date=datetime.date(2028, 12, 31)), datetime.date(2029, 1, 1))
+        christmas = observe(Holiday(date=datetime.date(2027, 12, 25)))
+        self.assertEqual(christmas, Holiday(date=datetime.date(2027, 12, 25), observed=datetime.date(2027, 12, 27)))
         # A duration is a non-negative count of nanoseconds.
         for wrong in [-1, True, {"secs": 1}, {"secs": 0, "nanos": 1_000_000_000}]:
-            with self.subTest(wrong=wrong), self.assertRaises(ValidationError):
+            with self.subTest(wrong=wrong), self.assertRaises(pydantic.ValidationError):
                 longer(wrong)  # type: ignore[arg-type]
 
     def test_a_unit_variant_is_a_default(self) -> None:
@@ -294,7 +285,7 @@ class ModelTest(unittest.TestCase):
 
 class FunctionTest(unittest.TestCase):
     def test_dates_and_models_cross_together(self) -> None:
-        at = datetime(2027, 1, 1, tzinfo=UTC)
+        at = datetime.datetime(2027, 1, 1, tzinfo=datetime.UTC)
 
         touched = touch(record(revision=4), at)
 
@@ -302,23 +293,23 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(touched.created_at, at)
 
     def test_naive_dates_fail_before_reaching_rust(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "should have timezone info"):
-            touch(record(), datetime(2027, 1, 1))
+        with self.assertRaisesRegex(pydantic.ValidationError, "should have timezone info"):
+            touch(record(), datetime.datetime(2027, 1, 1))
 
     def test_json_values_cross_by_their_own_rules(self) -> None:
         def crossed(metadata: object) -> object:
             return echo_record(record(metadata=metadata)).metadata
 
-        at = datetime(2027, 1, 1, tzinfo=UTC)
+        at = datetime.datetime(2027, 1, 1, tzinfo=datetime.UTC)
         self.assertEqual(
             crossed({"at": at, "raw": b"\x00\xff"}),
             {"at": at.isoformat(), "raw": [0, 255]},
         )
         self.assertEqual(crossed({"samples": np.array([1, 2])}), {"samples": [1, 2]})
         with self.assertRaisesRegex(ValueError, "has no UTC offset"):
-            crossed({"at": datetime(2027, 1, 1)})
+            crossed({"at": datetime.datetime(2027, 1, 1)})
         # Only a dump that crosses follows these rules. The caller's own dump is Pydantic's.
-        naive = record(metadata={"at": datetime(2027, 1, 1)})
+        naive = record(metadata={"at": datetime.datetime(2027, 1, 1)})
         self.assertEqual(naive.model_dump(mode="json")["metadata"], {"at": "2027-01-01T00:00:00"})
 
     def test_dictionaries_for_models_meet_the_model_rules(self) -> None:
@@ -336,7 +327,7 @@ class FunctionTest(unittest.TestCase):
             lambda: count_tags([{**record().model_dump(), "label": ""}]),  # type: ignore[list-item]
         ]
         for call in invalid:
-            with self.subTest(call=call), self.assertRaises(ValidationError):
+            with self.subTest(call=call), self.assertRaises(pydantic.ValidationError):
                 call()
 
     def test_an_optional_model_crosses_absent_as_a_model_or_as_a_dictionary(self) -> None:
@@ -344,7 +335,7 @@ class FunctionTest(unittest.TestCase):
         self.assertEqual(distance_from(Point(x=3, y=4), None), 5.0)
         self.assertEqual(distance_from(Point(x=4, y=6), Point(x=1, y=2)), 5.0)
         self.assertEqual(distance_from(Point(x=4, y=6), {"x": 1, "y": 2}), 5.0)  # type: ignore[arg-type]
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(pydantic.ValidationError):
             distance_from(Point(x=0, y=0), {"x": 0, "y": "north"})  # type: ignore[arg-type]
 
     def test_parameters_named_like_builtins_gain_an_underscore(self) -> None:
@@ -468,11 +459,11 @@ class PackageTest(unittest.TestCase):
             self.assertIn(export.__name__, showcase.__all__)
 
     def test_a_missing_extension_says_how_to_build_it(self) -> None:
-        source = Path(showcase.__file__).parent
+        source = pathlib.Path(showcase.__file__).parent
         with tempfile.TemporaryDirectory() as directory:
-            copy = Path(directory) / "showcase"
-            shutil.copytree(source, copy, ignore=shutil.ignore_patterns("_native.abi3.so", "_native.pyd"))
-            (copy / "_native.pyi").unlink()
+            copy = pathlib.Path(directory) / "showcase"
+            shutil.copytree(source, copy, ignore=shutil.ignore_patterns("native.abi3.so", "native.pyd"))
+            (copy / "native.pyi").unlink()
             result = subprocess.run(
                 [sys.executable, "-c", "import showcase"],
                 cwd=directory,
@@ -482,17 +473,17 @@ class PackageTest(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("ImportError: the native extension showcase._native is missing", result.stderr)
+        self.assertIn("ImportError: the native extension showcase.native is missing", result.stderr)
         self.assertIn("run `bimetal build`", result.stderr)
 
     def test_an_extension_from_other_sources_says_how_to_rebuild_it(self) -> None:
-        source = Path(showcase.__file__).parent
+        source = pathlib.Path(showcase.__file__).parent
         with tempfile.TemporaryDirectory() as directory:
-            copy = Path(directory) / "showcase"
+            copy = pathlib.Path(directory) / "showcase"
             shutil.copytree(source, copy)
             # As if the sources had changed since the extension was built.
-            runtime = copy / "_runtime.py"
-            recorded = re.compile(r'(require_contract\()"[0-9a-f]{16}"')
+            runtime = copy / "bimetal.py"
+            recorded = re.compile(r'(CONTRACT = )"[0-9a-f]{16}"')
             text, count = recorded.subn(r'\1"0000000000000000"', runtime.read_text())
             self.assertEqual(count, 1)
             runtime.write_text(text)
@@ -506,7 +497,7 @@ class PackageTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "ImportError: the native extension showcase._native was built from other Rust sources",
+            "ImportError: the native extension showcase.native was built from other Rust sources",
             result.stderr,
         )
         self.assertIn("run `bimetal build`", result.stderr)
@@ -686,9 +677,7 @@ class ArrowTest(unittest.TestCase):
 
 class AsyncArrowTest(unittest.IsolatedAsyncioTestCase):
     async def test_async_calls_take_arrow_values(self) -> None:
-        reader = pa.RecordBatchReader.from_batches(
-            pa.schema([("n", pa.int64())]), [pa.record_batch({"n": [1, 2, 3]})]
-        )
+        reader = pa.RecordBatchReader.from_batches(pa.schema([("n", pa.int64())]), [pa.record_batch({"n": [1, 2, 3]})])
 
         self.assertEqual(await count_rows(pa.table({"n": [1, 2]})), 2)
         self.assertEqual(await count_rows(reader), 3)

@@ -614,10 +614,9 @@ pub(super) fn property_name(setter: &str) -> &str {
 /// variant for a tagged enum, the schema of what each variant of an
 /// externally tagged enum carries, or the schema of an alias's target.
 ///
-/// A struct's schema, and a tagged enum's by variant, also lists the
-/// `required` fields of an `Option` type, if any, which the TypeScript
-/// runtime checks are present, because Serde reads a missing `Option` as
-/// `None`. Serde requires every other required field itself.
+/// A struct's schema, a struct variant's, and a tagged enum's by variant also
+/// list the `Option` fields marked `required`: Serde reads a missing `Option`
+/// as `None`, so the TypeScript runtime checks that they are present.
 #[must_use]
 pub(super) fn named_spec(definition: &TypeDef) -> Value {
     let fields = |fields: &[FieldDef]| -> Value {
@@ -673,7 +672,7 @@ pub(super) fn named_spec(definition: &TypeDef) -> Value {
     }
 }
 
-/// Return the wire names of the `required` fields of an `Option` type.
+/// Return the wire names of the `Option` fields marked `required`.
 fn required_options(fields: &[FieldDef]) -> Vec<&str> {
     fields
         .iter()

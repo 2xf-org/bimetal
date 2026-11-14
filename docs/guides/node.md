@@ -9,7 +9,7 @@ backend = "node"
 
 The package then loads `native/native.node`, which `bimetal build` installs for this platform. It runs only in Node.js and Electron with Node-API 8 or later. The calls, values and errors are the same as with the Wasm module. Only panics and stack overflows behave differently, as [Failures](../concepts/failures.md) describes. `nativeReady` has resolved by the first call.
 
-[`apps/examples/trading`](../../apps/examples/trading) uses this backend, under load: a thousand orders at once, worker threads, and closing the engine while calls run.
+[`apps/examples/bank`](../../apps/examples/bank) uses this backend, under load: a thousand transfers at once, worker threads, and closing the bank while calls run.
 
 ## When it won't load
 

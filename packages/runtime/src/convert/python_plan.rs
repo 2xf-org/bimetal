@@ -4,7 +4,7 @@
 //! member, with no validation in Python, since Rust checked the value.
 //!
 //! The generated package registers its classes in its runtime module's
-//! `native_classes`. An extension without that module, as in the runtime's
+//! `NATIVE_CLASSES`. An extension without that module, as in the runtime's
 //! own tests, makes plain values, as `pythonize` does.
 
 use std::any::TypeId;
@@ -23,8 +23,8 @@ use crate::registry::TypeRegistration;
 use crate::runtime::CallbackArguments;
 use crate::runtime::ContractError;
 
-/// The plan of one export's result, which the macros keep in a static at
-/// each call site, so that it is built once.
+/// The plan of one argument or result, kept in a static at its call site so
+/// that it is built once.
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct ValuePlan(OnceLock<Planned>);
@@ -36,9 +36,9 @@ struct Planned {
     /// `None` when the value reaches a numeric buffer, which the generated
     /// code restores and validates itself.
     plan: Option<Plan>,
-    /// Whether an argument is read as Python holds it after validation: a
-    /// value that is not plain, and that reaches no buffer and no enum with
-    /// data, whose dump the generated code passes instead.
+    /// Whether an argument is read as Python holds it after validation, rather
+    /// than from the dump that the generated code passes: true for a value that
+    /// is not plain and reaches no buffer and no enum with data.
     reads: bool,
 }
 
@@ -221,8 +221,8 @@ impl std::fmt::Debug for Named {
     }
 }
 
-/// The linked types, by their key, which the generated package's classes
-/// are registered under.
+/// The linked type with `key`, the key that the generated package registers
+/// its class under.
 fn named(key: &str) -> Option<&'static Arc<Named>> {
     static NAMED: OnceLock<HashMap<String, Arc<Named>>> = OnceLock::new();
     NAMED
@@ -365,9 +365,9 @@ pub(crate) struct ModelPlan {
     pub(crate) class: Py<PyType>,
     /// The class's fields, in its order.
     pub(crate) fields: Vec<FieldPlan>,
-    /// Each field's attribute, in the class's order, to `None`: the
-    /// instance's `__dict__` before its values, whose copy takes the whole
-    /// table as it is.
+    /// Each field's attribute mapped to `None`, in the class's order: the
+    /// `__dict__` that an instance copies, table and all, before it sets the
+    /// values.
     blank: Py<PyDict>,
     /// Each field's attribute: the fields set of an instance whose fields
     /// Serde all wrote.
@@ -497,8 +497,8 @@ impl ModelPlan {
 
 /// A new set with the items of `set`, whose table it copies as it is.
 fn copy_set<'py>(set: &Bound<'py, PySet>) -> PyResult<Bound<'py, PySet>> {
-    // SAFETY: the `Bound` proves that the interpreter lock is held, so `set` is live, and
-    // `from_owned_ptr_or_err` takes the new reference of `PySet_New`, or its null and error.
+    // SAFETY: the `Bound` proves the interpreter lock is held; `PySet_New` returns a new
+    // reference to a `set`, so the unchecked cast holds, or null with an error set.
     unsafe {
         Bound::from_owned_ptr_or_err(set.py(), ffi::PySet_New(set.as_ptr()))
             .map(|copy| copy.cast_into_unchecked())
@@ -512,8 +512,8 @@ fn set_slot(
     name: &Bound<'_, PyString>,
     value: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
-    // SAFETY: the three objects are live for the call, which the interpreter
-    // lock, held through `instance`, makes safe; the function borrows them.
+    // SAFETY: the `Bound`s keep the three objects live and prove the interpreter
+    // lock is held; `PyObject_GenericSetAttr` only borrows them.
     let status =
         unsafe { ffi::PyObject_GenericSetAttr(instance.as_ptr(), name.as_ptr(), value.as_ptr()) };
     if status == 0 {
@@ -524,20 +524,20 @@ fn set_slot(
 }
 
 /// The package name of the extension, from its module, such as `probe` for
-/// `probe._native`, which `register` records.
+/// `probe.native`, which `register` records.
 pub(crate) static PACKAGE: OnceLock<String> = OnceLock::new();
 
-/// The generated package's `native_classes`, or `None` when the extension
+/// The generated package's `NATIVE_CLASSES`, or `None` when the extension
 /// has no generated package.
 pub(crate) fn classes(py: Python<'_>) -> Option<&Py<PyDict>> {
     static CLASSES: PyOnceLock<Option<Py<PyDict>>> = PyOnceLock::new();
     CLASSES
-        .get_or_init(py, || runtime_table(py, intern!(py, "native_classes")))
+        .get_or_init(py, || runtime_table(py, intern!(py, "NATIVE_CLASSES")))
         .as_ref()
 }
 
 /// The exception class of the contract error `E`, from the module that the
-/// generated package's `native_errors` names for it, found once, or `None`
+/// generated package's `NATIVE_ERRORS` names for it, found once, or `None`
 /// when the extension has no generated package.
 pub(crate) fn error_class<E: ContractError + 'static>(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     static ERRORS: PyOnceLock<Option<Py<PyDict>>> = PyOnceLock::new();
@@ -556,7 +556,7 @@ pub(crate) fn error_class<E: ContractError + 'static>(py: Python<'_>) -> Option<
         return Some(class);
     }
     let errors = ERRORS
-        .get_or_init(py, || runtime_table(py, intern!(py, "native_errors")))
+        .get_or_init(py, || runtime_table(py, intern!(py, "NATIVE_ERRORS")))
         .as_ref()?;
     let key = E::type_identity().to_string();
     let (module, name): (String, String) = errors.bind(py).get_item(key).ok()??.extract().ok()?;
@@ -571,7 +571,12 @@ pub(crate) fn error_class<E: ContractError + 'static>(py: Python<'_>) -> Option<
 /// The dictionary `name` of the generated package's runtime module.
 fn runtime_table(py: Python<'_>, name: &Bound<'_, PyString>) -> Option<Py<PyDict>> {
     let package = PACKAGE.get()?;
-    let runtime = py.import(format!("{package}._runtime")).ok()?;
+    let runtime = py
+        .import(format!(
+            "{package}.{}",
+            crate::ir::python_names::RUNTIME_MODULE
+        ))
+        .ok()?;
     let table = runtime.getattr(name).ok()?;
     table.cast_into::<PyDict>().ok().map(Bound::unbind)
 }

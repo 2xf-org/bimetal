@@ -9,10 +9,10 @@
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "60165d997fcabce35edac988292fc972"
+source_fingerprint = "ee0d3e23ae5b8180dc714f346400f09a"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "8c2049143bb7052a956232874bb56654"
+output_fingerprint = "12f34e5a6c9694855cf48b2236738884"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -76,10 +76,10 @@ project = "python"
 # Files owned by Bimetal and safe to overwrite or remove, relative to the project.
 files = [
     "streams/__init__.py",
-    "streams/_native.pyi",
-    "streams/_runtime.py",
     "streams/api.py",
+    "streams/bimetal.py",
     "streams/models.py",
+    "streams/native.pyi",
     "streams/py.typed",
 ]
 

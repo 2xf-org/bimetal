@@ -53,7 +53,8 @@ pub(crate) enum ParamValue<'syntax> {
     /// As the type's crossing says, through Serde or as a resource: the call
     /// takes a value of this type, or borrows one when the parameter is `&T`.
     Value(&'syntax SynType),
-    /// As a resource of this type, which only a resource can be.
+    /// As a resource of this type, borrowed as only a resource can be:
+    /// `&mut T` or `Option<&T>`.
     Resource {
         /// The resource's type.
         value: &'syntax SynType,
@@ -87,9 +88,10 @@ pub(crate) struct Returns<'syntax> {
     pub(crate) optional: bool,
     /// The successful value, or `None` for `()`.
     pub(crate) value: Option<ReturnValue>,
-    /// The crossing of a successful value that crosses by its type, which
-    /// the item of an `Option` or a `Vec` decides, so that one of resources
-    /// crosses as they do; `None` for `()` and a direct value.
+    /// The `ContractType::Crossing` of a successful value that is not direct,
+    /// read from the item of an `Option` or a `Vec`, so that an option or a
+    /// list of resources crosses as resources; `None` for `()` and a direct
+    /// value.
     pub(crate) crossing: Option<TokenStream2>,
     /// The construction of the successful value's `bimetal::ir::TypeRef`.
     pub(crate) type_ref: TokenStream2,
@@ -103,8 +105,8 @@ pub(crate) struct ReturnValue {
 
 impl<'syntax> Signature<'syntax> {
     /// Check a signature that Bimetal exports, whose successful value crosses
-    /// `return_boundary`, if any, and which is `brief` when its attributes
-    /// say so.
+    /// `return_boundary`, if any. A `brief` one must be synchronous and take no
+    /// host function or stream.
     pub(crate) fn parse(
         signature: &'syntax syn::Signature,
         return_boundary: Option<Boundary>,
@@ -129,8 +131,6 @@ impl<'syntax> Signature<'syntax> {
         for argument in &signature.inputs {
             if let FnArg::Typed(argument) = argument {
                 let param = Param::parse(argument)?;
-                // A brief call keeps Python's interpreter lock, which a host
-                // function or stream that runs on another thread waits for.
                 if brief && param.waits_for_host() {
                     return Err(syn::Error::new(
                         argument.ty.span(),
@@ -202,15 +202,6 @@ impl<'syntax> Param<'syntax> {
         };
         let ident = &pattern.ident;
         let rust_name = ident.unraw().to_string();
-        if rust_name.starts_with(python_names::WRAPPER_LOCAL_PREFIX) {
-            return Err(syn::Error::new(
-                ident.span(),
-                format!(
-                    "parameter `{rust_name}` uses the reserved `{}` prefix; rename it because that namespace belongs to generated Bimetal wrapper bindings",
-                    python_names::WRAPPER_LOCAL_PREFIX
-                ),
-            ));
-        }
         let ty = argument.ty.as_ref();
         let options = attributes::parameter_options(&argument.attrs)?;
         let boundary = options.boundary.or_else(|| type_ref::bytes_boundary(ty));

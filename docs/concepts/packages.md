@@ -9,7 +9,7 @@ my-app/
 │   ├── pyproject.toml          Yours
 │   ├── pdm_build.py            Yours: tags the wheel for the stable ABI and this platform
 │   ├── tests/                  Yours
-│   └── my_app/                 Generated: __init__.py, api.py, models.py, py.typed, and private _runtime.py and _native
+│   └── my_app/                 Generated: __init__.py, api.py, models.py, py.typed, and internal bimetal.py and native
 └── typescript/
     ├── package.json            Yours
     └── my-app/                 Generated: index, api, models, and private runtime as .js and .d.ts, and native/
@@ -21,7 +21,7 @@ By default the projects are `python/` and `typescript/`, beside `src/`. Set `pro
 
 Bimetal writes only inside the package folder, and records each file it writes. Everything else is yours, and it never changes those files. If a generated file would overwrite one of yours, the build stops before it changes anything. [Generated files](../reference/generated.md) has the exact rules.
 
-The public API is the package root and its namespaces. In Python, the underscore marks `_runtime` and `_native` as private. In TypeScript, `package.json` exports only the root and the namespaces, so `runtime` and `native/` stay internal.
+The public API is the package root and its namespaces. In Python, the root exports neither `bimetal`, the runtime, nor `native`, the extension, so they stay internal. In TypeScript, `package.json` exports only the root and the namespaces, so `runtime` and `native/` stay internal.
 
 ## What you commit
 

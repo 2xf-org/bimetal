@@ -1,14 +1,14 @@
 //! Serialize Rust values into JavaScript as serde-wasm-bindgen 0.6 does with
-//! the settings of the Wasm boundary: `null` for `None` and `()`, a `Map` for
-//! each map, a bigint for every 64-bit and 128-bit integer, and a plain
-//! `Uint8Array` for bytes.
+//! the settings of the Wasm boundary: `null` for `None` and `()`, a bigint for
+//! every 64-bit and 128-bit integer, and a plain `Uint8Array` for bytes, but a
+//! frozen plain object for a map.
 //!
 //! An object, an array or a map is made in one call of a JavaScript function
 //! with its values: an object by the function of its keys, whose literal
-//! gives every object of those keys one shape, for less than adding each
-//! property through Node-API. Objects and arrays are frozen, as the generated
-//! `restoreHost` leaves them, so that it returns one whose schema restores
-//! nothing else as it is.
+//! gives every object of those keys one shape, which costs less than adding
+//! each property through Node-API. Objects and arrays are frozen, as the
+//! generated `restoreHost` leaves them, so that it returns one as it is when
+//! its schema only freezes.
 
 use std::cell::{OnceCell, RefCell};
 use std::fmt::{Display, Write as _};
@@ -20,9 +20,9 @@ use super::names::Names;
 use crate::convert::short_text::ShortText;
 use crate::runtime::node::{Env, Error, Gathered, Value};
 
-/// The most values that one call takes; a longer array or map is filled one
-/// value at a time instead, so that the call's arguments stay small on the
-/// stack.
+/// The most values that one call takes, so that its arguments stay small on
+/// the stack. A longer array is filled one element at a time, and a longer map
+/// becomes a `Map`; neither is frozen.
 const MOST_ARGUMENTS: usize = 4096;
 
 impl ser::Error for Error {
@@ -229,9 +229,9 @@ impl<'env> ser::SerializeTupleStruct for ArraySerializer<'_, 'env> {
     }
 }
 
-/// Serializes maps into frozen plain objects with an own property for each
-/// key, or a map of more entries into a `Map`, which the generated
-/// `restoreHost` turns into such an object.
+/// Serializes a map into a frozen plain object with an own property for each
+/// key, or one of more than [`MOST_ARGUMENTS`] keys and values into a `Map`,
+/// which the generated `restoreHost` turns into such an object.
 pub(super) struct MapSerializer<'serializer, 'env> {
     serializer: &'serializer Serializer<'env>,
     /// Where the keys and the values, in turn, start.
@@ -371,8 +371,8 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
         self.env.string(value)
     }
 
-    /// Write text that fits on the stack there, such as a date-time's, and
-    /// longer text to the heap.
+    /// Write text that fits a [`ShortText`], such as a date-time's, on the
+    /// stack, and longer text on the heap.
     fn collect_str<T: ?Sized + Display>(self, value: &T) -> Result<Value<'env>, Error> {
         let mut text = ShortText::new();
         if write!(text, "{value}").is_ok() {

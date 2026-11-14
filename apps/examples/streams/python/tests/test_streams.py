@@ -1,9 +1,13 @@
-"""Streams of record batches, read and passed by pyarrow, DuckDB, and Polars."""
+"""
+Streams of record batches, read and passed by pyarrow, DuckDB, and Polars.
+"""
+
+from __future__ import annotations
 
 import asyncio
+import collections.abc
 import threading
 import unittest
-from collections.abc import Callable, Iterator
 
 import duckdb
 import polars as pl
@@ -15,7 +19,9 @@ SCHEMA = pa.schema([pa.field("n", pa.int64())])
 
 
 class Source:
-    """A reader whose batches a Python generator makes as Rust reads them."""
+    """
+    A reader whose batches a Python generator makes as Rust reads them.
+    """
 
     def __init__(self, values: list[list[int]], fail_at: int | None = None) -> None:
         self.values = values
@@ -24,7 +30,7 @@ class Source:
         self.closed = False
         self.threads: set[str] = set()
 
-    def generate(self) -> Iterator[pa.RecordBatch]:
+    def generate(self) -> collections.abc.Iterator[pa.RecordBatch]:
         try:
             for index, numbers in enumerate(self.values):
                 if index == self.fail_at:
@@ -68,9 +74,7 @@ class ReturnedStreamTest(unittest.TestCase):
         for _ in range(2):
             with self.assertRaises(pa.ArrowInvalid) as caught:
                 reader.read_next_batch()
-            self.assertEqual(
-                str(caught.exception), "External error: stopped: the count stopped at batch 1"
-            )
+            self.assertEqual(str(caught.exception), "External error: stopped: the count stopped at batch 1")
 
     def test_query_engines_raise_the_error(self) -> None:
         message = "stopped: the count stopped at batch 1"
@@ -98,12 +102,10 @@ class ReturnedStreamTest(unittest.TestCase):
 
 class StreamParameterTest(unittest.TestCase):
     def test_sync_and_async_exports_read_each_source(self) -> None:
-        sources: dict[str, Callable[[], object]] = {
+        sources: dict[str, collections.abc.Callable[[], object]] = {
             "duckdb relation": lambda: duckdb.sql("SELECT range AS n FROM range(1000)"),
             "polars frame": lambda: pl.DataFrame({"n": list(range(1000))}),
-            "python generator": lambda: Source(
-                [list(range(500)), list(range(500, 1000))]
-            ).reader(),
+            "python generator": lambda: Source([list(range(500)), list(range(500, 1000))]).reader(),
         }
         for name, source in sources.items():
             with self.subTest(name):
@@ -130,7 +132,7 @@ class StreamParameterTest(unittest.TestCase):
         self.assertTrue(source.closed)
 
     def test_a_failing_source_fails_the_read_of_its_batch(self) -> None:
-        reads: list[Callable[[pa.RecordBatchReader], int]] = [
+        reads: list[collections.abc.Callable[[pa.RecordBatchReader], int]] = [
             total,
             lambda reader: asyncio.run(total_later(reader)),
         ]

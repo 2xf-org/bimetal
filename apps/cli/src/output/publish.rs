@@ -17,7 +17,6 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use bimetal_ir::python_names::NATIVE_MODULE;
 use serde::Serialize;
 
 use crate::config::{Config, GeneratedState, Host, HostPackage, HostRecord};
@@ -331,14 +330,13 @@ pub(super) fn owned_files(
 
 /// Return the native artifacts of every platform that generated files among
 /// `files` imply, which no record lists, because each platform builds its
-/// own: the Python extension beside each of its stubs, and the Node.js addon
-/// beside each TypeScript runtime that loads no Wasm module.
+/// own: the Python extension beside each stub, under the stub's name, and the
+/// Node.js addon beside each TypeScript runtime that loads no Wasm module.
 fn implied_native_artifacts<'file>(
     files: impl Iterator<Item = &'file OwnedFile>,
 ) -> BTreeMap<PathBuf, OwnedFile> {
     let files: Vec<&OwnedFile> = files.collect();
     let paths: BTreeSet<PathBuf> = files.iter().map(|file| file.path()).collect();
-    let stub = format!("{NATIVE_MODULE}.pyi");
     let runtime = format!("{}.js", typescript::RUNTIME_MODULE);
     let mut artifacts = BTreeMap::new();
     for file in files {
@@ -346,7 +344,16 @@ fn implied_native_artifacts<'file>(
         let name = relative.file_name();
         let directory = || relative.parent().and_then(Path::to_str);
         let package = match file.host {
-            Host::Python if name == Some(stub.as_ref()) => directory(),
+            Host::Python if relative.extension() == Some("pyi".as_ref()) => {
+                for platform in Platform::ALL {
+                    let artifact = OwnedFile {
+                        relative: artifacts::python_extension(relative, platform),
+                        ..file.clone()
+                    };
+                    artifacts.insert(artifact.path(), artifact);
+                }
+                None
+            }
             Host::TypeScript if name == Some(runtime.as_ref()) => {
                 let native = relative.with_file_name(typescript::NATIVE_DIRECTORY);
                 let wasm = file.project.join(native.join(typescript::WASM_MODULE));
@@ -624,7 +631,7 @@ mod tests {
             &[
                 ("python/old/__init__.py", &with_banner("init")),
                 ("python/old/stats/api.py", &with_banner("stats")),
-                ("python/old/_native.pyi", &with_banner("stub")),
+                ("python/old/native.pyi", &with_banner("stub")),
                 ("typescript/old/api.js", &with_banner("api")),
                 ("typescript/old/native/native_bg.wasm", "wasm"),
             ],
@@ -634,7 +641,7 @@ mod tests {
             &root,
             &[
                 // The extension that the build installed beside its stub.
-                ("python/old/_native.abi3.so", "native"),
+                ("python/old/native.abi3.so", "native"),
                 ("python/old/__pycache__/api.pyc", "cache"),
                 ("python/pyproject.toml", "manifest"),
             ],
@@ -659,15 +666,15 @@ mod tests {
     fn the_installed_extension_beside_the_stub_stays() {
         let (_directory, root) = application();
         let stub = with_banner("stub");
-        let generated = [("python/pkg/_native.pyi", stub.as_str())];
+        let generated = [("python/pkg/native.pyi", stub.as_str())];
         publish(&root, &generated).unwrap();
-        write(&root, &[("python/pkg/_native.abi3.so", "native")]);
+        write(&root, &[("python/pkg/native.abi3.so", "native")]);
 
         publish(&root, &generated).unwrap();
 
-        assert_eq!(read(&root, "python/pkg/_native.abi3.so"), "native");
+        assert_eq!(read(&root, "python/pkg/native.abi3.so"), "native");
         check(&root, &generated).unwrap();
-        fs::remove_file(root.join("python/pkg/_native.abi3.so")).unwrap();
+        fs::remove_file(root.join("python/pkg/native.abi3.so")).unwrap();
         check(&root, &generated).unwrap();
     }
 
@@ -733,7 +740,7 @@ mod tests {
         let (_directory, root) = application();
         let staged = stage(&[
             ("python/pkg/api.py", "python\n"),
-            ("python/pkg/_native.pyi", "stub\n"),
+            ("python/pkg/native.pyi", "stub\n"),
             ("typescript/pkg/api.ts", "typescript\n"),
             ("typescript/pkg/native/native_bg.wasm", "wasm\n"),
         ]);
@@ -751,7 +758,7 @@ mod tests {
 
         let python = plan.ownership.python.unwrap();
         assert_eq!(python.project, "python");
-        assert_eq!(python.files, ["pkg/_native.pyi", "pkg/api.py"]);
+        assert_eq!(python.files, ["pkg/api.py", "pkg/native.pyi"]);
         let typescript = plan.ownership.typescript.unwrap();
         assert_eq!(typescript.project, "../web");
         assert_eq!(
@@ -864,14 +871,14 @@ mod tests {
             &root,
             &[
                 ("python/pkg/api.py", &with_banner("api")),
-                ("python/pkg/_native.pyi", &with_banner("stub")),
+                ("python/pkg/native.pyi", &with_banner("stub")),
             ],
         )
         .unwrap();
         write(
             &root,
             &[
-                ("python/pkg/_native.abi3.so", "native"),
+                ("python/pkg/native.abi3.so", "native"),
                 ("python/pyproject.toml", "manifest"),
                 ("moved/pkg/api.py", "the user's own\n"),
             ],
@@ -882,7 +889,7 @@ mod tests {
         ];
         let generated = [
             ("python/pkg/api.py", "api\n"),
-            ("python/pkg/_native.pyi", "stub\n"),
+            ("python/pkg/native.pyi", "stub\n"),
         ];
 
         // The record lists `pkg/api.py`, but in the old project.

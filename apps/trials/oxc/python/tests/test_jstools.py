@@ -1,4 +1,8 @@
-"""Oxc through the generated Python package."""
+"""
+Oxc through the generated Python package.
+"""
+
+from __future__ import annotations
 
 import json
 import unittest
@@ -8,6 +12,7 @@ from jstools import (
     Module,
     OutputOptions,
     OxcError,
+    StatementInfo,
     Statements,
     check,
     declarations,
@@ -105,7 +110,7 @@ class ModuleTests(unittest.TestCase):
     def test_a_visitor_runs_and_stops(self) -> None:
         seen = []
 
-        def visitor(statement) -> bool:
+        def visitor(statement: StatementInfo) -> bool:
             seen.append(statement.kind)
             return len(seen) < 2
 
@@ -113,7 +118,7 @@ class ModuleTests(unittest.TestCase):
         self.assertEqual(seen, ["ImportDeclaration", "ExportNamedDeclaration"])
 
     def test_an_exception_in_a_visitor_reaches_the_caller(self) -> None:
-        def visitor(statement) -> bool:
+        def visitor(statement: StatementInfo) -> bool:
             raise KeyError("stop")
 
         with self.assertRaisesRegex(OxcError, "stop"):

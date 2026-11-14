@@ -1,5 +1,5 @@
-"""Build a copy of the showcase whose npm package runs on the Node.js
-backend, with this checkout's release CLI.
+"""
+Build a copy of the showcase whose npm package runs on the Node.js backend, with this checkout's release CLI.
 
 Usage: showcase_node.py
 
@@ -12,20 +12,26 @@ links the showcase's node_modules. apps/examples/run runs the showcase's
 TypeScript tests in it, and apps/benchmark/run.py times its calls.
 """
 
+import collections.abc
 import os
+import pathlib
 import shutil
 import subprocess
-from collections.abc import Sequence
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SHOWCASE = ROOT / "apps" / "examples" / "showcase"
 COPY = ROOT / "target" / "examples" / "showcase-node"
 
 
-def copy_files(pathspecs: Sequence[str], destination: Path, base: Path) -> None:
-    """Replace `destination` with the files under `pathspecs` that git tracks
-    or would track, at their paths relative to `base`."""
+def copy_files(pathspecs: collections.abc.Sequence[str], destination: pathlib.Path, base: pathlib.Path) -> None:
+    """
+    Replace a directory with the files under some pathspecs that git tracks or would track.
+
+    Args:
+        pathspecs: The git pathspecs to copy.
+        destination: The directory to replace.
+        base: The directory that the copies' paths are relative to.
+    """
     shutil.rmtree(destination, ignore_errors=True)
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *pathspecs],
@@ -42,9 +48,15 @@ def copy_files(pathspecs: Sequence[str], destination: Path, base: Path) -> None:
             shutil.copy2(source, copy)
 
 
-def drop_hosts(config: Path, hosts: Sequence[str], backend: str) -> None:
-    """Remove the tables of `hosts`, and their `[generated]` records, from a
-    copied bimetal.toml, and set the TypeScript backend to `backend`."""
+def drop_hosts(config: pathlib.Path, hosts: collections.abc.Sequence[str], backend: str) -> None:
+    """
+    Remove hosts' tables and `[generated]` records from a copied bimetal.toml, and set its TypeScript backend.
+
+    Args:
+        config: The copied bimetal.toml.
+        hosts: The hosts to remove.
+        backend: The TypeScript backend to set.
+    """
     lines = []
     skip = False
     for line in config.read_text(encoding="utf-8").splitlines():
@@ -57,8 +69,13 @@ def drop_hosts(config: Path, hosts: Sequence[str], backend: str) -> None:
     config.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build() -> Path:
-    """Build the copy, and return its npm project."""
+def build() -> pathlib.Path:
+    """
+    Build the copy.
+
+    Returns:
+        The copy's npm project.
+    """
     copy_files(
         [
             "apps/examples/showcase",

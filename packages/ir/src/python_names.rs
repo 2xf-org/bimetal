@@ -7,8 +7,8 @@
 use crate::disambiguate;
 
 /// The builtins that generated Python modules use. A contract name that
-/// hides one of them makes the generated code reach it through
-/// [`BUILTINS_ALIAS`] instead.
+/// hides one of them makes the generated code reach it through the
+/// `builtins` module instead.
 pub const BUILTINS: [&str; 19] = [
     "KeyError",
     "RuntimeError",
@@ -31,57 +31,51 @@ pub const BUILTINS: [&str; 19] = [
     "type",
 ];
 
-/// The name of the private extension module inside the generated package.
-pub const NATIVE_MODULE: &str = "_native";
+/// The module of the generated package that loads the extension and holds
+/// the helpers that the generated modules share.
+pub const RUNTIME_MODULE: &str = "bimetal";
+
+/// The name of the extension module inside the generated package.
+pub const NATIVE_MODULE: &str = "native";
 
 /// The extension attribute that holds the exception a Rust panic raises,
 /// pyo3's `PanicException`, which the generated package exports.
 pub const PANIC_EXCEPTION: &str = "PanicException";
 
-/// The name under which a generated module imports `builtins`.
-pub const BUILTINS_ALIAS: &str = "_bimetal_builtins";
-
-/// The name under which a generated module imports `datetime`, so that a
-/// field or parameter named `date` cannot hide the type.
-pub const DATETIME_ALIAS: &str = "_bimetal_datetime";
-
-/// The prefixes of the aliases under which generated modules import other
-/// namespaces' modules, each followed by the namespace's index.
-pub const MODULE_ALIAS_PREFIXES: [&str; 2] = ["_bimetal_api_", "_bimetal_models_"];
-
-/// The prefixes of the constants that a generated module defines once below
-/// its imports, each followed by an index: the native functions and classes
-/// that it calls, the adapters of the types that it validates or writes, and
-/// the pyarrow functions that import its Arrow results.
-pub const MODULE_CONSTANT_PREFIXES: [&str; 3] = [
-    NATIVE_CONSTANT_PREFIX,
-    ADAPTER_CONSTANT_PREFIX,
-    ARROW_CONSTANT_PREFIX,
-];
-/// See [`MODULE_CONSTANT_PREFIXES`].
-pub const NATIVE_CONSTANT_PREFIX: &str = "_bimetal_native_";
-/// See [`MODULE_CONSTANT_PREFIXES`].
-pub const ADAPTER_CONSTANT_PREFIX: &str = "_bimetal_adapter_";
-/// See [`MODULE_CONSTANT_PREFIXES`].
-pub const ARROW_CONSTANT_PREFIX: &str = "_bimetal_arrow_";
-
-/// Names that a generated wrapper resolves in its own scope besides the
-/// builtins and the runtime helpers, which it imports under aliases that
-/// start with `_bimetal_`: its receivers, and the imports that its body and its
-/// typed locals use.
-const WRAPPER_SCOPE: [&str; 7] = [
-    "cls",
-    "self",
-    "pa",
-    "Any",
-    "AwareDatetime",
-    BUILTINS_ALIAS,
-    DATETIME_ALIAS,
+/// The names that generated modules bind by importing a module: the runtime,
+/// then the modules of the standard library and of other packages whose
+/// members they reach through the module, such as `typing.Literal`. A field
+/// or a parameter of the same name would hide the module, and an export
+/// would replace it.
+pub const IMPORTED_MODULES: [&str; 9] = [
+    RUNTIME_MODULE,
+    "builtins",
+    "collections",
+    "datetime",
+    "enum",
+    "numpy",
+    "pyarrow",
+    "pydantic",
+    "typing",
 ];
 
-/// The prefix of the locals that generated wrappers bind. Rust parameters
-/// cannot start with it, so no parameter can hide a local.
-pub const WRAPPER_LOCAL_PREFIX: &str = "__bimetal_";
+/// The starts of the names that generated modules give their own constants,
+/// such as `BIMETAL_ADAPTER_0`, the aliases of other namespaces' modules,
+/// and the locals of their wrappers, such as `bimetal_result`. None of these
+/// names ends with an underscore.
+pub const RESERVED_PREFIXES: [&str; 2] = ["BIMETAL_", "bimetal_"];
+
+/// Return whether `name` is one that generated modules reserve: an
+/// [imported module](IMPORTED_MODULES), or a name that starts with one of
+/// the [`RESERVED_PREFIXES`] and does not end with an underscore.
+#[must_use]
+pub fn is_reserved(name: &str) -> bool {
+    IMPORTED_MODULES.contains(&name)
+        || (RESERVED_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+            && !name.ends_with('_'))
+}
 
 /// Return whether `value` is a Python keyword.
 #[must_use]
@@ -156,22 +150,14 @@ pub fn identifier(value: &str) -> String {
 /// in order.
 ///
 /// A parameter keeps its Rust name, made a legal identifier, unless the
-/// wrapper needs that name itself: a receiver, a runtime helper, a builtin,
-/// or an import alias. Such a parameter gains trailing underscores
+/// wrapper needs that name itself: a receiver, a builtin, or a
+/// [reserved](is_reserved) name. Such a parameter gains trailing underscores
 /// (`bytes_`) until it hides nothing and differs from the other parameters.
 #[must_use]
 pub fn parameter_names<'name>(rust_names: impl IntoIterator<Item = &'name str>) -> Vec<String> {
     let mut names: Vec<String> = rust_names.into_iter().map(identifier).collect();
     let hides = |name: &str| {
-        BUILTINS.contains(&name)
-            || WRAPPER_SCOPE.contains(&name)
-            || MODULE_ALIAS_PREFIXES.iter().chain(&MODULE_CONSTANT_PREFIXES).any(|prefix| {
-                name.strip_prefix(prefix)
-                    .is_some_and(|index| index.bytes().all(|byte| byte.is_ascii_digit()))
-            })
-            // Inside a class, Python mangles a local such as `__bimetal_native`
-            // to `_Class__bimetal_native`, which a parameter could spell.
-            || (name.starts_with('_') && name.contains(WRAPPER_LOCAL_PREFIX) && !name.ends_with('_'))
+        BUILTINS.contains(&name) || ["cls", "self"].contains(&name) || is_reserved(name)
     };
     disambiguate::disambiguate(&mut names, hides);
     names
@@ -200,11 +186,11 @@ mod tests {
                 "class",
                 "bytes",
                 "self",
-                "_bimetal_builtins",
-                "_bimetal_models_0",
-                "_bimetal_api_12",
-                "_bimetal_api_x",
-                "_Recorder__bimetal_native",
+                "datetime",
+                "bimetal",
+                "bimetal_result",
+                "BIMETAL_COUNT_NATIVE",
+                "Bimetal_result",
             ]),
             [
                 "value",
@@ -213,11 +199,11 @@ mod tests {
                 "class_value",
                 "bytes_",
                 "self_",
-                "_bimetal_builtins_",
-                "_bimetal_models_0_",
-                "_bimetal_api_12_",
-                "_bimetal_api_x",
-                "_Recorder__bimetal_native_",
+                "datetime_",
+                "bimetal_",
+                "bimetal_result_",
+                "BIMETAL_COUNT_NATIVE_",
+                "Bimetal_result",
             ]
         );
     }

@@ -184,15 +184,15 @@ pub async fn ready_numbers(count: u32) -> Vec<i64> {
     numbers(count)
 }
 
-/// Return `value` after waiting once, as a call does that waits for I/O.
+/// Return `value` after waiting once, like a call that waits for I/O.
 #[bimetal::export]
 pub async fn wait(value: i64) -> i64 {
     yield_once().await;
     value
 }
 
-/// Mix `rounds` times in an async call that never waits, as a call does that
-/// searches what it holds in memory.
+/// Mix `rounds` times in an async call that never waits, like a call that
+/// searches memory it holds.
 #[bimetal::export]
 pub async fn spin_async(rounds: u32) -> u64 {
     mix(rounds)

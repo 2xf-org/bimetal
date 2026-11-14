@@ -15,11 +15,12 @@ pub(super) struct WrapperParam {
     /// Statements that rebind the parameter to its owned Rust value; empty
     /// when the host already passes that value.
     pub(super) decode: TokenStream2,
-    /// Statements that lock a resource argument for a synchronous call,
-    /// after `decode`; empty for every other parameter.
+    /// Statements that lend a borrowed argument to a synchronous call after
+    /// `decode`, locking a resource's value; empty for any other argument.
     pub(super) lock: TokenStream2,
-    /// Statements that lock a resource argument inside an async call's
-    /// future, after `decode`; empty for every other parameter.
+    /// Statements that wait for a borrowed argument inside an async call's
+    /// future after `decode`, locking a resource's value; empty for any other
+    /// argument.
     pub(super) wait: TokenStream2,
 }
 
@@ -122,10 +123,9 @@ pub(super) fn wrapper_param(
 }
 
 /// Plan how an argument of type `ty`, or `&ty` when the call borrows it,
-/// crosses from `backend` as its type's crossing says: through Serde, or as a
-/// resource, which a synchronous call locks after every argument has decoded,
-/// and an async call in its future. The host's `Lend` and `Take` implement
-/// each crossing.
+/// crosses from `backend` as its type's crossing says, through Serde or as a
+/// resource. A borrowed resource is locked after every argument has decoded in
+/// a synchronous call, and in its future in an async one.
 fn value_param(
     param: &Param<'_>,
     ty: &syn::Type,
@@ -185,10 +185,10 @@ fn value_param(
     }
 }
 
-/// Plan how an argument that only a resource can be crosses from `backend`:
-/// its host object gives up the shared value, which a synchronous call locks
-/// as `shape` says after every argument has decoded, and an async call in its
-/// future.
+/// Plan how a resource argument borrowed as `&mut T` or `Option<&T>` crosses
+/// from `backend`: its host object gives up the shared value, which a
+/// synchronous call locks as `shape` says after every argument has decoded,
+/// and an async call in its future.
 ///
 /// A call that reaches one resource twice fails rather than waits for itself.
 #[allow(
@@ -225,8 +225,9 @@ fn resource_param(
             ::bimetal::runtime::Resource::<#value>::#reach,
         )?;
     };
+    // In the synchronous arms, the shadowed binding keeps the value alive under
+    // the guard.
     let (lock, wait) = match (shape, is_async) {
-        // The shadowed binding keeps the value alive under the guard.
         (ResourceShape::Exclusive, false) => {
             let held = sync_lock(backend, &quote!(#ident), true, callable);
             (quote!(let mut #ident = #held;), TokenStream2::new())
@@ -267,9 +268,8 @@ fn resource_param(
 }
 
 /// The expression that a synchronous call named `callable` locks the value
-/// `shared` with, alone if `exclusive`, through the host's `read` or `write`.
-/// It evaluates to the guard, or returns the host's error that the resource
-/// is busy.
+/// `shared` with, through the host's `write` if `exclusive` and its `read`
+/// otherwise. It evaluates to the guard, or returns that function's error.
 pub(super) fn sync_lock(
     backend: HostBackend,
     shared: &TokenStream2,
@@ -355,8 +355,8 @@ pub(super) fn return_plan(
                 (ty, success)
             }
         }
-        // A value crosses as its type's crossing says, through the host's `Return`;
-        // Python's Serde path follows a plan built once at each call site.
+        // `()` has no crossing and returns through Serde. Python follows a plan
+        // built once at each call site.
         _ => {
             let serde = quote!(::bimetal::crossing::Serde);
             let crossing = returns.crossing.as_ref().unwrap_or(&serde);

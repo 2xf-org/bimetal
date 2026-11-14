@@ -614,16 +614,20 @@ mod tests {
 
         let python_markets = read("test_app/sources/venues/polymarket/markets/api.py");
         for import in [
-            "import test_app.sources.data.feeds.models as _bimetal_models_3",
-            "import test_app.sources.data_feeds.models as _bimetal_models_4",
+            "import test_app.sources.data.feeds.models as bimetal_models_3",
+            "import test_app.sources.data_feeds.models as bimetal_models_4",
         ] {
             assert!(python_markets.contains(import), "{python_markets}");
         }
         assert!(read("test_app/api.py").contains(
-            "import test_app.sources.venues.polymarket.markets.models as _bimetal_models_7"
+            "import test_app.sources.venues.polymarket.markets.models as bimetal_models_7"
         ));
-        // A folder that holds only other namespaces exports nothing.
-        assert!(read("test_app/sources/__init__.py").ends_with("\n__all__: list[str] = []\n"));
+        // A folder that holds only other namespaces exports them.
+        let sources = read("test_app/sources/__init__.py");
+        assert!(
+            sources.ends_with("\nfrom . import data, data_feeds, venues\n\n__all__ = [\"data\", \"data_feeds\", \"venues\"]\n"),
+            "{sources}"
+        );
 
         let typescript_markets = read("test-app/sources/venues/polymarket/markets/api.d.ts");
         for import in [
@@ -782,9 +786,14 @@ mod tests {
                 "function `test::PanicException` becomes `test_app.PanicException`, which the generated module defines itself; rename it",
             ),
             (
-                "Field",
-                "Field",
-                "function `test::Field` becomes `test_app.Field`, which the generated module defines itself; rename it",
+                "typing",
+                "typing",
+                "function `test::typing` becomes `test_app.typing`, which the generated module defines itself; rename it",
+            ),
+            (
+                "bimetal_cache",
+                "bimetalCache",
+                "function `test::bimetal_cache` becomes `test_app.bimetal_cache`, which the generated module defines itself; rename it",
             ),
             (
                 "api_root",
@@ -836,8 +845,9 @@ mod tests {
             "getattr",
             "object",
             "classmethod",
-            "native",
+            "runtime",
             "type_adapter",
+            "Field",
         ] {
             manifest
                 .functions
