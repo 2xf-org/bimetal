@@ -922,7 +922,9 @@ fn async_calls_need_a_loop_and_drop_results_that_no_one_awaits() -> PyResult<()>
 /// loop that has no readers and is woken through `call_soon_threadsafe`, on
 /// two loops of two threads at once, and while another thread competes for
 /// the interpreter lock. A loop that closes takes its mailbox's socket with
-/// it, so many loops in turn hold no more descriptors than one.
+/// it, so 40 loops in turn leave fewer than 40 more descriptors open. The
+/// other tests of this process open and close descriptors of their own
+/// meanwhile, but a leak would leave at least one for each loop.
 const MAILBOX_SCENARIO: &CStr = cr#"
 import asyncio
 import os
@@ -992,9 +994,10 @@ if sys.platform != "win32":
     descriptors = "/dev/fd" if os.path.isdir("/dev/fd") else "/proc/self/fd"
     asyncio.run(many(0))
     before = len(os.listdir(descriptors))
-    for _ in range(20):
+    for _ in range(40):
         asyncio.run(many(0))
-    assert len(os.listdir(descriptors)) <= before, (before, len(os.listdir(descriptors)))
+    after = len(os.listdir(descriptors))
+    assert after - before < 40, (before, after)
 "#;
 
 /// An async export that works briefly finishes on the caller's thread. Once
