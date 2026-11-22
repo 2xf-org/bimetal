@@ -2,15 +2,16 @@
 //! [`Plan`]: plain values as `pythonize` makes them, and models, string
 //! enums, date-times, dates and durations as Pydantic would validate them.
 
+use std::collections::HashMap;
 use std::fmt::{self, Display, Write as _};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
 use serde::ser::{self, Serialize};
 
-use super::python_plan::{ModelPlan, NamedPlan, Plan};
+use super::python_plan::{ExternalVariant, ModelPlan, NamedPlan, Plan};
 use super::python_time;
 use super::short_text::ShortText;
 
@@ -214,7 +215,7 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
         match self.named()? {
             Some(NamedPlan::StringEnum(members)) => member(self.py, members, variant),
             Some(NamedPlan::External(variants)) => {
-                Ok(model(variants, variant)?.instance(self.py, Vec::new())?)
+                Ok(external_model(variants, variant)?.unit_instance(self.py)?)
             }
             _ => Err(self.mismatch("a unit variant")),
         }
@@ -238,13 +239,14 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
         let Some(NamedPlan::External(variants)) = self.named()? else {
             return Err(self.mismatch("a variant with a value"));
         };
-        let model = model(variants, variant)?;
-        let mut values = vec![None; model.fields.len()];
+        let model = external_model(variants, variant)?;
         let index = model
             .field("value", 0)
             .ok_or_else(|| self.mismatch("a variant with a value"))?;
-        values[index] = Some(to_python(self.py, &model.fields[index].plan, value)?);
-        Ok(model.instance(self.py, values)?)
+        let dict = model.blank_dict(self.py)?;
+        let value = to_python(self.py, &model.fields[index].plan, value)?;
+        dict.set_item(model.fields[index].attribute.bind(self.py), value)?;
+        Ok(model.finish(self.py, dict, 1, |slot| slot == index)?)
     }
 
     fn serialize_seq(self, length: Option<usize>) -> Result<Items<'a, 'py>> {
@@ -289,7 +291,7 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
             _ => return Err(self.mismatch("a struct")),
         }
         match self.named()? {
-            Some(NamedPlan::Model(model)) => Ok(Fields::model(self.py, model)),
+            Some(NamedPlan::Model(model)) => Fields::model(self.py, model),
             Some(NamedPlan::Tagged { tag, variants }) => Ok(Fields::tagged(self.py, tag, variants)),
             _ => Err(self.mismatch("a struct")),
         }
@@ -304,7 +306,7 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
     ) -> Result<Fields<'a, 'py>> {
         match self.named()? {
             Some(NamedPlan::External(variants)) => {
-                Ok(Fields::model(self.py, model(variants, variant)?))
+                Fields::model(self.py, external_model(variants, variant)?)
             }
             _ => Err(self.mismatch("a struct variant")),
         }
@@ -314,7 +316,7 @@ impl<'a, 'py> ser::Serializer for Serializer<'a, 'py> {
 /// The member of a string enum that Serde writes as `text`.
 fn member<'py>(
     py: Python<'py>,
-    members: &std::collections::HashMap<String, Py<PyAny>>,
+    members: &HashMap<String, Py<PyAny>>,
     text: &str,
 ) -> Result<Bound<'py, PyAny>> {
     members
@@ -323,13 +325,21 @@ fn member<'py>(
         .ok_or_else(|| custom(format!("`{text}` is no member of its enum")))
 }
 
-/// The model of the variant `variant` of an enum with data.
-fn model<'a>(
-    variants: &'a std::collections::HashMap<String, ModelPlan>,
+/// The model of the variant `variant` of a tagged enum.
+fn model<'a>(variants: &'a HashMap<String, ModelPlan>, variant: &str) -> Result<&'a ModelPlan> {
+    variants
+        .get(variant)
+        .ok_or_else(|| custom(format!("`{variant}` is no variant of its enum")))
+}
+
+/// The model of the variant `variant` of an externally tagged enum.
+fn external_model<'a>(
+    variants: &'a HashMap<String, ExternalVariant>,
     variant: &str,
 ) -> Result<&'a ModelPlan> {
     variants
         .get(variant)
+        .map(|variant| &variant.model)
         .ok_or_else(|| custom(format!("`{variant}` is no variant of its enum")))
 }
 
@@ -452,13 +462,55 @@ impl<'py> ser::SerializeMap for Entries<'_, 'py> {
     }
 }
 
+/// Tracks which fields of a model Serde wrote without allocating for models
+/// with up to 64 fields.
+pub(crate) enum WrittenFields {
+    Bits(u64),
+    Flags(Vec<bool>),
+}
+
+impl WrittenFields {
+    fn new(count: usize) -> Self {
+        if count <= 64 {
+            Self::Bits(0)
+        } else {
+            Self::Flags(vec![false; count])
+        }
+    }
+
+    fn mark(&mut self, index: usize) -> bool {
+        match self {
+            Self::Bits(bits) => {
+                let bit = 1_u64 << index;
+                let fresh = (*bits & bit) == 0;
+                *bits |= bit;
+                fresh
+            }
+            Self::Flags(flags) => {
+                let fresh = !flags[index];
+                flags[index] = true;
+                fresh
+            }
+        }
+    }
+
+    fn is_set(&self, index: usize) -> bool {
+        match self {
+            Self::Bits(bits) => (*bits & (1_u64 << index)) != 0,
+            Self::Flags(flags) => flags[index],
+        }
+    }
+}
+
 /// The fields of a model, of a variant of a tagged enum, which the first
 /// field's tag picks, or of a duration.
 pub(crate) enum Fields<'a, 'py> {
     Model {
         py: Python<'py>,
         model: &'a ModelPlan,
-        values: Vec<Option<Bound<'py, PyAny>>>,
+        dict: Bound<'py, PyDict>,
+        written: WrittenFields,
+        written_count: usize,
         /// The field after the last that Serde wrote, which is where the
         /// next is looked for first.
         next: usize,
@@ -466,7 +518,7 @@ pub(crate) enum Fields<'a, 'py> {
     Tagged {
         py: Python<'py>,
         tag: &'a str,
-        variants: &'a std::collections::HashMap<String, ModelPlan>,
+        variants: &'a HashMap<String, ModelPlan>,
     },
     Duration {
         py: Python<'py>,
@@ -475,20 +527,18 @@ pub(crate) enum Fields<'a, 'py> {
 }
 
 impl<'a, 'py> Fields<'a, 'py> {
-    fn model(py: Python<'py>, model: &'a ModelPlan) -> Self {
-        Self::Model {
+    fn model(py: Python<'py>, model: &'a ModelPlan) -> Result<Self> {
+        Ok(Self::Model {
             py,
             model,
-            values: vec![None; model.fields.len()],
+            dict: model.blank_dict(py)?,
+            written: WrittenFields::new(model.fields.len()),
+            written_count: 0,
             next: 0,
-        }
+        })
     }
 
-    fn tagged(
-        py: Python<'py>,
-        tag: &'a str,
-        variants: &'a std::collections::HashMap<String, ModelPlan>,
-    ) -> Self {
+    fn tagged(py: Python<'py>, tag: &'a str, variants: &'a HashMap<String, ModelPlan>) -> Self {
         Self::Tagged { py, tag, variants }
     }
 
@@ -501,13 +551,20 @@ impl<'a, 'py> Fields<'a, 'py> {
             Self::Model {
                 py,
                 model,
-                values,
+                dict,
+                written,
+                written_count,
                 next,
             } => {
                 let index = model
                     .field(key, *next)
                     .ok_or_else(|| custom(format!("`{key}` is no field of its model")))?;
-                values[index] = Some(to_python(*py, &model.fields[index].plan, value)?);
+                let field = &model.fields[index];
+                let serialized = to_python(*py, &field.plan, value)?;
+                dict.set_item(field.attribute.bind(*py), serialized)?;
+                if written.mark(index) {
+                    *written_count += 1;
+                }
                 *next = index + 1;
             }
             Self::Tagged { py, tag, variants } => {
@@ -516,18 +573,31 @@ impl<'a, 'py> Fields<'a, 'py> {
                         "a tagged enum writes its tag `{tag}` before `{key}`"
                     )));
                 }
-                let name: String = pythonize::pythonize(*py, value)
-                    .map_err(custom)?
-                    .extract()?;
+                let name = value.serialize(StrSerializer)?;
                 let variant = model(variants, &name)?;
-                let mut fields = Self::model(*py, variant);
-                fields.field(key, value)?;
+                let mut fields = Self::model(*py, variant)?;
+                let index = variant
+                    .field(key, 0)
+                    .ok_or_else(|| custom(format!("`{key}` is no field of its model")))?;
+                if let Self::Model {
+                    dict,
+                    written,
+                    written_count,
+                    next,
+                    ..
+                } = &mut fields
+                {
+                    let field = &variant.fields[index];
+                    dict.set_item(field.attribute.bind(*py), PyString::new(*py, &name))?;
+                    if written.mark(index) {
+                        *written_count += 1;
+                    }
+                    *next = index + 1;
+                }
                 *self = fields;
             }
-            Self::Duration { py, nanoseconds } => {
-                let part: u128 = pythonize::pythonize(*py, value)
-                    .map_err(custom)?
-                    .extract()?;
+            Self::Duration { nanoseconds, .. } => {
+                let part = value.serialize(U128Serializer)?;
                 match key {
                     "secs" => *nanoseconds += part * 1_000_000_000,
                     "nanos" => *nanoseconds += part,
@@ -541,11 +611,278 @@ impl<'a, 'py> Fields<'a, 'py> {
     fn finish(self) -> Result<Bound<'py, PyAny>> {
         match self {
             Self::Model {
-                py, model, values, ..
-            } => Ok(model.instance(py, values)?),
+                py,
+                model,
+                dict,
+                written,
+                written_count,
+                ..
+            } => Ok(model.finish(py, dict, written_count, |index| written.is_set(index))?),
             Self::Tagged { .. } => Err(custom("a tagged enum wrote no tag")),
             Self::Duration { py, nanoseconds } => Ok(nanoseconds.into_bound_py_any(py)?),
         }
+    }
+}
+
+/// Reads an unsigned integer field (such as `Duration`'s `secs`/`nanos`)
+/// directly without allocating a temporary Python `int`.
+struct U128Serializer;
+
+impl ser::Serializer for U128Serializer {
+    type Ok = u128;
+    type Error = Error;
+    type SerializeSeq = ser::Impossible<u128, Error>;
+    type SerializeTuple = ser::Impossible<u128, Error>;
+    type SerializeTupleStruct = ser::Impossible<u128, Error>;
+    type SerializeTupleVariant = ser::Impossible<u128, Error>;
+    type SerializeMap = ser::Impossible<u128, Error>;
+    type SerializeStruct = ser::Impossible<u128, Error>;
+    type SerializeStructVariant = ser::Impossible<u128, Error>;
+
+    fn serialize_u8(self, value: u8) -> Result<u128> {
+        Ok(u128::from(value))
+    }
+    fn serialize_u16(self, value: u16) -> Result<u128> {
+        Ok(u128::from(value))
+    }
+    fn serialize_u32(self, value: u32) -> Result<u128> {
+        Ok(u128::from(value))
+    }
+    fn serialize_u64(self, value: u64) -> Result<u128> {
+        Ok(u128::from(value))
+    }
+    fn serialize_u128(self, value: u128) -> Result<u128> {
+        Ok(value)
+    }
+    fn serialize_i8(self, value: i8) -> Result<u128> {
+        u128::try_from(value).map_err(|_| custom("negative duration component"))
+    }
+    fn serialize_i16(self, value: i16) -> Result<u128> {
+        u128::try_from(value).map_err(|_| custom("negative duration component"))
+    }
+    fn serialize_i32(self, value: i32) -> Result<u128> {
+        u128::try_from(value).map_err(|_| custom("negative duration component"))
+    }
+    fn serialize_i64(self, value: i64) -> Result<u128> {
+        u128::try_from(value).map_err(|_| custom("negative duration component"))
+    }
+    fn serialize_bool(self, _: bool) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_f32(self, _: f32) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_f64(self, _: f64) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_char(self, _: char) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_str(self, _: &str) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_bytes(self, _: &[u8]) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_none(self) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, _: &T) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_unit(self) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_unit_struct(self, _: &'static str) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _: &'static str,
+        v: &T,
+    ) -> Result<u128> {
+        v.serialize(self)
+    }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<u128> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeStruct> {
+        Err(custom("expected a duration integer"))
+    }
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant> {
+        Err(custom("expected a duration integer"))
+    }
+}
+
+/// Reads an internally tagged enum's tag string directly without a round-trip
+/// through `pythonize`.
+struct StrSerializer;
+
+impl ser::Serializer for StrSerializer {
+    type Ok = String;
+    type Error = Error;
+    type SerializeSeq = ser::Impossible<String, Error>;
+    type SerializeTuple = ser::Impossible<String, Error>;
+    type SerializeTupleStruct = ser::Impossible<String, Error>;
+    type SerializeTupleVariant = ser::Impossible<String, Error>;
+    type SerializeMap = ser::Impossible<String, Error>;
+    type SerializeStruct = ser::Impossible<String, Error>;
+    type SerializeStructVariant = ser::Impossible<String, Error>;
+
+    fn serialize_str(self, value: &str) -> Result<String> {
+        Ok(value.to_owned())
+    }
+    fn serialize_unit_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        variant: &'static str,
+    ) -> Result<String> {
+        Ok(variant.to_owned())
+    }
+    fn serialize_newtype_struct<T: ?Sized + Serialize>(
+        self,
+        _: &'static str,
+        value: &T,
+    ) -> Result<String> {
+        value.serialize(self)
+    }
+    fn serialize_bool(self, _: bool) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_i8(self, _: i8) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_i16(self, _: i16) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_i32(self, _: i32) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_i64(self, _: i64) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_u8(self, _: u8) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_u16(self, _: u16) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_u32(self, _: u32) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_u64(self, _: u64) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_f32(self, _: f32) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_f64(self, _: f64) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_char(self, value: char) -> Result<String> {
+        Ok(value.to_string())
+    }
+    fn serialize_bytes(self, _: &[u8]) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_none(self) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_some<T: ?Sized + Serialize>(self, _: &T) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_unit(self) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_unit_struct(self, _: &'static str) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: &T,
+    ) -> Result<String> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_tuple_struct(
+        self,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_tuple_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeStruct> {
+        Err(custom("expected a string tag"))
+    }
+    fn serialize_struct_variant(
+        self,
+        _: &'static str,
+        _: u32,
+        _: &'static str,
+        _: usize,
+    ) -> Result<Self::SerializeStructVariant> {
+        Err(custom("expected a string tag"))
     }
 }
 

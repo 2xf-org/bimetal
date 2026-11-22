@@ -24,29 +24,17 @@ export function addTotals(batch) {
 
 export function batches(table) {
   $checkNative();
-  try {
-    return $arrowStreamFromHost($native["__bimetal_function_showcase_b295a1ff3715f93a"]($arrowToIpc(table, "table")));
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $arrowStreamFromHost($native["__bimetal_function_showcase_b295a1ff3715f93a"]($arrowToIpc(table, "table")));
 }
 
 export async function countRows(table) {
   $checkNative();
-  try {
-    return await $nativePromise($native["__bimetal_function_showcase_700f5e6376beea9e"]($arrowToIpc(table, "table")));
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return await $nativePromise($native["__bimetal_function_showcase_700f5e6376beea9e"]($arrowToIpc(table, "table")));
 }
 
 export function describe(schema) {
   $checkNative();
-  try {
-    return $restoreHost($native["__bimetal_function_showcase_a8c4807be3c5b36f"]($arrowToIpc(schema, "schema")), $spec0);
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $restoreHost($native["__bimetal_function_showcase_a8c4807be3c5b36f"]($arrowToIpc(schema, "schema")), $spec0);
 }
 
 export function scale(values, factor) {
@@ -62,11 +50,7 @@ export function scale(values, factor) {
 export function split(batch, size) {
   $checkNative();
   $checkArgument(size, "number", "split(): argument `size`");
-  try {
-    return $arrowFromIpc($native["__bimetal_function_showcase_b312b9ab4d477737"]($arrowToIpc(batch, "recordBatch"), size), "table");
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $arrowFromIpc($native["__bimetal_function_showcase_b312b9ab4d477737"]($arrowToIpc(batch, "recordBatch"), size), "table");
 }
 
 export async function sumColumn(rows, name) {
@@ -107,11 +91,7 @@ export async function totals(rows) {
 export function withNote(schema, note) {
   $checkNative();
   $checkArgument(note, "string", "withNote(): argument `note`");
-  try {
-    return $arrowFromIpc($native["__bimetal_function_showcase_cd0763b3819104ed"]($arrowToIpc(schema, "schema"), note), "schema");
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $arrowFromIpc($native["__bimetal_function_showcase_cd0763b3819104ed"]($arrowToIpc(schema, "schema"), note), "schema");
 }
 
 export class Rows {

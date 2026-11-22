@@ -81,10 +81,12 @@ static READER: ClassDescriptor = ClassDescriptor::new::<ReaderObject>(
         Method {
             name: "next",
             call: read_next,
+            arity: 0,
         },
         Method {
             name: "close",
             call: close_reader,
+            arity: 0,
         },
     ],
 );
@@ -101,7 +103,7 @@ inventory::submit! { Registration::Class(&READER) }
 /// stream, as a failure does. Each batch starts on the JavaScript thread, as
 /// an async call does, unless making and encoding batches has worked too long
 /// for that thread, and a blocking reader pulls on a blocking thread.
-fn read_next(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn read_next<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     static PACE: Pace = Pace::new();
     let held = call
         .this::<ReaderObject>()?
@@ -123,7 +125,7 @@ fn read_next(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
 }
 
 /// Drop the stream, once no read holds it.
-fn close_reader(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn close_reader<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     call.this::<ReaderObject>()?.0.close();
     Ok(call.env().undefined())
 }
@@ -140,18 +142,22 @@ static FEED: ClassDescriptor = ClassDescriptor::new::<FeedObject>(
         Method {
             name: "asked",
             call: feed_asked,
+            arity: 0,
         },
         Method {
             name: "write",
             call: feed_write,
+            arity: 1,
         },
         Method {
             name: "finish",
             call: feed_finish,
+            arity: 0,
         },
         Method {
             name: "fail",
             call: feed_fail,
+            arity: 1,
         },
     ],
 );
@@ -173,7 +179,7 @@ const BATCH: Parameter = Parameter {
 
 /// Resolve with `true` when Rust asks for the next batch, or `false` once the
 /// stream has dropped.
-fn feed_asked(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn feed_asked<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     static PACE: Pace = Pace::new();
     let asked = call.this::<FeedObject>()?.0.asked();
     node::unref_awaitable(call.env(), Start::Caller(&PACE), async move {
@@ -183,7 +189,7 @@ fn feed_asked(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
 }
 
 /// Write a batch, an IPC stream in a `Uint8Array`.
-fn feed_write(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn feed_write<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     let [batch] = call.arguments()?;
     call.this::<FeedObject>()?
         .0
@@ -192,13 +198,13 @@ fn feed_write(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
 }
 
 /// Write the end of the stream.
-fn feed_finish(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn feed_finish<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     call.this::<FeedObject>()?.0.finish();
     Ok(call.env().undefined())
 }
 
 /// End the stream with a failure, whose message is the argument.
-fn feed_fail(call: CallInfo<'_>) -> Result<Value<'_>, Error> {
+fn feed_fail<'env>(call: &CallInfo<'_, 'env>) -> Result<Value<'env>, Error> {
     let [message] = call.arguments()?;
     call.this::<FeedObject>()?.0.fail(message.to_js_string()?);
     Ok(call.env().undefined())

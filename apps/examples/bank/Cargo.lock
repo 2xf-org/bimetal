@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal"
-version = "202611.13.1"
+version = "202611.21.0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
@@ -161,7 +161,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-ir"
-version = "202611.13.1"
+version = "202611.21.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "bimetal-macros"
-version = "202611.13.1"
+version = "202611.21.0"
 dependencies = [
  "bimetal-ir",
  "heck",

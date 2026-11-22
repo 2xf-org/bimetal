@@ -110,7 +110,11 @@ impl Station {
 
     /// Let the event loop exit once no other hold remains.
     pub(super) fn release(&self, env: Env<'_>) {
-        let holds = self.holds.get().saturating_sub(1);
+        let current = self.holds.get();
+        if current == 0 {
+            return;
+        }
+        let holds = current - 1;
         self.holds.set(holds);
         if holds == 0 {
             // Unreferencing fails only for an environment that tears down,

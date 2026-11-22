@@ -44,6 +44,7 @@ pub(super) struct Serializer<'env> {
     /// of a type.
     objects: RefCell<Vec<ObjectFactory<'env>>>,
     array_of: OnceCell<Value<'env>>,
+    map_of: OnceCell<Value<'env>>,
 }
 
 /// The function that makes an object of `keys`, in order.
@@ -62,6 +63,7 @@ impl<'env> Serializer<'env> {
             keys: RefCell::default(),
             objects: RefCell::default(),
             array_of: OnceCell::new(),
+            map_of: OnceCell::new(),
         }
     }
 
@@ -72,6 +74,15 @@ impl<'env> Serializer<'env> {
         }
         let array_of = self.env.array_of()?;
         Ok(*self.array_of.get_or_init(|| array_of))
+    }
+
+    /// The function that makes a frozen plain object from key/value arguments.
+    fn map_of(&self) -> Result<Value<'env>, Error> {
+        if let Some(map_of) = self.map_of.get() {
+            return Ok(*map_of);
+        }
+        let map_of = self.env.map_of()?;
+        Ok(*self.map_of.get_or_init(|| map_of))
     }
 
     /// Make the object whose keys are on `keys` from `key_mark` on, and whose
@@ -192,10 +203,11 @@ impl<'env> ser::SerializeSeq for ArraySerializer<'_, 'env> {
 
     fn end(self) -> Result<Value<'env>, Error> {
         let Self { serializer, mark } = self;
-        if serializer.gathered.since(mark) <= MOST_ARGUMENTS {
+        let count = serializer.gathered.since(mark);
+        if count <= MOST_ARGUMENTS {
             return serializer.gathered.call(serializer.array_of()?, mark);
         }
-        let array = serializer.env.array()?;
+        let array = serializer.env.array_with_length(count)?;
         for (index, value) in (0..).zip(serializer.gathered.take(serializer.env, mark)) {
             array.set_element(index, value)?;
         }
@@ -258,7 +270,7 @@ impl<'env> ser::SerializeMap for MapSerializer<'_, 'env> {
         let Self { serializer, mark } = self;
         let env = serializer.env;
         if serializer.gathered.since(mark) <= MOST_ARGUMENTS {
-            return serializer.gathered.call(env.map_of()?, mark);
+            return serializer.gathered.call(serializer.map_of()?, mark);
         }
         let (map, set) = env.map()?;
         let entries = serializer.gathered.take(env, mark);
@@ -315,15 +327,15 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
     }
 
     fn serialize_i8(self, value: i8) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.int32(i32::from(value))
     }
 
     fn serialize_i16(self, value: i16) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.int32(i32::from(value))
     }
 
     fn serialize_i32(self, value: i32) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.int32(value)
     }
 
     fn serialize_i64(self, value: i64) -> Result<Value<'env>, Error> {
@@ -336,15 +348,15 @@ impl<'serializer, 'env> ser::Serializer for &'serializer Serializer<'env> {
     }
 
     fn serialize_u8(self, value: u8) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.uint32(u32::from(value))
     }
 
     fn serialize_u16(self, value: u16) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.uint32(u32::from(value))
     }
 
     fn serialize_u32(self, value: u32) -> Result<Value<'env>, Error> {
-        self.env.number(f64::from(value))
+        self.env.uint32(value)
     }
 
     fn serialize_u64(self, value: u64) -> Result<Value<'env>, Error> {

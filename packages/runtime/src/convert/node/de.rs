@@ -10,6 +10,7 @@
 //! [`MAX_DEPTH`] fails here, where serde-wasm-bindgen would recurse until the
 //! stack overflows.
 
+use std::cell::Cell;
 use std::fmt::Display;
 use std::{slice, vec};
 
@@ -17,7 +18,7 @@ use serde::de::value::StrDeserializer;
 use serde::de::{self, DeserializeOwned, DeserializeSeed, IntoDeserializer, Unexpected, Visitor};
 
 use super::names::Names;
-use crate::runtime::node::{Element, Env, Error, Kind, Value};
+use crate::runtime::node::{BigIntValue, Element, Env, Error, Kind, State, Value};
 
 impl de::Error for Error {
     fn custom<T: Display>(message: T) -> Self {
@@ -32,26 +33,81 @@ const MAX_DEPTH: usize = 128;
 
 /// Deserialize `T` from a JavaScript value.
 pub(super) fn from_value<T: DeserializeOwned>(value: Value<'_>) -> Result<T, Error> {
-    let names = Names::new(value.env());
+    let context = Context::new(value.env());
     let scope = Scope {
-        names: &names,
+        context: &context,
         depth: 0,
     };
     T::deserialize(scope.read(value))
 }
 
+/// Shared state for one conversion: interned field names, plus cached
+/// environment handles that would otherwise require repeated Node-API lookups.
+struct Context<'env> {
+    env: Env<'env>,
+    names: Names<'env>,
+    state: Cell<Option<&'env State>>,
+    iterator_symbol: Cell<Option<Value<'env>>>,
+}
+
+impl<'env> Context<'env> {
+    fn new(env: Env<'env>) -> Self {
+        Self {
+            env,
+            names: Names::new(env),
+            state: Cell::new(None),
+            iterator_symbol: Cell::new(None),
+        }
+    }
+
+    fn state(&self) -> Result<&'env State, Error> {
+        if let Some(state) = self.state.get() {
+            return Ok(state);
+        }
+        let state = self.env.state()?;
+        self.state.set(Some(state));
+        Ok(state)
+    }
+
+    fn iterator_symbol(&self) -> Result<Value<'env>, Error> {
+        if let Some(symbol) = self.iterator_symbol.get() {
+            return Ok(symbol);
+        }
+        let symbol = self.state()?.iterator_symbol(self.env)?;
+        self.iterator_symbol.set(Some(symbol));
+        Ok(symbol)
+    }
+
+    fn is_map(&self, value: Value<'env>) -> Result<bool, Error> {
+        self.state()?.is_map(self.env, value)
+    }
+}
+
 /// Where a value sits in the conversion that reads it: the conversion's
-/// names, and how many arrays and objects hold the value.
+/// context, and how many arrays and objects hold the value.
 #[derive(Clone, Copy)]
-struct Scope<'names, 'env> {
-    names: &'names Names<'env>,
+struct Scope<'context, 'env> {
+    context: &'context Context<'env>,
     depth: usize,
 }
 
-impl<'names, 'env> Scope<'names, 'env> {
+impl<'context, 'env> Scope<'context, 'env> {
     /// Return the deserializer of `value` in this scope.
-    fn read(self, value: Value<'env>) -> Deserializer<'names, 'env> {
-        Deserializer { value, scope: self }
+    fn read(self, value: Value<'env>) -> Deserializer<'context, 'env> {
+        Deserializer {
+            value,
+            kind: Cell::new(None),
+            scope: self,
+        }
+    }
+
+    /// Return the deserializer of `value` with its already-queried `kind`.
+    fn read_known(self, value: Value<'env>, kind: Kind) -> Deserializer<'context, 'env> {
+        Deserializer {
+            value,
+            kind: Cell::new(Some(kind)),
+            scope: self,
+        }
     }
 
     /// Return the scope of the values inside an array or object in this
@@ -83,9 +139,10 @@ impl<'names, 'env> Scope<'names, 'env> {
 }
 
 /// A JavaScript value that Serde reads.
-struct Deserializer<'names, 'env> {
+struct Deserializer<'context, 'env> {
     value: Value<'env>,
-    scope: Scope<'names, 'env>,
+    kind: Cell<Option<Kind>>,
+    scope: Scope<'context, 'env>,
 }
 
 /// Return whether `value` is an integer that a number holds exactly, as
@@ -93,6 +150,38 @@ struct Deserializer<'names, 'env> {
 fn is_safe_integer(value: f64) -> bool {
     const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
     value.is_finite() && value.trunc() == value && value.abs() <= MAX_SAFE_INTEGER
+}
+
+/// Report a value of the wrong type for `expected` without taking `&Context`,
+/// so scalar deserializers never spill their context onto the stack.
+#[cold]
+fn invalid_type_of(value: Value<'_>, expected: &dyn de::Expected) -> Error {
+    match unexpected_of(value, expected) {
+        Ok(error) | Err(error) => error,
+    }
+}
+
+/// Describe `value` as serde-wasm-bindgen does in the error for a value of the
+/// wrong type: by its type, or as wasm-bindgen debugs it.
+fn unexpected_of(value: Value<'_>, expected: &dyn de::Expected) -> Result<Error, Error> {
+    let text;
+    let unexpected = match value.kind()? {
+        Kind::Undefined | Kind::Null => Unexpected::Unit,
+        Kind::Boolean => Unexpected::Bool(value.as_bool()?),
+        Kind::Number => Unexpected::Float(value.as_f64()?),
+        Kind::String => {
+            text = value.as_string()?;
+            Unexpected::Str(&text)
+        }
+        _ if value.typed_array_type()? == Some(u8::TYPE) || value.is_array_buffer()? => {
+            Unexpected::Bytes(&[])
+        }
+        _ => {
+            text = format!("JsValue({})", debug_string(value, &mut Vec::new())?);
+            Unexpected::Other(&text)
+        }
+    };
+    Ok(de::Error::invalid_type(unexpected, expected))
 }
 
 /// Turn an exception that JavaScript code threw into the message of the
@@ -121,16 +210,16 @@ struct JsIterator<'env> {
 
 impl<'env> JsIterator<'env> {
     /// Return the iterator of `value`, or `None` when it is not iterable.
-    fn of(value: Value<'env>) -> Result<Option<Self>, Error> {
+    fn of(context: &Context<'env>, value: Value<'env>, kind: Kind) -> Result<Option<Self>, Error> {
         let env = value.env();
-        if !matches!(value.kind()?, Kind::Object | Kind::Function) {
+        if !matches!(kind, Kind::Object | Kind::Function) {
             // `js_sys::try_iter` reads the method with `Reflect.get`, which
             // throws for a primitive.
             return Err(Error::Message(
                 "TypeError: Reflect.get called on non-object".to_owned(),
             ));
         }
-        let method = caught(env, value.property(env.iterator_symbol()?))?;
+        let method = caught(env, value.property(context.iterator_symbol()?))?;
         if method.kind()? != Kind::Function {
             return Ok(None);
         }
@@ -167,34 +256,51 @@ impl<'env> JsIterator<'env> {
 }
 
 impl Deserializer<'_, '_> {
+    /// Return this value's cached JavaScript `typeof` kind, querying Node-API
+    /// at most once per value.
+    fn kind(&self) -> Result<Kind, Error> {
+        if let Some(kind) = self.kind.get() {
+            return Ok(kind);
+        }
+        let kind = self.value.kind()?;
+        self.kind.set(Some(kind));
+        Ok(kind)
+    }
+
     /// Return whether the value is `undefined` or `null`, which `== null`
     /// accepts.
     fn is_nullish(&self) -> Result<bool, Error> {
-        Ok(matches!(self.value.kind()?, Kind::Undefined | Kind::Null))
+        Ok(matches!(self.kind()?, Kind::Undefined | Kind::Null))
     }
 
     /// Return a boolean's value.
     fn as_bool(&self) -> Result<Option<bool>, Error> {
-        if self.value.kind()? != Kind::Boolean {
+        if let Some(kind) = self.kind.get()
+            && kind != Kind::Boolean
+        {
             return Ok(None);
         }
-        self.value.as_bool().map(Some)
+        self.value.try_bool()
     }
 
     /// Return a number's value.
     fn as_f64(&self) -> Result<Option<f64>, Error> {
-        if self.value.kind()? != Kind::Number {
+        if let Some(kind) = self.kind.get()
+            && kind != Kind::Number
+        {
             return Ok(None);
         }
-        self.value.as_f64().map(Some)
+        self.value.try_f64()
     }
 
     /// Return a string's value.
     fn as_string(&self) -> Result<Option<String>, Error> {
-        if self.value.kind()? != Kind::String {
+        if let Some(kind) = self.kind.get()
+            && kind != Kind::String
+        {
             return Ok(None);
         }
-        self.value.as_string().map(Some)
+        self.value.try_string()
     }
 
     /// Return the bytes of a `Uint8Array` or an `ArrayBuffer`.
@@ -203,11 +309,6 @@ impl Deserializer<'_, '_> {
             Some(bytes) => Ok(Some(bytes)),
             None => self.value.array_buffer_bytes(),
         }
-    }
-
-    /// Return whether the value is a `Uint8Array` or an `ArrayBuffer`.
-    fn is_bytes(&self) -> Result<bool, Error> {
-        Ok(self.value.typed_array_type()? == Some(u8::TYPE) || self.value.is_array_buffer()?)
     }
 
     /// Return a number's value when it is a safe integer, which an `i64`
@@ -220,32 +321,9 @@ impl Deserializer<'_, '_> {
     }
 
     /// Report a value of the wrong type for `expected`.
-    #[cold]
+    #[inline]
     fn invalid_type(&self, expected: &dyn de::Expected) -> Error {
-        match self.unexpected(expected) {
-            Ok(error) | Err(error) => error,
-        }
-    }
-
-    /// Describe the value as serde-wasm-bindgen does in the error for a value
-    /// of the wrong type: by its type, or as wasm-bindgen debugs it.
-    fn unexpected(&self, expected: &dyn de::Expected) -> Result<Error, Error> {
-        let text;
-        let unexpected = match self.value.kind()? {
-            Kind::Undefined | Kind::Null => Unexpected::Unit,
-            Kind::Boolean => Unexpected::Bool(self.value.as_bool()?),
-            Kind::Number => Unexpected::Float(self.value.as_f64()?),
-            Kind::String => {
-                text = self.value.as_string()?;
-                Unexpected::Str(&text)
-            }
-            _ if self.is_bytes()? => Unexpected::Bytes(&[]),
-            _ => {
-                text = format!("JsValue({})", debug_string(self.value, &mut Vec::new())?);
-                Unexpected::Other(&text)
-            }
-        };
-        Ok(de::Error::invalid_type(unexpected, expected))
+        invalid_type_of(self.value, expected)
     }
 
     fn deserialize_signed<'de, V: Visitor<'de>>(&self, visitor: V) -> Result<V::Value, Error> {
@@ -297,7 +375,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     type Error = Error;
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        let kind = self.value.kind()?;
+        let kind = self.kind()?;
         match kind {
             Kind::Undefined | Kind::Null => return visitor.visit_unit(),
             Kind::Boolean => return visitor.visit_bool(self.value.as_bool()?),
@@ -332,11 +410,17 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
         }
         // An object is a map, as an internally tagged enum reads it, unless
         // it is an iterable other than a `Map`, such as a `Set`.
-        let env = self.value.env();
-        if kind == Kind::Object
-            && (!self.value.has(env.iterator_symbol()?)? || env.is_map(self.value)?)
-        {
-            return self.deserialize_map(visitor);
+        if kind == Kind::Object {
+            if !self.value.has(self.scope.context.iterator_symbol()?)? {
+                return visitor.visit_map(EntriesAccess {
+                    entries: entries(self.value)?.into_iter(),
+                    next_value: None,
+                    scope: self.scope.inner()?,
+                });
+            }
+            if self.scope.context.is_map(self.value)? {
+                return self.deserialize_map(visitor);
+            }
         }
         Err(self.invalid_type(&visitor))
     }
@@ -415,31 +499,37 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     }
 
     fn deserialize_i64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if self.value.kind()? != Kind::BigInt {
+        if let Some(kind) = self.kind.get()
+            && kind != Kind::BigInt
+        {
             return self.deserialize_signed(visitor);
         }
-        match self.value.as_i64()? {
-            Some(value) => visitor.visit_i64(value),
-            None => Err(de::Error::custom(
+        match self.value.try_i64()? {
+            BigIntValue::Value(value) => visitor.visit_i64(value),
+            BigIntValue::OutOfRange => Err(de::Error::custom(
                 "Couldn't deserialize i64 from a BigInt outside i64::MIN..i64::MAX bounds",
             )),
+            BigIntValue::NotBigInt => self.deserialize_signed(visitor),
         }
     }
 
     fn deserialize_u64<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if self.value.kind()? != Kind::BigInt {
+        if let Some(kind) = self.kind.get()
+            && kind != Kind::BigInt
+        {
             return self.deserialize_unsigned(visitor);
         }
-        match self.value.as_u64()? {
-            Some(value) => visitor.visit_u64(value),
-            None => Err(de::Error::custom(
+        match self.value.try_u64()? {
+            BigIntValue::Value(value) => visitor.visit_u64(value),
+            BigIntValue::OutOfRange => Err(de::Error::custom(
                 "Couldn't deserialize u64 from a BigInt outside u64::MIN..u64::MAX bounds",
             )),
+            BigIntValue::NotBigInt => self.deserialize_unsigned(visitor),
         }
     }
 
     fn deserialize_i128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if self.value.kind()? != Kind::BigInt {
+        if self.kind()? != Kind::BigInt {
             return Err(self.invalid_type(&visitor));
         }
         match self.as_i128()? {
@@ -451,7 +541,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     }
 
     fn deserialize_u128<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if self.value.kind()? != Kind::BigInt {
+        if self.kind()? != Kind::BigInt {
             return Err(self.invalid_type(&visitor));
         }
         match self.as_u128_magnitude()? {
@@ -465,7 +555,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     /// Read a string of one character, as `JsString::as_char` does: by its
     /// first code point, which must make up the whole string.
     fn deserialize_char<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if self.value.kind()? == Kind::String {
+        if self.kind()? == Kind::String {
             let units = self.value.as_utf16()?;
             let point = match units.as_slice() {
                 [high @ 0xd800..=0xdbff, low @ 0xdc00..=0xdfff, ..] => {
@@ -508,7 +598,8 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
                 scope: self.scope.inner()?,
             });
         }
-        match JsIterator::of(self.value)? {
+        let kind = self.kind()?;
+        match JsIterator::of(self.scope.context, self.value, kind)? {
             Some(iterator) => visitor.visit_seq(IteratorAccess {
                 iterator,
                 scope: self.scope.inner()?,
@@ -537,14 +628,22 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
     /// Read an iterable of `[key, value]` pairs, or else an object's own
     /// enumerable string-keyed properties, as `Object.entries` lists them.
     fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
-        if let Some(iterator) = JsIterator::of(self.value)? {
+        let kind = self.kind()?;
+        if kind == Kind::Object && !self.value.has(self.scope.context.iterator_symbol()?)? {
+            return visitor.visit_map(EntriesAccess {
+                entries: entries(self.value)?.into_iter(),
+                next_value: None,
+                scope: self.scope.inner()?,
+            });
+        }
+        if let Some(iterator) = JsIterator::of(self.scope.context, self.value, kind)? {
             return visitor.visit_map(PairsAccess {
                 iterator,
                 next_value: None,
                 scope: self.scope.inner()?,
             });
         }
-        if self.value.kind()? != Kind::Object {
+        if kind != Kind::Object {
             return Err(self.invalid_type(&visitor));
         }
         visitor.visit_map(EntriesAccess {
@@ -562,7 +661,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
-        if self.value.kind()? != Kind::Object {
+        if self.kind()? != Kind::Object {
             return Err(self.invalid_type(&visitor));
         }
         visitor.visit_map(ObjectAccess {
@@ -581,7 +680,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<'_, '_> {
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
-        let kind = self.value.kind()?;
+        let kind = self.kind()?;
         let access = if kind == Kind::String {
             EnumAccess {
                 tag: self.value,
@@ -665,11 +764,11 @@ fn entries<'env>(object: Value<'env>) -> Result<Vec<(Value<'env>, Value<'env>)>,
 
 /// The elements of an array, by index, up to its length when Rust started
 /// reading it.
-struct ArrayAccess<'names, 'env> {
+struct ArrayAccess<'context, 'env> {
     array: Value<'env>,
     index: u32,
     length: u32,
-    scope: Scope<'names, 'env>,
+    scope: Scope<'context, 'env>,
 }
 
 impl<'de> de::SeqAccess<'de> for ArrayAccess<'_, '_> {
@@ -693,9 +792,9 @@ impl<'de> de::SeqAccess<'de> for ArrayAccess<'_, '_> {
 }
 
 /// The values of a JavaScript iterator, as a sequence.
-struct IteratorAccess<'names, 'env> {
+struct IteratorAccess<'context, 'env> {
     iterator: JsIterator<'env>,
-    scope: Scope<'names, 'env>,
+    scope: Scope<'context, 'env>,
 }
 
 impl<'de> de::SeqAccess<'de> for IteratorAccess<'_, '_> {
@@ -714,10 +813,10 @@ impl<'de> de::SeqAccess<'de> for IteratorAccess<'_, '_> {
 
 /// The `[key, value]` pairs of a JavaScript iterator, whose value waits for
 /// its key.
-struct PairsAccess<'names, 'env> {
+struct PairsAccess<'context, 'env> {
     iterator: JsIterator<'env>,
     next_value: Option<Value<'env>>,
-    scope: Scope<'names, 'env>,
+    scope: Scope<'context, 'env>,
 }
 
 impl<'de> de::MapAccess<'de> for PairsAccess<'_, '_> {
@@ -741,10 +840,10 @@ impl<'de> de::MapAccess<'de> for PairsAccess<'_, '_> {
 }
 
 /// An object's entries, whose value waits for its key.
-struct EntriesAccess<'names, 'env> {
+struct EntriesAccess<'context, 'env> {
     entries: vec::IntoIter<(Value<'env>, Value<'env>)>,
     next_value: Option<Value<'env>>,
-    scope: Scope<'names, 'env>,
+    scope: Scope<'context, 'env>,
 }
 
 impl<'de> de::MapAccess<'de> for EntriesAccess<'_, '_> {
@@ -771,11 +870,11 @@ impl<'de> de::MapAccess<'de> for EntriesAccess<'_, '_> {
 }
 
 /// A struct's fields, read by name from an object.
-struct ObjectAccess<'names, 'env> {
+struct ObjectAccess<'context, 'env> {
     object: Value<'env>,
     fields: slice::Iter<'static, &'static str>,
-    next_value: Option<Value<'env>>,
-    scope: Scope<'names, 'env>,
+    next_value: Option<(Value<'env>, Kind)>,
+    scope: Scope<'context, 'env>,
 }
 
 impl<'de> de::MapAccess<'de> for ObjectAccess<'_, '_> {
@@ -786,13 +885,14 @@ impl<'de> de::MapAccess<'de> for ObjectAccess<'_, '_> {
         seed: K,
     ) -> Result<Option<K::Value>, Error> {
         for field in &mut self.fields {
-            let key = self.scope.names.string(field)?;
+            let key = self.scope.context.names.string(field)?;
             let value = self.object.property(key)?;
+            let kind = value.kind()?;
             // An `undefined` value can be a missing field, which `in` tells.
-            if value.kind()? == Kind::Undefined && !self.object.has(key)? {
+            if kind == Kind::Undefined && !self.object.has(key)? {
                 continue;
             }
-            self.next_value = Some(value);
+            self.next_value = Some((value, kind));
             let field: StrDeserializer<'_, Error> = field.into_deserializer();
             return seed.deserialize(field).map(Some);
         }
@@ -800,20 +900,24 @@ impl<'de> de::MapAccess<'de> for ObjectAccess<'_, '_> {
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
-        self.scope.read_next_value(&mut self.next_value, seed)
+        let (value, kind) = self
+            .next_value
+            .take()
+            .expect("Serde reads each key before its value");
+        seed.deserialize(self.scope.read_known(value, kind))
     }
 }
 
 /// An enum's tag and its payload.
-struct EnumAccess<'names, 'env> {
+struct EnumAccess<'context, 'env> {
     tag: Value<'env>,
     payload: Value<'env>,
-    scope: Scope<'names, 'env>,
+    scope: Scope<'context, 'env>,
 }
 
-impl<'de, 'names, 'env> de::EnumAccess<'de> for EnumAccess<'names, 'env> {
+impl<'de, 'context, 'env> de::EnumAccess<'de> for EnumAccess<'context, 'env> {
     type Error = Error;
-    type Variant = Deserializer<'names, 'env>;
+    type Variant = Deserializer<'context, 'env>;
 
     fn variant_seed<V: DeserializeSeed<'de>>(
         self,

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyDict, PySet, PyString, PyType};
+use pyo3::types::{PyDict, PySet, PyString, PyTuple, PyType};
 use pyo3::{ffi, intern};
 
 use crate::ContractType;
@@ -38,7 +38,7 @@ struct Planned {
     plan: Option<Plan>,
     /// Whether an argument is read as Python holds it after validation, rather
     /// than from the dump that the generated code passes: true for a value that
-    /// is not plain and reaches no buffer and no enum with data.
+    /// is not plain and reaches no buffer.
     reads: bool,
 }
 
@@ -52,16 +52,10 @@ impl ValuePlan {
     fn planned(&self, reference: impl FnOnce() -> TypeRef) -> &Planned {
         self.0.get_or_init(|| {
             let reference = reference();
-            let plan = (!reaches(&reference, &mut Vec::new(), |item| {
-                matches!(item, Reached::Buffer)
-            }))
-            .then(|| Plan::of(&reference));
+            let plan = (!reaches_buffer(&reference, &mut Vec::new())).then(|| Plan::of(&reference));
             let reads = plan
                 .as_ref()
-                .is_some_and(|plan| !matches!(plan, Plan::Plain))
-                && !reaches(&reference, &mut Vec::new(), |item| {
-                    matches!(item, Reached::EnumWithData)
-                });
+                .is_some_and(|plan| !matches!(plan, Plan::Plain));
             Planned { plan, reads }
         })
     }
@@ -167,11 +161,11 @@ impl Plan {
     }
 }
 
-/// Whether `reference` reaches what `found` looks for, through the types it
-/// names, each looked at once.
-fn reaches(reference: &TypeRef, seen: &mut Vec<String>, found: fn(Reached) -> bool) -> bool {
+/// Whether `reference` reaches a numeric buffer, through the types it names,
+/// each looked at once.
+fn reaches_buffer(reference: &TypeRef, seen: &mut Vec<String>) -> bool {
     match reference {
-        TypeRef::Buffer { .. } => found(Reached::Buffer),
+        TypeRef::Buffer { .. } => true,
         TypeRef::Named { identity } => {
             let key = identity.to_string();
             if seen.contains(&key) {
@@ -181,30 +175,16 @@ fn reaches(reference: &TypeRef, seen: &mut Vec<String>, found: fn(Reached) -> bo
                 return false;
             };
             seen.push(key);
-            if matches!(
-                named.definition.shape,
-                TypeShape::TaggedEnum { .. } | TypeShape::ExternalEnum { .. }
-            ) && found(Reached::EnumWithData)
-            {
-                return true;
-            }
             named
                 .definition
                 .type_refs()
-                .any(|reference| reaches(reference, seen, found))
+                .any(|reference| reaches_buffer(reference, seen))
         }
         _ => reference
             .children()
             .iter()
-            .any(|reference| reaches(reference, seen, found)),
+            .any(|reference| reaches_buffer(reference, seen)),
     }
-}
-
-/// What [`reaches`] looks for.
-#[derive(Clone, Copy)]
-enum Reached {
-    Buffer,
-    EnumWithData,
 }
 
 /// One linked type of the contract, and what the extension makes of it once
@@ -258,6 +238,21 @@ impl Named {
     }
 }
 
+/// The shape of one externally tagged enum variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExternalForm {
+    Unit,
+    Value,
+    Fields,
+}
+
+/// One variant of an externally tagged enum, with its generated model plan.
+#[derive(Debug)]
+pub(crate) struct ExternalVariant {
+    pub(crate) form: ExternalForm,
+    pub(crate) model: ModelPlan,
+}
+
 /// What the extension makes of one model, string enum, or enum with data.
 #[derive(Debug)]
 pub(crate) enum NamedPlan {
@@ -270,7 +265,7 @@ pub(crate) enum NamedPlan {
         variants: HashMap<String, ModelPlan>,
     },
     /// The model of each variant, by its wire name.
-    External(HashMap<String, ModelPlan>),
+    External(HashMap<String, ExternalVariant>),
 }
 
 impl NamedPlan {
@@ -317,20 +312,29 @@ impl NamedPlan {
                 let mut built = HashMap::new();
                 for variant in variants {
                     let class = variant_class(classes, &variant.wire_name)?;
-                    let fields = match &variant.payload {
-                        VariantPayload::Unit => Vec::new(),
-                        VariantPayload::Value { ty } => vec![FieldDef {
-                            rust_name: "value".to_owned(),
-                            wire_name: "value".to_owned(),
-                            docs: None,
-                            ty: ty.clone(),
-                            required: true,
-                            default: None,
-                            constraints: Default::default(),
-                        }],
-                        VariantPayload::Fields { fields } => fields.clone(),
+                    let (form, fields) = match &variant.payload {
+                        VariantPayload::Unit => (ExternalForm::Unit, Vec::new()),
+                        VariantPayload::Value { ty } => (
+                            ExternalForm::Value,
+                            vec![FieldDef {
+                                rust_name: "value".to_owned(),
+                                wire_name: "value".to_owned(),
+                                docs: None,
+                                ty: ty.clone(),
+                                required: true,
+                                default: None,
+                                constraints: Default::default(),
+                            }],
+                        ),
+                        VariantPayload::Fields { fields } => (ExternalForm::Fields, fields.clone()),
                     };
-                    built.insert(variant.wire_name.clone(), ModelPlan::build(class, &fields)?);
+                    built.insert(
+                        variant.wire_name.clone(),
+                        ExternalVariant {
+                            form,
+                            model: ModelPlan::build(class, &fields)?,
+                        },
+                    );
                 }
                 Self::External(built)
             }
@@ -363,6 +367,9 @@ fn variant_class<'py>(
 #[derive(Debug)]
 pub(crate) struct ModelPlan {
     pub(crate) class: Py<PyType>,
+    /// Pre-built 1-tuple `(class,)` for `object.__new__`, avoiding a tuple
+    /// allocation per returned model instance.
+    class_arg: Py<PyTuple>,
     /// The class's fields, in its order.
     pub(crate) fields: Vec<FieldPlan>,
     /// Each field's attribute mapped to `None`, in the class's order: the
@@ -414,50 +421,64 @@ impl ModelPlan {
                 plan,
             });
         }
+        let class_arg = PyTuple::new(py, [class.as_any()])?.unbind();
         Ok(Self {
             class: class.unbind(),
+            class_arg,
             fields: planned,
             every_field: PySet::new(py, blank.keys())?.unbind(),
             blank: blank.unbind(),
         })
     }
 
-    /// Make an instance of the class from the value of each field, in the
-    /// class's order, as Pydantic's validation would leave it. A field that
-    /// Serde did not write takes the class's default.
-    pub(crate) fn instance<'py>(
+    /// Return a fresh copy of this model's pre-sized `__dict__`, ready for
+    /// field values to be written directly as Serde serializes them.
+    pub(crate) fn blank_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        self.blank.bind(py).copy()
+    }
+
+    /// Make an instance of a unit model (no fields).
+    pub(crate) fn unit_instance<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let dict = self.blank_dict(py)?;
+        self.finish(py, dict, 0, |_| false)
+    }
+
+    /// Build a frozen Pydantic model instance from a populated `dict`, filling
+    /// class defaults only for fields that Serde omitted.
+    pub(crate) fn finish<'py>(
         &self,
         py: Python<'py>,
-        values: Vec<Option<Bound<'py, PyAny>>>,
+        dict: Bound<'py, PyDict>,
+        written_count: usize,
+        is_written: impl Fn(usize) -> bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let dict = self.blank.bind(py).copy()?;
-        let every = values.iter().all(Option::is_some);
-        let written = if every {
+        let written = if written_count == self.fields.len() {
             copy_set(self.every_field.bind(py))?
         } else {
-            PySet::empty(py)?
-        };
-        for (field, value) in self.fields.iter().zip(values) {
-            let attribute = field.attribute.bind(py);
-            let value = match value {
-                Some(value) => {
-                    if !every {
-                        written.add(attribute)?;
-                    }
-                    value
-                }
-                None => {
+            static DEFAULT_OPTIONS: PyOnceLock<Py<PyDict>> = PyOnceLock::new();
+            let options = DEFAULT_OPTIONS
+                .get_or_try_init(py, || {
                     let options = PyDict::new(py);
                     options.set_item(intern!(py, "call_default_factory"), true)?;
-                    field.info.bind(py).call_method(
+                    Ok::<_, PyErr>(options.unbind())
+                })?
+                .bind(py);
+            let set = PySet::empty(py)?;
+            for (index, field) in self.fields.iter().enumerate() {
+                let attribute = field.attribute.bind(py);
+                if is_written(index) {
+                    set.add(attribute)?;
+                } else {
+                    let default = field.info.bind(py).call_method(
                         intern!(py, "get_default"),
                         (),
-                        Some(&options),
-                    )?
+                        Some(options),
+                    )?;
+                    dict.set_item(attribute, default)?;
                 }
-            };
-            dict.set_item(attribute, value)?;
-        }
+            }
+            set
+        };
         static OBJECT_NEW: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
         let instance = OBJECT_NEW
             .get_or_try_init(py, || {
@@ -467,7 +488,7 @@ impl ModelPlan {
                     .map(Bound::unbind)
             })?
             .bind(py)
-            .call1((self.class.bind(py),))?;
+            .call(self.class_arg.bind(py), None)?;
         let none = py.None();
         let none = none.bind(py);
         set_slot(&instance, intern!(py, "__dict__"), dict.as_any())?;
@@ -485,6 +506,13 @@ impl ModelPlan {
     /// from `from` on first, since Serde writes a struct's fields in the
     /// order that its class has them.
     pub(crate) fn field(&self, wire_name: &str, from: usize) -> Option<usize> {
+        if self
+            .fields
+            .get(from)
+            .is_some_and(|field| field.wire_name == wire_name)
+        {
+            return Some(from);
+        }
         let (before, after) = self.fields.split_at(from.min(self.fields.len()));
         let named = |field: &FieldPlan| field.wire_name == wire_name;
         after

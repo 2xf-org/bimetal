@@ -188,7 +188,7 @@ impl<T: ResourceOutput> ResourceOutput for Option<T> {
 
 impl<T: ResourceOutput> ResourceOutput for Vec<T> {
     fn into_javascript(self, env: Env<'_>) -> Result<Value<'_>, Error> {
-        let items = env.array()?;
+        let items = env.array_with_length(self.len())?;
         for (index, value) in self.into_iter().enumerate() {
             let index = u32::try_from(index)
                 .map_err(|_| Error::Message("too many resources for an array".to_owned()))?;

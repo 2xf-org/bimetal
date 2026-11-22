@@ -27,9 +27,5 @@ export function distance(from, to) {
   $checkNative();
   $checkArgument(from, "object", "distance(): argument `from`");
   $checkArgument(to, "object", "distance(): argument `to`");
-  try {
-    return $native["__bimetal_function_showcase_geometry_454d48bb338e5d76"]($prepareHost(from, $spec0), $prepareHost(to, $spec0));
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $native["__bimetal_function_showcase_geometry_454d48bb338e5d76"]($prepareHost(from, $spec0), $prepareHost(to, $spec0));
 }

@@ -72,6 +72,11 @@ pub(crate) fn date_time_text(value: &Bound<'_, PyAny>) -> PyResult<Option<ShortT
     if !value.get_type().is(classes(py)?.0) {
         return Ok(None);
     }
+    // Check awareness first so naive datetimes skip field extraction and fall
+    // back to Pydantic's error directly.
+    let Some(offset) = offset(value)? else {
+        return Ok(None);
+    };
     let mut text = date_of(value)?;
     text.push(b'T')?;
     text.digits(field(value, intern!(py, "hour"))?, 2)?;
@@ -84,16 +89,14 @@ pub(crate) fn date_time_text(value: &Bound<'_, PyAny>) -> PyResult<Option<ShortT
         text.push(b'.')?;
         text.digits(microsecond, 6)?;
     }
-    if let Some(offset) = offset(value)? {
-        text.push(if offset < 0 { b'-' } else { b'+' })?;
-        let offset = offset.unsigned_abs();
-        text.digits(offset / 3600, 2)?;
+    text.push(if offset < 0 { b'-' } else { b'+' })?;
+    let offset = offset.unsigned_abs();
+    text.digits(offset / 3600, 2)?;
+    text.push(b':')?;
+    text.digits(offset / 60 % 60, 2)?;
+    if offset % 60 != 0 {
         text.push(b':')?;
-        text.digits(offset / 60 % 60, 2)?;
-        if offset % 60 != 0 {
-            text.push(b':')?;
-            text.digits(offset % 60, 2)?;
-        }
+        text.digits(offset % 60, 2)?;
     }
     Ok(Some(text))
 }

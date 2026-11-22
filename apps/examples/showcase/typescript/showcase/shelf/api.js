@@ -28,21 +28,13 @@ export class Shortage extends globalThis.Error {
 
 export function countBoth(first, second) {
   $checkNative();
-  try {
-    return $native["__bimetal_function_showcase_656c2307959ffa30"]($nativeResource(first, Shelf, "countBoth(): argument `first`"), $nativeResource(second, Shelf, "countBoth(): argument `second`"));
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $native["__bimetal_function_showcase_656c2307959ffa30"]($nativeResource(first, Shelf, "countBoth(): argument `first`"), $nativeResource(second, Shelf, "countBoth(): argument `second`"));
 }
 
 export function doubleSize(size) {
   $checkNative();
   $checkArgument(size, "bigint", "doubleSize(): argument `size`");
-  try {
-    return $native["__bimetal_function_showcase_99afcd0e5863f838"](size);
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $native["__bimetal_function_showcase_99afcd0e5863f838"](size);
 }
 
 export function offset(value, by = -1, scale = 0.5) {
@@ -50,11 +42,7 @@ export function offset(value, by = -1, scale = 0.5) {
   $checkArgument(value, "number", "offset(): argument `value`");
   $checkArgument(by, "number", "offset(): argument `by`");
   $checkArgument(scale, "number", "offset(): argument `scale`");
-  try {
-    return $native["__bimetal_function_showcase_136c6d6e579b9c16"](value, by, scale);
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $native["__bimetal_function_showcase_136c6d6e579b9c16"](value, by, scale);
 }
 
 export class AsyncSession {
@@ -70,49 +58,29 @@ export class AsyncSession {
 
   async open() {
     $checkNative();
-    try {
-      return await $nativePromise(this.nativeResource.open());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return await $nativePromise(this.nativeResource.open());
   }
 
   get opened() {
     $checkNative();
-    try {
-      return this.nativeResource.opened();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.opened();
   }
 
   add(title) {
     $checkNative();
     $checkArgument(title, "string", "AsyncSession.add(): argument `title`");
-    try {
-      this.nativeResource.add(title);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.add(title);
   }
 
   async commit() {
     $checkNative();
-    try {
-      await $nativePromise(this.nativeResource.commit());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    await $nativePromise(this.nativeResource.commit());
   }
 
   async finish(failed) {
     $checkNative();
     $checkArgument(failed, "boolean", "AsyncSession.finish(): argument `failed`");
-    try {
-      await $nativePromise(this.nativeResource.finish(failed));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    await $nativePromise(this.nativeResource.finish(failed));
   }
 
   close() {
@@ -185,11 +153,7 @@ export class Session {
   add(title) {
     $checkNative();
     $checkArgument(title, "string", "Session.add(): argument `title`");
-    try {
-      this.nativeResource.add(title);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.add(title);
   }
 
   commit() {
@@ -241,11 +205,7 @@ export class Shelf {
     $checkNative();
     $checkArgument(name, "string", "new Shelf(): argument `name`");
     $checkArgument(limit, "number", "new Shelf(): argument `limit`");
-    try {
-      this.nativeResource = new $native["__bimetal_resource_showcase_4c5f82ea59c0edd9"](name, limit);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource = new $native["__bimetal_resource_showcase_4c5f82ea59c0edd9"](name, limit);
   }
 
   static $wrap(native) {
@@ -256,30 +216,18 @@ export class Shelf {
 
   get name() {
     $checkNative();
-    try {
-      return this.nativeResource.name();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.name();
   }
 
   set name(name) {
     $checkNative();
     $checkArgument(name, "string", "Shelf.setName(): argument `name`");
-    try {
-      this.nativeResource.setName(name);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.setName(name);
   }
 
   size() {
     $checkNative();
-    try {
-      return this.nativeResource.size();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.size();
   }
 
   get length() {
@@ -288,11 +236,7 @@ export class Shelf {
 
   describe() {
     $checkNative();
-    try {
-      return this.nativeResource.describe();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.describe();
   }
 
   [globalThis.Symbol.for("nodejs.util.inspect.custom")]() {
@@ -301,11 +245,7 @@ export class Shelf {
 
   title() {
     $checkNative();
-    try {
-      return this.nativeResource.title();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.title();
   }
 
   toString() {
@@ -315,79 +255,47 @@ export class Shelf {
   has(title) {
     $checkNative();
     $checkArgument(title, "string", "Shelf.has(): argument `title`");
-    try {
-      return this.nativeResource.has(title);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.has(title);
   }
 
   at(index) {
     $checkNative();
     $checkArgument(index, "number", "Shelf.at(): argument `index`");
-    try {
-      return this.nativeResource.at(index);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.at(index);
   }
 
   replace(index, title) {
     $checkNative();
     $checkArgument(index, "number", "Shelf.replace(): argument `index`");
     $checkArgument(title, "string", "Shelf.replace(): argument `title`");
-    try {
-      this.nativeResource.replace(index, title);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.replace(index, title);
   }
 
   remove(index) {
     $checkNative();
     $checkArgument(index, "number", "Shelf.remove(): argument `index`");
-    try {
-      this.nativeResource.remove(index);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.remove(index);
   }
 
   occupied() {
     $checkNative();
-    try {
-      return this.nativeResource.occupied();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.occupied();
   }
 
   matching(word) {
     $checkNative();
     $checkArgument(word, "string", "Shelf.matching(): argument `word`");
-    try {
-      return $restoreHost(this.nativeResource.matching(word), $spec0);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $restoreHost(this.nativeResource.matching(word), $spec0);
   }
 
   fingerprint() {
     $checkNative();
-    try {
-      return this.nativeResource.fingerprint();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.fingerprint();
   }
 
   same(other) {
     $checkNative();
-    try {
-      return this.nativeResource.same($nativeResource(other, Shelf, "Shelf.same(): argument `other`"));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.same($nativeResource(other, Shelf, "Shelf.same(): argument `other`"));
   }
 
   add(title) {
@@ -412,57 +320,33 @@ export class Shelf {
 
   session() {
     $checkNative();
-    try {
-      return Session.$wrap(this.nativeResource.session());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return Session.$wrap(this.nativeResource.session());
   }
 
   async asyncSession() {
     $checkNative();
-    try {
-      return AsyncSession.$wrap(await $nativePromise(this.nativeResource.asyncSession()));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return AsyncSession.$wrap(await $nativePromise(this.nativeResource.asyncSession()));
   }
 
   trySession() {
     $checkNative();
-    try {
-      return (($native) => $native == null ? null : Session.$wrap($native))(this.nativeResource.trySession());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return (($native) => $native == null ? null : Session.$wrap($native))(this.nativeResource.trySession());
   }
 
   split(size) {
     $checkNative();
     $checkArgument(size, "number", "Shelf.split(): argument `size`");
-    try {
-      return globalThis.Array.from(this.nativeResource.split(size), ($native) => Shelf.$wrap($native));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return globalThis.Array.from(this.nativeResource.split(size), ($native) => Shelf.$wrap($native));
   }
 
   titles() {
     $checkNative();
-    try {
-      return Titles.$wrap(this.nativeResource.titles());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return Titles.$wrap(this.nativeResource.titles());
   }
 
   titleStream() {
     $checkNative();
-    try {
-      return TitleStream.$wrap(this.nativeResource.titleStream());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return TitleStream.$wrap(this.nativeResource.titleStream());
   }
 
   copyFrom(other) {
@@ -476,29 +360,17 @@ export class Shelf {
 
   giveTo(other) {
     $checkNative();
-    try {
-      this.nativeResource.giveTo($nativeResource(other, Shelf, "Shelf.giveTo(): argument `other`"));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.giveTo($nativeResource(other, Shelf, "Shelf.giveTo(): argument `other`"));
   }
 
   absorb(other) {
     $checkNative();
-    try {
-      this.nativeResource.absorb($nativeResource(other, Shelf, "Shelf.absorb(): argument `other`"));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.absorb($nativeResource(other, Shelf, "Shelf.absorb(): argument `other`"));
   }
 
   countWith(other = null) {
     $checkNative();
-    try {
-      return this.nativeResource.countWith(other == null ? null : $nativeResource(other, Shelf, "Shelf.countWith(): argument `other`"));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.countWith(other == null ? null : $nativeResource(other, Shelf, "Shelf.countWith(): argument `other`"));
   }
 
   async copyLater(other) {
@@ -548,38 +420,22 @@ export class Shelf {
 
   labeler(label) {
     $checkNative();
-    try {
-      return Labeler.$wrap(this.nativeResource.labeler($callbackFromHost(label, $spec3, $spec2, "Shelf.labeler(): argument `label`")));
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return Labeler.$wrap(this.nativeResource.labeler($callbackFromHost(label, $spec3, $spec2, "Shelf.labeler(): argument `label`")));
   }
 
   firstBytes() {
     $checkNative();
-    try {
-      return $restoreHost(this.nativeResource.firstBytes(), $spec4) ?? null;
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $restoreHost(this.nativeResource.firstBytes(), $spec4) ?? null;
   }
 
   seal() {
     $checkNative();
-    try {
-      return $restoreHost(this.nativeResource.seal(), $spec0);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $restoreHost(this.nativeResource.seal(), $spec0);
   }
 
   async sealLater() {
     $checkNative();
-    try {
-      return await $nativePromise(this.nativeResource.sealLater());
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return await $nativePromise(this.nativeResource.sealLater());
   }
 
   close() {
@@ -653,11 +509,7 @@ export class Titles {
 
   nextTitle() {
     $checkNative();
-    try {
-      return this.nativeResource.nextTitle();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.nextTitle();
   }
 
   *[globalThis.Symbol.iterator]() {

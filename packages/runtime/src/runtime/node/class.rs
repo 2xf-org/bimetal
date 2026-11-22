@@ -12,6 +12,7 @@ use std::any::Any;
 use std::cell::Cell;
 use std::ffi::{c_char, c_void};
 use std::ptr;
+use std::sync::OnceLock;
 
 use napi_sys as sys;
 
@@ -39,6 +40,8 @@ pub struct Method {
     pub name: &'static str,
     /// What the function runs.
     pub call: Callback,
+    /// Number of arguments the function reads.
+    pub arity: usize,
 }
 
 /// One resource class: its constructor, its factories, and its methods.
@@ -127,8 +130,8 @@ unsafe extern "C" fn construct<C: Class>(
     // SAFETY: Node.js calls a constructor on the environment's thread, with
     // a scope open until it returns.
     let env = unsafe { Env::new(env) };
-    let call = CallInfo::new(env, info);
     env.run(|| {
+        let call = CallInfo::unpack_receiver(env, info)?;
         if let Some(value) = PENDING.take() {
             let this = call.receiver()?;
             let value = value.downcast::<C>().map_err(|_| {
@@ -141,7 +144,7 @@ unsafe extern "C" fn construct<C: Class>(
         // `new` expression returns instead of `this`.
         let descriptor = C::descriptor();
         match descriptor.constructor {
-            Some(constructor) => constructor(call),
+            Some(constructor) => constructor(&call),
             None => Err(Error::Type(format!(
                 "{} has no constructor; create one with its factories",
                 descriptor.name
@@ -202,7 +205,7 @@ pub fn object_of<'env, C: Class>(value: Value<'env>) -> Result<Option<&'env C>, 
     Ok(Some(unsafe { &*data.cast::<C>() }))
 }
 
-impl<'env> CallInfo<'env> {
+impl<'env> CallInfo<'_, 'env> {
     /// The Rust object of the call's receiver, `this`.
     ///
     /// # Errors
@@ -252,28 +255,47 @@ pub unsafe fn register(
     let env = unsafe { Env::new(env) };
     env.run(|| {
         let exports = env.value(exports);
-        let contract_hash = registry::contract_hash(package_name, package_version)
-            .map_err(|error| Error::Message(error.to_string()))?;
+        static CONTRACT_HASH: OnceLock<Result<String, String>> = OnceLock::new();
+        let contract_hash = CONTRACT_HASH
+            .get_or_init(|| {
+                registry::contract_hash(package_name, package_version)
+                    .map_err(|error| error.to_string())
+            })
+            .as_ref()
+            .map_err(|error| Error::Message(error.clone()))?;
         exports.set_property(
             env.string(discovery::CONTRACT_HASH_ATTRIBUTE)?,
-            env.string(&contract_hash)?,
+            env.string(contract_hash)?,
         )?;
         let mut classes = Vec::new();
-        for registration in inventory::iter::<Registration> {
-            match registration {
-                Registration::Function(function) => {
-                    let defined = define_function(env, function)?;
-                    exports.set_property(env.string(function.name)?, defined)?;
-                }
-                Registration::Class(class) => {
-                    let defined = define_class(env, class)?;
-                    exports.set_property(env.string(class.name)?, defined)?;
-                    classes.push(DefinedClass {
-                        descriptor: ptr::from_ref(*class).addr(),
-                        constructor: env.keep(defined)?,
-                    });
+        let defined = (|| -> Result<(), Error> {
+            for registration in inventory::iter::<Registration> {
+                match registration {
+                    Registration::Function(function) => {
+                        let defined = define_function(env, function)?;
+                        exports.set_property(env.string(function.name)?, defined)?;
+                    }
+                    Registration::Class(class) => {
+                        let defined = define_class(env, class)?;
+                        exports.set_property(env.string(class.name)?, defined)?;
+                        classes.push(DefinedClass {
+                            descriptor: ptr::from_ref(*class).addr(),
+                            constructor: env.keep(defined)?,
+                        });
+                    }
                 }
             }
+            Ok(())
+        })();
+        if let Err(error) = defined {
+            // SAFETY: every constructor reference was created in this live
+            // environment on this thread and is deleted once.
+            unsafe {
+                for class in classes {
+                    sys::napi_delete_reference(env.raw, class.constructor);
+                }
+            }
+            return Err(error);
         }
         env.start(classes)?;
         Ok(exports)
@@ -292,7 +314,7 @@ fn define_function<'env>(env: Env<'env>, function: &'static Method) -> Result<Va
         napi_create_function(
             function.name.as_ptr().cast::<c_char>(),
             env::length(function.name),
-            Some(env::trampoline),
+            Some(env::function_trampoline(function.arity)),
             data(&function.call)
         ) -> value
     )
@@ -305,14 +327,22 @@ fn define_class<'env>(
 ) -> Result<Value<'env>, Error> {
     use sys::PropertyAttributes::{configurable, static_, writable};
 
-    let factories = class.factories.iter().map(|method| (method, static_));
-    let members = factories.chain(class.methods.iter().map(|method| (method, 0)));
+    let factories = class
+        .factories
+        .iter()
+        .map(|method| (method, static_, env::function_trampoline(method.arity)));
+    let members = factories.chain(
+        class
+            .methods
+            .iter()
+            .map(|method| (method, 0, env::method_trampoline(method.arity))),
+    );
     let mut properties = Vec::new();
-    for (method, placement) in members {
+    for (method, placement, trampoline) in members {
         properties.push(sys::napi_property_descriptor {
             utf8name: ptr::null(),
             name: env.string(method.name)?.raw,
-            method: Some(env::trampoline),
+            method: Some(trampoline),
             getter: None,
             setter: None,
             value: ptr::null_mut(),

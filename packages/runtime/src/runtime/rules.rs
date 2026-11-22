@@ -18,8 +18,11 @@ use crate::runtime::ValueError;
 /// # Errors
 ///
 /// Returns the first rule that the value breaks.
+#[inline]
 pub fn checked<T: ContractType>(value: T) -> Result<T, ValueError> {
-    value.check_rules()?;
+    if T::HAS_RULES {
+        value.check_rules()?;
+    }
     Ok(value)
 }
 
@@ -30,7 +33,11 @@ pub fn checked<T: ContractType>(value: T) -> Result<T, ValueError> {
 ///
 /// Returns the message of the first rule that the value breaks, which is a
 /// bug of the Rust code rather than of the caller.
+#[inline]
 pub fn checked_return<T: ContractType + ?Sized>(value: &T, callable: &str) -> Result<(), String> {
+    if !T::HAS_RULES {
+        return Ok(());
+    }
     value.check_rules().map_err(|violation| {
         format!("{callable}() returned a value that breaks a field rule: {violation}")
     })
