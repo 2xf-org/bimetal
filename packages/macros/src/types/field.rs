@@ -18,6 +18,10 @@ pub(crate) struct ModelField {
     pub(crate) ident: Ident,
     /// The name that hosts write, which rule violations name.
     wire_name: String,
+    /// The field's Rust type, for compile-time `HAS_RULES` checks.
+    ty: TokenStream2,
+    /// Whether the field's inner type is syntactically known to hold no rules.
+    inner_rule_free: bool,
     /// The checks of the rules that the field declares.
     rules: Vec<RuleCall>,
 }
@@ -26,6 +30,11 @@ impl ModelField {
     /// Return the name that hosts write.
     pub(crate) fn wire_name(&self) -> &str {
         &self.wire_name
+    }
+
+    /// Return whether neither this field nor its inner type can hold rules.
+    pub(crate) fn is_rule_free(&self) -> bool {
+        self.rules.is_empty() && self.inner_rule_free
     }
 
     /// Render the statements that check this field's own rules and the rules
@@ -43,10 +52,18 @@ impl ModelField {
                 }
             },
         );
+        let inner = (!self.inner_rule_free).then(|| {
+            let ty = &self.ty;
+            quote! {
+                if <#ty as ::bimetal::ContractType>::HAS_RULES {
+                    ::bimetal::ContractType::check_rules(#value)
+                        .map_err(|violation| violation.in_field(#wire_name))?;
+                }
+            }
+        });
         quote! {
             #(#own)*
-            ::bimetal::ContractType::check_rules(#value)
-                .map_err(|violation| violation.in_field(#wire_name))?;
+            #inner
         }
     }
 }
@@ -191,6 +208,8 @@ pub(crate) fn field_tokens(
         definition,
         ident: ident.clone(),
         wire_name,
+        ty: field.ty.to_token_stream(),
+        inner_rule_free: type_ref::is_known_rule_free(&field.ty),
         rules,
     }))
 }

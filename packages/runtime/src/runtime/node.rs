@@ -21,10 +21,11 @@ mod value;
 
 pub(crate) use callback::callback;
 pub use class::{Class, ClassDescriptor, Method, Registration, instance, object_of, register};
+pub(crate) use env::State;
 pub use env::{CallInfo, Callback, Env};
 pub use error::Error;
 #[doc(hidden)]
 pub use napi_sys::{napi_env, napi_value};
 pub use promise::{Deferred, awaitable, deferred, unref_awaitable};
+pub(crate) use value::{BigIntValue, Gathered, Kind};
 pub use value::{Element, Value};
-pub(crate) use value::{Gathered, Kind};

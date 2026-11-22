@@ -9,7 +9,7 @@
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "ee0d3e23ae5b8180dc714f346400f09a"
+source_fingerprint = "bc9cdc3c8a2fc878ce676ef58974a01f"
 
 # Fingerprint of the published files; lets build and check no-op when current.
 output_fingerprint = "12f34e5a6c9694855cf48b2236738884"

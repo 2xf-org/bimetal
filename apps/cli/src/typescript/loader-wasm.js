@@ -142,7 +142,16 @@ export function checkNative() {
 export function nativePromise(promise) {
   return new Promise((resolve, reject) => {
     pendingCalls.add(reject);
-    promise.then(resolve, reject).finally(() => pendingCalls.delete(reject));
+    promise.then(
+      (value) => {
+        pendingCalls.delete(reject);
+        resolve(value);
+      },
+      (error) => {
+        pendingCalls.delete(reject);
+        reject(error);
+      },
+    );
   });
 }
 

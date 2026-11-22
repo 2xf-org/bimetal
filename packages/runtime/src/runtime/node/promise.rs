@@ -173,7 +173,7 @@ impl Sender {
 
 impl Drop for Sender {
     fn drop(&mut self) {
-        if self.promise.is_none() {
+        if self.promise.is_none() || self.hold != Hold::EventLoop {
             return;
         }
         // A call whose future never finished releases its hold too, so the event

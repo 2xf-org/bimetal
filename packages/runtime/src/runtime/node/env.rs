@@ -7,6 +7,7 @@
 //! never leave the thread, so safe code cannot keep a handle that Node.js
 //! has released.
 
+use std::array;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void};
@@ -117,7 +118,7 @@ pub struct Env<'env> {
 
 /// The values that conversions use in every call, which one environment
 /// keeps from its module initializer on, and each class's constructor.
-pub(super) struct State {
+pub(crate) struct State {
     /// `Map`, `Map.prototype.set`, and `Symbol`.
     map: sys::napi_ref,
     map_set: sys::napi_ref,
@@ -135,6 +136,18 @@ pub(super) struct State {
     pub(super) station: Station,
 }
 
+impl State {
+    /// Return whether `value` is a `Map`.
+    pub(crate) fn is_map<'env>(&self, env: Env<'env>, value: Value<'env>) -> Result<bool, Error> {
+        value.instance_of(env.reference(self.map)?)
+    }
+
+    /// Return `Symbol.iterator`.
+    pub(crate) fn iterator_symbol<'env>(&self, env: Env<'env>) -> Result<Value<'env>, Error> {
+        env.reference(self.symbol)?.named(c"iterator")
+    }
+}
+
 /// A class that the module initializer defined in one environment.
 pub(super) struct DefinedClass {
     /// The address of the class's descriptor, which identifies the class.
@@ -145,41 +158,148 @@ pub(super) struct DefinedClass {
 
 /// A function that Node.js calls through Bimetal: an exported function, or a
 /// resource's constructor, factory, or method.
-pub type Callback = for<'env> fn(CallInfo<'env>) -> Result<Value<'env>, Error>;
+pub type Callback = for<'call, 'env> fn(&'call CallInfo<'call, 'env>) -> Result<Value<'env>, Error>;
 
 /// The arguments, the receiver, and the data of one call into Rust.
-#[derive(Clone, Copy)]
-pub struct CallInfo<'env> {
+pub struct CallInfo<'call, 'env> {
     env: Env<'env>,
     info: sys::napi_callback_info,
+    this: sys::napi_value,
+    arguments: &'call [sys::napi_value],
 }
 
-/// The function that Node.js calls for every [`Callback`], which the data of
-/// the JavaScript function points at.
-pub(super) unsafe extern "C" fn trampoline(
+/// Return the Node-API callback for a free function or factory of `arity`
+/// arguments, unpacking exact arguments and data in one Node-API call.
+pub(super) const fn function_trampoline(
+    arity: usize,
+) -> unsafe extern "C" fn(sys::napi_env, sys::napi_callback_info) -> sys::napi_value {
+    trampoline_for::<false>(arity)
+}
+
+/// Return the Node-API callback for a resource method of `arity` arguments,
+/// unpacking `this`, exact arguments, and data in one Node-API call.
+pub(super) const fn method_trampoline(
+    arity: usize,
+) -> unsafe extern "C" fn(sys::napi_env, sys::napi_callback_info) -> sys::napi_value {
+    trampoline_for::<true>(arity)
+}
+
+const fn trampoline_for<const WITH_THIS: bool>(
+    arity: usize,
+) -> unsafe extern "C" fn(sys::napi_env, sys::napi_callback_info) -> sys::napi_value {
+    match arity {
+        0 => trampoline::<0, WITH_THIS>,
+        1 => trampoline::<1, WITH_THIS>,
+        2 => trampoline::<2, WITH_THIS>,
+        3 => trampoline::<3, WITH_THIS>,
+        4 => trampoline::<4, WITH_THIS>,
+        5 => trampoline::<5, WITH_THIS>,
+        6 => trampoline::<6, WITH_THIS>,
+        7 => trampoline::<7, WITH_THIS>,
+        8 => trampoline::<8, WITH_THIS>,
+        _ => trampoline_many::<WITH_THIS>,
+    }
+}
+
+/// The Node-API callback for [`Callback`]s with `ARGS` fixed arguments,
+/// unpacking `data`, optional `this`, and exact `ARGS` in one call.
+unsafe extern "C" fn trampoline<const ARGS: usize, const WITH_THIS: bool>(
     env: sys::napi_env,
     info: sys::napi_callback_info,
 ) -> sys::napi_value {
     // SAFETY: Node.js calls a callback on the environment's thread, with a
     // scope open until it returns.
     let env = unsafe { Env::new(env) };
-    let call = CallInfo::new(env, info);
     env.run(|| {
-        let data = napi!(
+        let mut count = ARGS;
+        let mut arguments = [ptr::null_mut(); ARGS];
+        let mut this = ptr::null_mut();
+        let mut data = ptr::null_mut();
+        let (argc_ptr, argv_ptr) = if ARGS == 0 {
+            (ptr::null_mut(), ptr::null_mut())
+        } else {
+            (&raw mut count, arguments.as_mut_ptr())
+        };
+        let this_ptr = if WITH_THIS {
+            &raw mut this
+        } else {
+            ptr::null_mut()
+        };
+        napi!(
             env,
-            napi_get_cb_info(info, ptr::null_mut(), ptr::null_mut(), ptr::null_mut()) -> out
+            napi_get_cb_info(info, argc_ptr, argv_ptr, this_ptr, &mut data)
         )?;
+        let call = CallInfo {
+            env,
+            info,
+            this,
+            arguments: &arguments,
+        };
         // SAFETY: Bimetal defines every function and method with a pointer to
         // a `Callback` in a static as its data.
         let callback = unsafe { *data.cast::<Callback>() };
-        callback(call)
+        callback(&call)
     })
 }
 
-impl<'env> CallInfo<'env> {
-    /// The call that Node.js describes with `info`.
-    pub(super) fn new(env: Env<'env>, info: sys::napi_callback_info) -> Self {
-        Self { env, info }
+/// Fallback trampoline for exports with more than 8 arguments; `CallInfo::arguments`
+/// reads the argument list directly.
+unsafe extern "C" fn trampoline_many<const WITH_THIS: bool>(
+    env: sys::napi_env,
+    info: sys::napi_callback_info,
+) -> sys::napi_value {
+    // SAFETY: Node.js calls a callback on the environment's thread, with a
+    // scope open until it returns.
+    let env = unsafe { Env::new(env) };
+    env.run(|| {
+        let mut this = ptr::null_mut();
+        let mut data = ptr::null_mut();
+        let this_ptr = if WITH_THIS {
+            &raw mut this
+        } else {
+            ptr::null_mut()
+        };
+        napi!(
+            env,
+            napi_get_cb_info(info, ptr::null_mut(), ptr::null_mut(), this_ptr, &mut data)
+        )?;
+        let call = CallInfo {
+            env,
+            info,
+            this,
+            arguments: &[],
+        };
+        // SAFETY: Bimetal defines every function and method with a pointer to
+        // a `Callback` in a static as its data.
+        let callback = unsafe { *data.cast::<Callback>() };
+        callback(&call)
+    })
+}
+
+impl<'call, 'env> CallInfo<'call, 'env> {
+    /// Unpack only the receiver `this` of `info` (used by class constructors,
+    /// whose argument count varies).
+    pub(super) fn unpack_receiver(
+        env: Env<'env>,
+        info: sys::napi_callback_info,
+    ) -> Result<CallInfo<'static, 'env>, Error> {
+        let mut this = ptr::null_mut();
+        napi!(
+            env,
+            napi_get_cb_info(
+                info,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut this,
+                ptr::null_mut()
+            )
+        )?;
+        Ok(CallInfo {
+            env,
+            info,
+            this,
+            arguments: &[],
+        })
     }
 
     /// The environment that makes the call.
@@ -195,6 +315,19 @@ impl<'env> CallInfo<'env> {
     ///
     /// Returns [`Error::Pending`] when Node-API cannot read them.
     pub fn arguments<const N: usize>(&self) -> Result<[Value<'env>; N], Error> {
+        if N == 0 {
+            return Ok(array::from_fn(|_| self.env.undefined()));
+        }
+        if self.arguments.len() == N {
+            return Ok(array::from_fn(|index| {
+                let raw = self.arguments[index];
+                if raw.is_null() {
+                    self.env.undefined()
+                } else {
+                    self.env.value(raw)
+                }
+            }));
+        }
         let mut count = N;
         let mut raw = [ptr::null_mut(); N];
         napi!(
@@ -207,23 +340,32 @@ impl<'env> CallInfo<'env> {
                 ptr::null_mut()
             )
         )?;
-        Ok(raw.map(|raw| self.env.value(raw)))
+        Ok(raw.map(|raw| {
+            if raw.is_null() {
+                self.env.undefined()
+            } else {
+                self.env.value(raw)
+            }
+        }))
     }
 
     /// The call's receiver, `this`.
     pub(super) fn receiver(&self) -> Result<Value<'env>, Error> {
-        let mut raw = ptr::null_mut();
+        if !self.this.is_null() {
+            return Ok(self.env.value(self.this));
+        }
+        let mut this = ptr::null_mut();
         napi!(
             self.env,
             napi_get_cb_info(
                 self.info,
                 ptr::null_mut(),
                 ptr::null_mut(),
-                &mut raw,
+                &mut this,
                 ptr::null_mut()
             )
         )?;
-        Ok(self.env.value(raw))
+        Ok(self.env.value(this))
     }
 }
 
@@ -355,6 +497,14 @@ impl<'env> Env<'env> {
         napi!(self, napi_create_double(value) -> value)
     }
 
+    pub(crate) fn int32(self, value: i32) -> Result<Value<'env>, Error> {
+        napi!(self, napi_create_int32(value) -> value)
+    }
+
+    pub(crate) fn uint32(self, value: u32) -> Result<Value<'env>, Error> {
+        napi!(self, napi_create_uint32(value) -> value)
+    }
+
     pub(crate) fn string(self, value: &str) -> Result<Value<'env>, Error> {
         napi!(
             self,
@@ -386,6 +536,10 @@ impl<'env> Env<'env> {
 
     pub(crate) fn array(self) -> Result<Value<'env>, Error> {
         napi!(self, napi_create_array() -> value)
+    }
+
+    pub(crate) fn array_with_length(self, length: usize) -> Result<Value<'env>, Error> {
+        napi!(self, napi_create_array_with_length(length) -> value)
     }
 
     /// Return a new `Map`, and its `set` method.
@@ -453,16 +607,6 @@ impl<'env> Env<'env> {
         napi!(self, napi_run_script(source.raw) -> value)
     }
 
-    /// Return whether `value` is a `Map`.
-    pub(crate) fn is_map(self, value: Value<'env>) -> Result<bool, Error> {
-        value.instance_of(self.reference(self.state()?.map)?)
-    }
-
-    /// Return `Symbol.iterator`.
-    pub(crate) fn iterator_symbol(self) -> Result<Value<'env>, Error> {
-        self.reference(self.state()?.symbol)?.named(c"iterator")
-    }
-
     /// Return a new plain typed array of `T`, never a Node.js `Buffer`, with
     /// a copy of `values`.
     pub(crate) fn typed_array<T: Element>(self, values: &[T]) -> Result<Value<'env>, Error> {
@@ -498,41 +642,83 @@ impl<'env> Env<'env> {
     /// Start the state of this environment, which holds `classes`, with the
     /// values that conversions use.
     pub(super) fn start(self, classes: Vec<DefinedClass>) -> Result<(), Error> {
-        let global = self.global()?;
-        let map = global.named(c"Map")?;
-        let map_set = map.named(c"prototype")?.named(c"set")?;
-        let array_of = self.compile("(function (...values) { return Object.freeze(values); })")?;
-        let map_of = self.compile(
-            "(function (...entries) {\n\
-             \x20 const pairs = [];\n\
-             \x20 for (let index = 0; index < entries.length; index += 2) pairs.push([entries[index], entries[index + 1]]);\n\
-             \x20 return Object.freeze(Object.fromEntries(pairs));\n\
-             })",
-        )?;
-        let state = Box::new(State {
-            map: self.keep(map)?,
-            map_set: self.keep(map_set)?,
-            symbol: self.keep(global.named(c"Symbol")?)?,
-            array_of: self.keep(array_of)?,
-            map_of: self.keep(map_of)?,
-            objects: RefCell::default(),
-            classes,
-            station: Station::start(self)?,
-        });
-        let state = Box::into_raw(state);
+        let mut kept: Vec<sys::napi_ref> = Vec::with_capacity(5);
+        let init = (|| {
+            let global = self.global()?;
+            let map = global.named(c"Map")?;
+            let map_set = map.named(c"prototype")?.named(c"set")?;
+            let symbol = global.named(c"Symbol")?;
+            let array_of =
+                self.compile("(function (...values) { return Object.freeze(values); })")?;
+            let map_of = self.compile(
+                "(function (...entries) {\n\
+                 \x20 const object = {};\n\
+                 \x20 for (let index = 0; index < entries.length; index += 2) {\n\
+                 \x20   const key = entries[index];\n\
+                 \x20   if (key === \"__proto__\") {\n\
+                 \x20     Object.defineProperty(object, key, { value: entries[index + 1], writable: true, enumerable: true, configurable: true });\n\
+                 \x20   } else {\n\
+                 \x20     object[key] = entries[index + 1];\n\
+                 \x20   }\n\
+                 \x20 }\n\
+                 \x20 return Object.freeze(object);\n\
+                 })",
+            )?;
+            let mut keep = |value: Value<'env>| -> Result<sys::napi_ref, Error> {
+                let reference = self.keep(value)?;
+                kept.push(reference);
+                Ok(reference)
+            };
+            let map = keep(map)?;
+            let map_set = keep(map_set)?;
+            let symbol = keep(symbol)?;
+            let array_of = keep(array_of)?;
+            let map_of = keep(map_of)?;
+            let station = Station::start(self)?;
+            Ok(State {
+                map,
+                map_set,
+                symbol,
+                array_of,
+                map_of,
+                objects: RefCell::default(),
+                classes: Vec::new(),
+                station,
+            })
+        })();
+        let mut state = match init {
+            Ok(state) => state,
+            Err(error) => {
+                // SAFETY: every reference in `kept` and `classes` belongs to
+                // this live environment on this thread and is deleted once.
+                unsafe {
+                    for reference in kept {
+                        sys::napi_delete_reference(self.raw, reference);
+                    }
+                    for class in classes {
+                        sys::napi_delete_reference(self.raw, class.constructor);
+                    }
+                }
+                return Err(error);
+            }
+        };
+        state.classes = classes;
+        let state = Box::into_raw(Box::new(state));
         let status = napi!(
             self,
             napi_set_instance_data(state.cast::<c_void>(), Some(drop_state), ptr::null_mut())
         );
         if status.is_err() {
             // SAFETY: Node-API did not take the box, which `into_raw` made.
-            drop(unsafe { Box::from_raw(state) });
+            let state = unsafe { Box::from_raw(state) };
+            // SAFETY: `self.raw` is a live environment on this thread.
+            unsafe { release_state(self.raw, *state) };
         }
         status
     }
 
     /// Return the state of this environment.
-    pub(super) fn state(self) -> Result<&'env State, Error> {
+    pub(crate) fn state(self) -> Result<&'env State, Error> {
         let data = napi!(self, napi_get_instance_data() -> out)?;
         if data.is_null() {
             return Err(Error::Message(
@@ -546,9 +732,35 @@ impl<'env> Env<'env> {
 }
 
 /// Drop the state of an environment that Node.js tears down.
-unsafe extern "C" fn drop_state(_env: sys::napi_env, data: *mut c_void, _hint: *mut c_void) {
+unsafe extern "C" fn drop_state(env: sys::napi_env, data: *mut c_void, _hint: *mut c_void) {
     // SAFETY: `Env::start` gave Node.js this box, which Node.js returns once.
-    drop(unsafe { Box::from_raw(data.cast::<State>()) });
+    let state = unsafe { Box::from_raw(data.cast::<State>()) };
+    // SAFETY: Node.js runs the finalizer on the environment's thread while
+    // `env` can still release its references.
+    unsafe { release_state(env, *state) };
+}
+
+/// Release every Node-API reference held by `state`.
+///
+/// # Safety
+///
+/// Must run on `env`'s JavaScript thread while `env` is still valid for
+/// `napi_delete_reference`.
+unsafe fn release_state(env: sys::napi_env, state: State) {
+    // SAFETY: every reference below belongs to `env` and is deleted once.
+    unsafe {
+        sys::napi_delete_reference(env, state.map);
+        sys::napi_delete_reference(env, state.map_set);
+        sys::napi_delete_reference(env, state.symbol);
+        sys::napi_delete_reference(env, state.array_of);
+        sys::napi_delete_reference(env, state.map_of);
+        for reference in state.objects.into_inner().into_values() {
+            sys::napi_delete_reference(env, reference);
+        }
+        for class in state.classes {
+            sys::napi_delete_reference(env, class.constructor);
+        }
+    }
 }
 
 /// The length of a string as Node-API takes it.

@@ -37,21 +37,13 @@ export function interest(balance, percent) {
   $checkNative();
   $checkArgument(balance, "bigint", "interest(): argument `balance`");
   $checkArgument(percent, "bigint", "interest(): argument `percent`");
-  try {
-    return $native["__bimetal_function_bank_e16e7e02e9a99546"](balance, percent);
-  } catch ($error) {
-    throw $nativeError($error);
-  }
+  return $native["__bimetal_function_bank_e16e7e02e9a99546"](balance, percent);
 }
 
 export class Account {
   constructor() {
     $checkNative();
-    try {
-      this.nativeResource = new $native["__bimetal_resource_bank_60c7feeed136b286"]();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource = new $native["__bimetal_resource_bank_60c7feeed136b286"]();
   }
 
   static $wrap(native) {
@@ -63,11 +55,7 @@ export class Account {
   deposit(amount) {
     $checkNative();
     $checkArgument(amount, "number", "Account.deposit(): argument `amount`");
-    try {
-      this.nativeResource.deposit(amount);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    this.nativeResource.deposit(amount);
   }
 
   withdraw(amount) {
@@ -82,11 +70,7 @@ export class Account {
 
   balance() {
     $checkNative();
-    try {
-      return this.nativeResource.balance();
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return this.nativeResource.balance();
   }
 
   close() {
@@ -134,11 +118,7 @@ export class Bank {
   async receipts(count) {
     $checkNative();
     $checkArgument(count, "number", "Bank.receipts(): argument `count`");
-    try {
-      return $restoreHost(await $nativePromise(this.nativeResource.receipts(count)), $spec3);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $restoreHost(await $nativePromise(this.nativeResource.receipts(count)), $spec3);
   }
 
   async withdraw(owner, amount) {
@@ -154,20 +134,12 @@ export class Bank {
 
   statement() {
     $checkNative();
-    try {
-      return $restoreHost(this.nativeResource.statement(), $spec4);
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $restoreHost(this.nativeResource.statement(), $spec4);
   }
 
   ledger() {
     $checkNative();
-    try {
-      return $arrowFromIpc(this.nativeResource.ledger(), "table");
-    } catch ($error) {
-      throw $nativeError($error);
-    }
+    return $arrowFromIpc(this.nativeResource.ledger(), "table");
   }
 
   close() {

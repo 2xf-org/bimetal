@@ -201,7 +201,10 @@ def describe(event: Event) -> str:
     """
     Describe an event.
     """
-    bimetal_result: str = BIMETAL_DESCRIBE_NATIVE(BIMETAL_ADAPTER_4.dump(event))
+    try:
+        bimetal_result: str = BIMETAL_DESCRIBE_NATIVE(event)
+    except bimetal.Revalidate:
+        bimetal_result = BIMETAL_DESCRIBE_NATIVE(bimetal.Dumped(BIMETAL_ADAPTER_4.dump(event)))
     return bimetal_result
 
 
@@ -291,7 +294,13 @@ def finish(strokes: list[Stroke], last: Stroke = bimetal.type_adapter(Stroke).va
     """
     End a drawing with `last`, which lifts the pen unless the caller says otherwise.
     """
-    bimetal_result: list[Stroke] = BIMETAL_FINISH_NATIVE(BIMETAL_ADAPTER_10.dump(strokes), BIMETAL_ADAPTER_0.dump(last))
+    try:
+        bimetal_result: list[Stroke] = BIMETAL_FINISH_NATIVE(strokes, last)
+    except bimetal.Revalidate:
+        bimetal_result = BIMETAL_FINISH_NATIVE(
+            bimetal.Dumped(BIMETAL_ADAPTER_10.dump(strokes)),
+            bimetal.Dumped(BIMETAL_ADAPTER_0.dump(last)),
+        )
     return bimetal_result
 
 
@@ -424,7 +433,10 @@ def retrace(strokes: list[Stroke]) -> list[Stroke]:
     """
     Return strokes in the opposite order.
     """
-    bimetal_result: list[Stroke] = BIMETAL_RETRACE_NATIVE(BIMETAL_ADAPTER_10.dump(strokes))
+    try:
+        bimetal_result: list[Stroke] = BIMETAL_RETRACE_NATIVE(strokes)
+    except bimetal.Revalidate:
+        bimetal_result = BIMETAL_RETRACE_NATIVE(bimetal.Dumped(BIMETAL_ADAPTER_10.dump(strokes)))
     return bimetal_result
 
 

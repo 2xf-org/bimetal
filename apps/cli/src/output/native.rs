@@ -55,14 +55,13 @@ struct Artifact {
 impl Artifact {
     /// Describe the file that Bimetal installed at `path`.
     fn installed(project_root: &Path, path: &Path) -> Result<Self> {
-        let contents =
-            fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+        let content_fingerprint = fingerprint::file_fingerprint(path)?;
         let metadata = fs::metadata(path)?;
         Ok(Self {
             path: paths::portable_relative(project_root, path)?,
             size: metadata.len(),
             mtime: metadata.modified()?,
-            content_fingerprint: fingerprint::content_fingerprint(&contents),
+            content_fingerprint,
         })
     }
 
@@ -78,9 +77,7 @@ impl Artifact {
         if metadata.len() == self.size && metadata.modified()? == self.mtime {
             return Ok(true);
         }
-        let contents =
-            fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-        Ok(fingerprint::content_fingerprint(&contents) == self.content_fingerprint)
+        Ok(fingerprint::file_fingerprint(path)? == self.content_fingerprint)
     }
 }
 

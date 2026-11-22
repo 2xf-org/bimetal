@@ -144,7 +144,16 @@ export function checkNative() {
 export function nativePromise(promise) {
   return new Promise((resolve, reject) => {
     pendingCalls.add(reject);
-    promise.then(resolve, reject).finally(() => pendingCalls.delete(reject));
+    promise.then(
+      (value) => {
+        pendingCalls.delete(reject);
+        resolve(value);
+      },
+      (error) => {
+        pendingCalls.delete(reject);
+        reject(error);
+      },
+    );
   });
 }
 
@@ -162,6 +171,7 @@ function prepareJson(value) {
     return value;
   }
   if (typeof value === "bigint" || value == null || typeof value !== "object") return value;
+  if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return prepareItems(value, prepareJson);
   return prepareEntries(value, prepareJson);
 }
@@ -219,9 +229,8 @@ function defineEntry(target, key, item) {
 export function prepareHost(value, spec = null) {
   // A scalar crosses as it is, and Rust names a value of the wrong type.
   if (value == null || spec == null) return value;
-  if (value instanceof Date) return value.toISOString();
-  if (ArrayBuffer.isView(value)) return value;
   const kind = spec[0];
+  if (kind === "date") return value instanceof Date ? value.toISOString() : value;
   if (kind === "json") return prepareJson(value);
   // A duration is its nanoseconds here, and Serde reads `{secs, nanos}`.
   // Rust names the argument that holds anything else.
@@ -233,7 +242,7 @@ export function prepareHost(value, spec = null) {
   if (kind === "alias") return prepareHost(value, spec[1]);
   // A value of the wrong shape crosses as it is, and Rust names what it
   // expected there.
-  if (typeof value !== "object") return value;
+  if (typeof value !== "object" || ArrayBuffer.isView(value)) return value;
   if (kind === "list" || kind === "tuple") {
     const detail = spec[1];
     // A list of scalars needs nothing but to be an array.
@@ -320,12 +329,16 @@ const bufferConstructors = {
   float32: Float32Array, float64: Float64Array,
 };
 
-// Rust maps arrive as `Map`s, and constants as objects. `Object.fromEntries`
-// defines an own property for every key, also `__proto__`, which assigning
-// would treat as the prototype.
+// Rust maps arrive as `Map`s (on Wasm) or plain objects (on the addon), and
+// constants as objects. `defineEntry` keeps `__proto__` as an own property.
 function restoreEntries(value, restore) {
-  const entries = value instanceof Map ? value : Object.entries(value);
-  return Object.freeze(Object.fromEntries(Array.from(entries, ([key, item]) => [key, restore(item)])));
+  const target = {};
+  if (value instanceof Map) {
+    for (const [key, item] of value) defineEntry(target, key, restore(item));
+  } else {
+    for (const key of Object.keys(value)) defineEntry(target, key, restore(value[key]));
+  }
+  return Object.freeze(target);
 }
 
 // Restore the items of an array that Rust made, in place unless it is frozen,
@@ -347,7 +360,7 @@ function restoreFields(value, fields) {
       for (const key of Object.keys(value)) defineEntry(target, key, value[key]);
     }
     for (const [key, spec] of restored) {
-      if (Object.hasOwn(target, key)) target[key] = restoreHost(target[key], spec);
+      if (Object.hasOwn(target, key)) defineEntry(target, key, restoreHost(target[key], spec));
     }
   }
   return Object.freeze(target);

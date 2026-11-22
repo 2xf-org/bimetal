@@ -10,7 +10,7 @@ use bimetal_ir::BufferElement;
 use napi_sys as sys;
 
 use super::env::{Env, napi};
-use super::error::Error;
+use super::error::{self, Error};
 
 /// A JavaScript value of one environment, during one call into Rust.
 #[derive(Clone, Copy)]
@@ -86,6 +86,16 @@ pub(crate) enum Kind {
     Object,
     Function,
     External,
+}
+
+/// Result of attempting to read a JavaScript value directly as a 64-bit BigInt.
+pub(crate) enum BigIntValue<T> {
+    /// The value is not a `BigInt`.
+    NotBigInt,
+    /// The value is a `BigInt` outside `T`'s range.
+    OutOfRange,
+    /// The exact integer value.
+    Value(T),
 }
 
 /// The element type of a typed array.
@@ -164,12 +174,71 @@ impl<'env> Value<'env> {
         napi!(self.env, napi_get_value_bool(self.raw) -> out)
     }
 
+    /// Read a boolean in one Node-API call, returning `None` for other types.
+    pub(crate) fn try_bool(self) -> Result<Option<bool>, Error> {
+        let mut out = false;
+        // SAFETY: `self.env.raw` is a live environment on this thread and
+        // `self.raw` is a handle in its current scope.
+        let status = unsafe { sys::napi_get_value_bool(self.env.raw, self.raw, &mut out) };
+        if status == sys::Status::napi_boolean_expected {
+            return Ok(None);
+        }
+        error::check(self.env.raw, status)?;
+        Ok(Some(out))
+    }
+
     pub(crate) fn as_f64(self) -> Result<f64, Error> {
         napi!(self.env, napi_get_value_double(self.raw) -> out)
     }
 
+    /// Read a number in one Node-API call, returning `None` for other types.
+    pub(crate) fn try_f64(self) -> Result<Option<f64>, Error> {
+        let mut out = 0.0;
+        // SAFETY: `self.env.raw` is a live environment on this thread and
+        // `self.raw` is a handle in its current scope.
+        let status = unsafe { sys::napi_get_value_double(self.env.raw, self.raw, &mut out) };
+        if status == sys::Status::napi_number_expected {
+            return Ok(None);
+        }
+        error::check(self.env.raw, status)?;
+        Ok(Some(out))
+    }
+
     /// Read a string as UTF-8, with every lone surrogate replaced.
     pub(crate) fn as_string(self) -> Result<String, Error> {
+        self.try_string()?
+            .ok_or_else(|| Error::Message("expected a string".to_owned()))
+    }
+
+    /// Read a string as UTF-8 in one Node-API call for short strings, returning
+    /// `None` for non-strings without a separate `napi_typeof` call.
+    pub(crate) fn try_string(self) -> Result<Option<String>, Error> {
+        // Short strings finish in one Node-API call; a 4-byte margin rules out
+        // truncation before a multi-byte UTF-8 sequence.
+        let mut stack = [0_u8; 256];
+        let mut written = 0;
+        // SAFETY: `self.env.raw` is a live environment on this thread and
+        // `self.raw` is a handle in its current scope.
+        let status = unsafe {
+            sys::napi_get_value_string_utf8(
+                self.env.raw,
+                self.raw,
+                stack.as_mut_ptr().cast::<c_char>(),
+                stack.len(),
+                &mut written,
+            )
+        };
+        if status == sys::Status::napi_string_expected {
+            return Ok(None);
+        }
+        error::check(self.env.raw, status)?;
+        if written + 4 < stack.len() {
+            let bytes = &stack[..written];
+            return Ok(Some(match std::str::from_utf8(bytes) {
+                Ok(text) => text.to_owned(),
+                Err(_) => String::from_utf8_lossy(bytes).into_owned(),
+            }));
+        }
         let length = napi!(
             self.env,
             napi_get_value_string_utf8(self.raw, ptr::null_mut(), 0) -> out
@@ -186,8 +255,9 @@ impl<'env> Value<'env> {
         // SAFETY: Node-API wrote `written` bytes, at most `length`, and a NUL
         // after them into the vector's capacity of `length + 1`.
         unsafe { bytes.set_len(written.min(length)) };
-        Ok(String::from_utf8(bytes)
-            .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned()))
+        Ok(Some(String::from_utf8(bytes).unwrap_or_else(|error| {
+            String::from_utf8_lossy(error.as_bytes()).into_owned()
+        })))
     }
 
     /// Read a string's UTF-16 code units.
@@ -217,6 +287,27 @@ impl<'env> Value<'env> {
         Ok(lossless.then_some(value))
     }
 
+    /// Read a bigint as an `i64` in one Node-API call without a separate
+    /// `napi_typeof` check.
+    pub(crate) fn try_i64(self) -> Result<BigIntValue<i64>, Error> {
+        let mut value = 0;
+        let mut lossless = false;
+        // SAFETY: `self.env.raw` is a live environment on this thread and
+        // `self.raw` is a handle in its current scope.
+        let status = unsafe {
+            sys::napi_get_value_bigint_int64(self.env.raw, self.raw, &mut value, &mut lossless)
+        };
+        if status == sys::Status::napi_bigint_expected {
+            return Ok(BigIntValue::NotBigInt);
+        }
+        error::check(self.env.raw, status)?;
+        Ok(if lossless {
+            BigIntValue::Value(value)
+        } else {
+            BigIntValue::OutOfRange
+        })
+    }
+
     /// Read a bigint that fits in a `u64`.
     pub(crate) fn as_u64(self) -> Result<Option<u64>, Error> {
         let mut value = 0;
@@ -226,6 +317,27 @@ impl<'env> Value<'env> {
             napi_get_value_bigint_uint64(self.raw, &mut value, &mut lossless)
         )?;
         Ok(lossless.then_some(value))
+    }
+
+    /// Read a bigint as a `u64` in one Node-API call without a separate
+    /// `napi_typeof` check.
+    pub(crate) fn try_u64(self) -> Result<BigIntValue<u64>, Error> {
+        let mut value = 0;
+        let mut lossless = false;
+        // SAFETY: `self.env.raw` is a live environment on this thread and
+        // `self.raw` is a handle in its current scope.
+        let status = unsafe {
+            sys::napi_get_value_bigint_uint64(self.env.raw, self.raw, &mut value, &mut lossless)
+        };
+        if status == sys::Status::napi_bigint_expected {
+            return Ok(BigIntValue::NotBigInt);
+        }
+        error::check(self.env.raw, status)?;
+        Ok(if lossless {
+            BigIntValue::Value(value)
+        } else {
+            BigIntValue::OutOfRange
+        })
     }
 
     /// Read a bigint as its sign and its 64-bit words, the least significant

@@ -33,6 +33,7 @@ pub(super) fn function(
         body,
     } = wrapper::plan_free(signature, backend, &quote!(self::#function_ident));
     let arguments = arguments(signature);
+    let arity = arguments.len();
     quote! {
         ::bimetal::__node_items! {
             #[allow(
@@ -47,7 +48,7 @@ pub(super) fn function(
             }
 
             fn #callback_ident<'env>(
-                __bimetal_call: ::bimetal::runtime::node::CallInfo<'env>,
+                __bimetal_call: &::bimetal::runtime::node::CallInfo<'_, 'env>,
             ) -> ::std::result::Result<
                 ::bimetal::runtime::node::Value<'env>,
                 ::bimetal::runtime::node::Error,
@@ -60,6 +61,7 @@ pub(super) fn function(
                 ::bimetal::runtime::node::Registration::Function(::bimetal::runtime::node::Method {
                     name: #native_name,
                     call: #callback_ident,
+                    arity: #arity,
                 })
             }
         }
@@ -95,6 +97,7 @@ pub(super) fn resource(
             body,
         } = member.wrapper(resource_ty, resource_name, HostBackend::Node);
         let arguments = arguments(&member.signature);
+        let arity = arguments.len();
         let callee = match member.role {
             Role::Constructor | Role::Factory => quote!(Self::#ident),
             Role::Method(_) => quote!(__bimetal_call.this::<Self>()?.#ident),
@@ -116,7 +119,7 @@ pub(super) fn resource(
 
             #(#gates)*
             fn #callback_ident<'env>(
-                __bimetal_call: ::bimetal::runtime::node::CallInfo<'env>,
+                __bimetal_call: &::bimetal::runtime::node::CallInfo<'_, 'env>,
             ) -> ::std::result::Result<
                 ::bimetal::runtime::node::Value<'env>,
                 ::bimetal::runtime::node::Error,
@@ -131,6 +134,7 @@ pub(super) fn resource(
             ::bimetal::runtime::node::Method {
                 name: #host_name,
                 call: #wrapper_ident::#callback_ident,
+                arity: #arity,
             }
         };
         match member.role {
@@ -152,7 +156,7 @@ pub(super) fn resource(
                 #(#members)*
 
                 fn __bimetal_close<'env>(
-                    __bimetal_call: ::bimetal::runtime::node::CallInfo<'env>,
+                    __bimetal_call: &::bimetal::runtime::node::CallInfo<'_, 'env>,
                 ) -> ::std::result::Result<
                     ::bimetal::runtime::node::Value<'env>,
                     ::bimetal::runtime::node::Error,
@@ -162,7 +166,7 @@ pub(super) fn resource(
                 }
 
                 fn __bimetal_closed<'env>(
-                    __bimetal_call: ::bimetal::runtime::node::CallInfo<'env>,
+                    __bimetal_call: &::bimetal::runtime::node::CallInfo<'_, 'env>,
                 ) -> ::std::result::Result<
                     ::bimetal::runtime::node::Value<'env>,
                     ::bimetal::runtime::node::Error,
@@ -212,10 +216,12 @@ pub(super) fn resource(
                         ::bimetal::runtime::node::Method {
                             name: #close,
                             call: #wrapper_ident::__bimetal_close,
+                            arity: 0,
                         },
                         ::bimetal::runtime::node::Method {
                             name: #closed,
                             call: #wrapper_ident::__bimetal_closed,
+                            arity: 0,
                         },
                     ],
                 );

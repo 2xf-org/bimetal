@@ -27,6 +27,11 @@ pub trait ContractType {
     #[doc(hidden)]
     const SEQUENCE: Option<&'static str> = None;
 
+    /// Whether this type or a value inside it may hold a field rule.
+    /// Containers skip walking their items when false.
+    #[doc(hidden)]
+    const HAS_RULES: bool = false;
+
     /// How a whole parameter or return value of this type crosses:
     /// [`crossing::Resource`] for a resource, and [`crossing::Serde`] for
     /// every other type, including an `Option` or a `Vec` of resources, which
@@ -207,6 +212,7 @@ impl ContractType for Value {
 
 impl<T: ContractType> ContractType for Option<T> {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -218,12 +224,16 @@ impl<T: ContractType> ContractType for Option<T> {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         self.as_ref().map_or(Ok(()), ContractType::check_rules)
     }
 }
 
 impl<T: ContractType> ContractType for Vec<T> {
     const SEQUENCE: Option<&'static str> = Some("a list");
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -235,12 +245,16 @@ impl<T: ContractType> ContractType for Vec<T> {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         self.as_slice().check_rules()
     }
 }
 
 impl<T: ContractType> ContractType for [T] {
     const SEQUENCE: Option<&'static str> = Some("a list");
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -252,6 +266,9 @@ impl<T: ContractType> ContractType for [T] {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         for (index, item) in self.iter().enumerate() {
             item.check_rules()
                 .map_err(|violation| violation.at_index(index))?;
@@ -261,6 +278,8 @@ impl<T: ContractType> ContractType for [T] {
 }
 
 impl<T: ContractType> ContractType for BTreeMap<String, T> {
+    const HAS_RULES: bool = T::HAS_RULES;
+
     type Crossing = crossing::Serde;
 
     fn type_ref() -> TypeRef {
@@ -271,11 +290,16 @@ impl<T: ContractType> ContractType for BTreeMap<String, T> {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         check_map_rules(self)
     }
 }
 
 impl<T: ContractType, S: BuildHasher> ContractType for HashMap<String, T, S> {
+    const HAS_RULES: bool = T::HAS_RULES;
+
     type Crossing = crossing::Serde;
 
     fn type_ref() -> TypeRef {
@@ -286,6 +310,9 @@ impl<T: ContractType, S: BuildHasher> ContractType for HashMap<String, T, S> {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         check_map_rules(self)
     }
 }
@@ -306,6 +333,7 @@ fn check_map_rules<'a, T: ContractType + 'a>(
 
 impl<T: ContractType + ?Sized> ContractType for &T {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -315,6 +343,9 @@ impl<T: ContractType + ?Sized> ContractType for &T {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         (**self).check_rules()
     }
 }
@@ -347,6 +378,7 @@ impl ContractType for Duration {
 // Serde writes an array as a tuple of its items.
 impl<T: ContractType, const N: usize> ContractType for [T; N] {
     const SEQUENCE: Option<&'static str> = Some("a tuple");
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -358,6 +390,9 @@ impl<T: ContractType, const N: usize> ContractType for [T; N] {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         for (index, item) in self.iter().enumerate() {
             item.check_rules()
                 .map_err(|violation| violation.at_index(index))?;
@@ -370,6 +405,7 @@ impl<T: ContractType, const N: usize> ContractType for [T; N] {
 // large enum variant.
 impl<T: ContractType + ?Sized> ContractType for Box<T> {
     const SEQUENCE: Option<&'static str> = T::SEQUENCE;
+    const HAS_RULES: bool = T::HAS_RULES;
 
     type Crossing = crossing::Serde;
 
@@ -379,6 +415,9 @@ impl<T: ContractType + ?Sized> ContractType for Box<T> {
 
     #[inline]
     fn check_rules(&self) -> Result<(), ValueError> {
+        if !Self::HAS_RULES {
+            return Ok(());
+        }
         (**self).check_rules()
     }
 }
@@ -387,6 +426,7 @@ macro_rules! tuple {
     ($($index:tt $name:ident),+) => {
         impl<$($name: ContractType),+> ContractType for ($($name,)+) {
             const SEQUENCE: Option<&'static str> = Some("a tuple");
+            const HAS_RULES: bool = $($name::HAS_RULES)||+;
 
             type Crossing = crossing::Serde;
 
@@ -398,6 +438,9 @@ macro_rules! tuple {
 
             #[inline]
             fn check_rules(&self) -> Result<(), ValueError> {
+                if !Self::HAS_RULES {
+                    return Ok(());
+                }
                 $(
                     self.$index
                         .check_rules()
@@ -443,5 +486,41 @@ pub mod crossing {
 
     impl Crossing for Resource {
         const RESOURCE: bool = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Ruled;
+
+    impl ContractType for Ruled {
+        const HAS_RULES: bool = true;
+        type Crossing = crossing::Serde;
+
+        fn type_ref() -> TypeRef {
+            TypeRef::Unit
+        }
+    }
+
+    #[test]
+    fn has_rules_propagates_through_containers() {
+        fn has_rules<T: ContractType>() -> bool {
+            T::HAS_RULES
+        }
+
+        assert!(!has_rules::<u32>());
+        assert!(!has_rules::<String>());
+        assert!(!has_rules::<Vec<String>>());
+        assert!(!has_rules::<BTreeMap<String, Option<(u8, String)>>>());
+        assert!(has_rules::<Ruled>());
+        assert!(has_rules::<Option<Ruled>>());
+        assert!(has_rules::<Vec<Ruled>>());
+        assert!(has_rules::<BTreeMap<String, Ruled>>());
+        assert!(has_rules::<HashMap<String, Ruled>>());
+        assert!(has_rules::<(u32, Ruled)>());
+        assert!(has_rules::<[Ruled; 2]>());
+        assert!(has_rules::<Box<Ruled>>());
     }
 }

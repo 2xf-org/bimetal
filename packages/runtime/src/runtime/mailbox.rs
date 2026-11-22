@@ -101,18 +101,35 @@ impl Mailbox {
                 closed.push(owner.as_ptr());
             }
         }
-        let removed: Vec<Entry> = {
+        let (mailbox, duplicate, removed): (Arc<Self>, Option<Arc<Self>>, Vec<Entry>) = {
             let mut mailboxes = MAILBOXES.lock().expect(UNPOISONED_MAILBOXES);
             let (removed, kept) = mem::take(&mut *mailboxes).into_iter().partition(|entry| {
                 !entry.mailbox.process.is_current() || closed.contains(&entry.event_loop.as_ptr())
             });
             *mailboxes = kept;
-            mailboxes.push(Entry {
-                event_loop: event_loop.clone().unbind(),
-                mailbox: Arc::clone(&mailbox),
-            });
-            removed
+            if let Some(existing) = mailboxes.iter().find(|entry| {
+                entry.event_loop.as_ptr() == event_loop.as_ptr()
+                    && entry.mailbox.process.is_current()
+            }) {
+                (Arc::clone(&existing.mailbox), Some(mailbox), removed)
+            } else {
+                mailboxes.push(Entry {
+                    event_loop: event_loop.clone().unbind(),
+                    mailbox: Arc::clone(&mailbox),
+                });
+                (mailbox, None, removed)
+            }
         };
+        #[cfg(unix)]
+        if let Some(unused) = duplicate
+            && let Wake::Socket { reader, .. } = &unused.wake
+        {
+            use std::os::fd::AsRawFd;
+
+            let _ = event_loop.call_method1(intern!(py, "remove_reader"), (reader.as_raw_fd(),));
+        }
+        #[cfg(not(unix))]
+        drop(duplicate);
         // Dropping a loop may run Python code, so it happens past the lock.
         for entry in removed {
             if !entry.mailbox.process.is_current() {

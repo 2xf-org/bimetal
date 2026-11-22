@@ -219,8 +219,13 @@ impl CancelOnDone {
 impl CancelOnDone {
     fn __call__(&self, future: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = future.py();
+        // Normal settlement empties `target` first, skipping `future.cancelled()`.
+        // Taking unconditionally also breaks reference cycles if completed externally.
+        if self.target.take(py).is_none() {
+            return Ok(());
+        }
         if future.call_method0(intern!(py, "cancelled"))?.is_truthy()? {
-            self.cancel(py);
+            self.task.abort();
         }
         Ok(())
     }

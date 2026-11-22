@@ -108,6 +108,52 @@ pub(crate) fn scalar_name(ty: &SynType) -> Option<String> {
         .then(|| segment.ident.to_string())
 }
 
+/// Return whether `ty` is syntactically known to never hold field rules
+/// (primitives, `String`, unit, and standard containers of them).
+pub(crate) fn is_known_rule_free(ty: &SynType) -> bool {
+    match ty {
+        SynType::Reference(reference) => is_known_rule_free(&reference.elem),
+        SynType::Slice(slice) => is_known_rule_free(&slice.elem),
+        SynType::Array(array) => is_known_rule_free(&array.elem),
+        SynType::Tuple(tuple) => tuple.elems.iter().all(is_known_rule_free),
+        SynType::Group(group) => is_known_rule_free(&group.elem),
+        SynType::Paren(paren) => is_known_rule_free(&paren.elem),
+        SynType::Path(_) => {
+            if let Some(name) = scalar_name(ty) {
+                return matches!(
+                    name.as_str(),
+                    "bool"
+                        | "i8"
+                        | "i16"
+                        | "i32"
+                        | "i64"
+                        | "isize"
+                        | "u8"
+                        | "u16"
+                        | "u32"
+                        | "u64"
+                        | "usize"
+                        | "f32"
+                        | "f64"
+                        | "String"
+                        | "str"
+                );
+            }
+            if let Some(item) = option_item(ty).or_else(|| vec_item(ty)) {
+                return is_known_rule_free(item);
+            }
+            if let Some(item) = std_segment(ty, "boxed")
+                .filter(|segment| segment.ident == "Box")
+                .and_then(single_type_argument)
+            {
+                return is_known_rule_free(item);
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 /// Return whether a type is `u8`.
 pub(crate) fn is_u8(ty: &SynType) -> bool {
     scalar_name(ty).is_some_and(|name| name == "u8")

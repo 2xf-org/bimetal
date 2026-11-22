@@ -9,9 +9,7 @@ use std::fmt::Write;
 
 use anyhow::Result;
 use bimetal_ir::python_names;
-use bimetal_ir::{
-    CallableDef, ErrorDef, MethodDef, ParamDef, Protocol, ResourceDef, TypeRef, TypeShape,
-};
+use bimetal_ir::{CallableDef, ErrorDef, MethodDef, ParamDef, Protocol, ResourceDef, TypeRef};
 
 use crate::contract::{self, Contract, NamespaceItems};
 use crate::documentation::{CallableDocumentation, CallableReturn};
@@ -1111,22 +1109,10 @@ fn python_host_argument(
     if python_reads_directly(&param.ty) {
         return Ok((name.to_owned(), name.to_owned()));
     }
-    // The extension cannot read a buffer, or an enum with data, as Python holds it.
-    let unread = context.contract.reaches(&param.ty, |item| match item {
-        TypeRef::Buffer { .. } => true,
-        TypeRef::Named { identity } => {
-            context
-                .contract
-                .type_definition(identity)
-                .is_ok_and(|definition| {
-                    matches!(
-                        definition.shape,
-                        TypeShape::TaggedEnum { .. } | TypeShape::ExternalEnum { .. }
-                    )
-                })
-        }
-        _ => false,
-    })?;
+    // The extension cannot read a numeric buffer as Python holds it.
+    let unread = context
+        .contract
+        .reaches(&param.ty, |item| matches!(item, TypeRef::Buffer { .. }))?;
     let natively = !unread && render::python_reads_natively(&param.ty, context.contract)?;
     let dump = format!(
         "{}.dump({name})",

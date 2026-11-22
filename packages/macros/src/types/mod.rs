@@ -23,5 +23,7 @@ pub(crate) use direct::DirectType;
 pub(crate) use field::{ModelField, field_bindings, field_tokens};
 pub(crate) use field_options::FieldOptions;
 pub(crate) use native_name::native_export_name;
-pub(crate) use type_ref::{SelfToPath, bytes_boundary, type_last_ident, type_ref_tokens};
+pub(crate) use type_ref::{
+    SelfToPath, bytes_boundary, is_known_rule_free, type_last_ident, type_ref_tokens,
+};
 pub(crate) use validation::{ensure_public, reject_generics, reject_reserved_resource_method};

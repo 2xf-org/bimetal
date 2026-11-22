@@ -84,16 +84,37 @@ fn write(schema: &Schema, batches: &[RecordBatch]) -> Result<Vec<u8>, ArrowError
     // Reserving the stream's size keeps the vector from growing: Wasm memory
     // never shrinks, so every smaller buffer would stay in the peak.
     let data: usize = batches.iter().map(stream_size).sum();
-    let mut writer = StreamWriter::try_new(Vec::with_capacity(data + STREAM_OVERHEAD), schema)?;
+    let reserve = data.saturating_add(schema_overhead(schema));
+    let mut writer = StreamWriter::try_new(Vec::with_capacity(reserve), schema)?;
     for batch in batches {
         writer.write(batch)?;
     }
     writer.into_inner()
 }
 
-/// More than the bytes that the stream adds to its batches' data: the
-/// schema, each message's header, and the end marker.
-const STREAM_OVERHEAD: usize = 64 << 10;
+/// Reserve room for the schema message, per-field FlatBuffers metadata, and
+/// the end marker, scaled to `schema` instead of over-allocating for tiny
+/// batches.
+fn schema_overhead(schema: &Schema) -> usize {
+    let metadata: usize = schema
+        .metadata()
+        .iter()
+        .map(|(key, value)| key.len() + value.len() + 32)
+        .sum();
+    let fields: usize = schema
+        .fields()
+        .iter()
+        .map(|field| {
+            let field_metadata: usize = field
+                .metadata()
+                .iter()
+                .map(|(key, value)| key.len() + value.len() + 32)
+                .sum();
+            field.name().len() + field_metadata + 512
+        })
+        .sum();
+    2048_usize.saturating_add(metadata).saturating_add(fields)
+}
 
 /// Return at least the bytes of a batch's message: the data of its columns'
 /// slices, each buffer padded to the writer's 64-byte alignment.

@@ -1895,20 +1895,20 @@ function __wbg_get_imports() {
             const ret = new Map();
             return ret;
         },
-        __wbg_new_a2050d34fd47fd8a: function(arg0, arg1) {
-            const ret = new TypeError(getStringFromWasm0(arg0, arg1));
-            return ret;
-        },
-        __wbg_new_c57d8309f2fd1402: function(arg0, arg1) {
-            const ret = new RangeError(getStringFromWasm0(arg0, arg1));
-            return ret;
-        },
         __wbg_new_cd45aabdf6073e84: function(arg0) {
             const ret = new Uint8Array(arg0);
             return ret;
         },
         __wbg_new_da52cf8fe3429cb2: function() {
             const ret = new Object();
+            return ret;
+        },
+        __wbg_new_df25f1ae4e13f8f8: function(arg0, arg1) {
+            const ret = new TypeError(getStringFromWasm0(arg0, arg1));
+            return ret;
+        },
+        __wbg_new_f7c91534371a9e35: function(arg0, arg1) {
+            const ret = new RangeError(getStringFromWasm0(arg0, arg1));
             return ret;
         },
         __wbg_new_from_slice_77cdfb7977362f3c: function(arg0, arg1) {

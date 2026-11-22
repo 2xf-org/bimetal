@@ -338,6 +338,10 @@ fn emit_typescript_native_call(
     }
     // The sources of stream arguments that a failed call never started.
     let takes_streams = params.iter().any(|param| param.ty == contract::STREAM);
+    if error.is_none() && !takes_streams {
+        let _ = writeln!(source, "{indent}{statement}");
+        return Ok(());
+    }
     let close_sources = if takes_streams {
         let _ = writeln!(source, "{indent}const {SOURCES} = [];");
         format!("{indent}  {}({SOURCES});\n", context.arrow("closeSources"))
@@ -712,7 +716,7 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
                 ),
                 // Once `checkArgument` checked its outer type, the module reads such
                 // a value as it is.
-                reference if reads_directly(reference) => name,
+                reference if reads_directly(reference, context.contract) => name,
                 reference => format!(
                     "{}({name}, {})",
                     context.runtime("prepareHost"),
@@ -727,23 +731,48 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
 /// Whether the module reads an argument of this type as JavaScript holds it,
 /// so that `prepareHost` would return it unchanged. A `Date`, a duration, JSON
 /// and every object go through `prepareHost`.
-fn reads_directly(reference: &TypeRef) -> bool {
-    contract::nodes(reference).all(|item| {
-        matches!(
-            item,
-            TypeRef::Bool
-                | TypeRef::Int { .. }
-                | TypeRef::Float { .. }
-                | TypeRef::String
-                | TypeRef::Date
-                | TypeRef::Bytes
-                | TypeRef::FixedBytes { .. }
-                | TypeRef::Buffer { .. }
-                | TypeRef::Option { .. }
-                | TypeRef::List { .. }
-                | TypeRef::Tuple { .. }
-        )
+fn reads_directly(reference: &TypeRef, contract: &Contract<'_>) -> bool {
+    contract::nodes(reference).all(|item| match item {
+        TypeRef::Bool
+        | TypeRef::Int { .. }
+        | TypeRef::Float { .. }
+        | TypeRef::String
+        | TypeRef::Date
+        | TypeRef::Bytes
+        | TypeRef::FixedBytes { .. }
+        | TypeRef::Buffer { .. }
+        | TypeRef::Option { .. }
+        | TypeRef::List { .. }
+        | TypeRef::Tuple { .. } => true,
+        TypeRef::Named { identity } => {
+            contract
+                .type_definition(identity)
+                .is_ok_and(|definition| match &definition.shape {
+                    TypeShape::StringEnum { .. } => true,
+                    TypeShape::Alias { target } => reads_directly(target, contract),
+                    _ => false,
+                })
+        }
+        _ => false,
     })
+}
+
+/// Whether a return value of `reference` is already a plain primitive (or an
+/// alias / string enum of one) so `restoreHost` would return it unchanged.
+fn restores_directly(reference: &TypeRef, contract: &Contract<'_>) -> bool {
+    match reference {
+        TypeRef::Option { item } => restores_directly(item, contract),
+        TypeRef::Named { identity } => {
+            contract
+                .type_definition(identity)
+                .is_ok_and(|definition| match &definition.shape {
+                    TypeShape::StringEnum { .. } => true,
+                    TypeShape::Alias { target } => restores_directly(target, contract),
+                    _ => false,
+                })
+        }
+        reference => contract::spec(reference).is_null(),
+    }
 }
 
 /// Render the argument of a parameter that crosses as a host object: a
@@ -834,7 +863,7 @@ fn host_result(call: &str, returns: &TypeRef, context: &TypeScriptContext<'_>) -
         item.as_ref(),
         TypeRef::Bytes | TypeRef::FixedBytes { .. } | TypeRef::Buffer { .. }
     ));
-    if spec.is_null() {
+    if restores_directly(returns, context.contract) {
         call.to_owned()
     } else if direct_option {
         format!(
@@ -955,7 +984,7 @@ mod tests {
         let module = render_api(&manifest);
 
         assert!(module.javascript.starts_with(concat!(
-            "import { checkNative as $checkNative, native as $native, nativeError as $nativeError } from \"./runtime.js\";\n",
+            "import { checkNative as $checkNative, native as $native } from \"./runtime.js\";\n",
             "import { arrowFromIpc as $arrowFromIpc, arrowToIpc as $arrowToIpc } from \"./arrow.js\";\n",
         )));
         assert!(module.javascript.contains(
@@ -1035,7 +1064,7 @@ mod tests {
         );
         // A trap rejects every pending promise, which the module cannot do.
         assert!(module.javascript.contains(
-            "  static async connect() {\n    const $resource = globalThis.Object.create(Recorder.prototype);\n    $checkNative();\n    try {\n      $resource.nativeResource = await $nativePromise($native[\"native_recorder\"].connect());"
+            "  static async connect() {\n    const $resource = globalThis.Object.create(Recorder.prototype);\n    $checkNative();\n    $resource.nativeResource = await $nativePromise($native[\"native_recorder\"].connect());"
         ));
     }
 
@@ -1075,11 +1104,7 @@ mod tests {
             "  $checkArgument(native, \"string\", \"load(): argument `native`\");\n",
             "  $checkArgument(prepareHost, \"string\", \"load(): argument `prepareHost`\");\n",
             "  $checkArgument(error, \"string\", \"load(): argument `error`\");\n",
-            "  try {\n",
-            "    return $restoreHost($native[\"native_load\"](package_, native, prepareHost, error), $spec0);\n",
-            "  } catch ($error) {\n",
-            "    throw $nativeError($error);\n",
-            "  }\n",
+            "  return $restoreHost($native[\"native_load\"](package_, native, prepareHost, error), $spec0);\n",
             "}",
         )));
         assert!(
@@ -1184,7 +1209,7 @@ mod tests {
         let module = render_api(&manifest);
 
         assert!(module.javascript.contains(
-            "  constructor(owner) {\n    $checkNative();\n    $checkArgument(owner, \"string\", \"new Recorder(): argument `owner`\");\n    try {"
+            "  constructor(owner) {\n    $checkNative();\n    $checkArgument(owner, \"string\", \"new Recorder(): argument `owner`\");\n    this.nativeResource = new $native[\"native_recorder\"](owner);"
         ));
         assert!(module.javascript.contains(concat!(
             "  record(total, note, samples, checksum, at, priority, score, tags, when, extra) {\n",
@@ -1198,7 +1223,7 @@ mod tests {
             "    $checkArgument(score, \"number\", \"Recorder.record(): argument `score`\");\n",
             "    $checkArgument(tags, \"array\", \"Recorder.record(): argument `tags`\");\n",
             "    $checkArgument(when, \"date\", \"Recorder.record(): argument `when`\");\n",
-            "    try {\n",
+            "    this.nativeResource.record(",
         )));
     }
 

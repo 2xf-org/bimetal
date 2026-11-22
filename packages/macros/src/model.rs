@@ -76,6 +76,9 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
     };
     let check_rules = check.map(|check| {
         quote! {
+            const HAS_RULES: bool = true;
+
+            #[inline]
             fn check_rules(
                 &self,
             ) -> ::core::result::Result<(), ::bimetal::runtime::ValueError> {
@@ -134,15 +137,19 @@ fn struct_shape(attrs: &[Attribute], ident: &Ident, data: &DataStruct) -> syn::R
             }
             let fields = model_fields(fields, serde.rename_all, None)?;
             let definitions = fields.iter().map(|field| &field.definition);
-            let checks = fields.iter().map(|field| {
-                let ident = &field.ident;
-                field.check(&quote!(&self.#ident))
+            let needs_check = fields.iter().any(|field| !field.is_rule_free());
+            let check = needs_check.then(|| {
+                let checks = fields.iter().map(|field| {
+                    let ident = &field.ident;
+                    field.check(&quote!(&self.#ident))
+                });
+                quote!(#(#checks)*)
             });
             Ok(ModelShape {
                 shape: quote!(::bimetal::ir::TypeShape::Struct {
                     fields: vec![#(#definitions),*],
                 }),
-                check: Some(quote!(#(#checks)*)),
+                check,
             })
         }
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 && serde.transparent => {
@@ -156,15 +163,19 @@ fn struct_shape(attrs: &[Attribute], ident: &Ident, data: &DataStruct) -> syn::R
                 .boundary
                 .or_else(|| types::bytes_boundary(&field.ty));
             let target = types::type_ref_tokens(&field.ty, boundary)?;
+            let ty = &field.ty;
+            let needs_check = boundary.is_none() && !types::is_known_rule_free(ty);
             Ok(ModelShape {
                 shape: quote!(::bimetal::ir::TypeShape::Alias {
                     target: #target,
                 }),
                 // The alias is its value on the wire, so the path stays. Bytes
                 // and buffers hold no models.
-                check: boundary.is_none().then(|| {
+                check: needs_check.then(|| {
                     quote! {
-                        ::bimetal::ContractType::check_rules(&self.0)?;
+                        if <#ty as ::bimetal::ContractType>::HAS_RULES {
+                            ::bimetal::ContractType::check_rules(&self.0)?;
+                        }
                     }
                 }),
             })
@@ -206,8 +217,8 @@ fn enum_shape(attrs: &[Attribute], data: &DataEnum) -> syn::Result<ModelShape> {
             check: None,
         });
     };
-    // An enum without variants has no value to match.
-    let check = (!variants.is_empty()).then(|| {
+    // An enum without variants or with only rule-free variants skips checking.
+    let check = variants.iter().any(|variant| variant.needs_check).then(|| {
         let arms = variants.iter().map(|variant| &variant.check_arm);
         quote! {
             match self {
@@ -231,6 +242,8 @@ struct ModelVariant {
     definition: TokenStream2,
     /// The `match` arm that checks the variant's fields.
     check_arm: TokenStream2,
+    /// Whether this variant can hold any rule.
+    needs_check: bool,
 }
 
 /// Render one enum variant. Only an internally tagged enum, whose tag field
@@ -244,17 +257,22 @@ fn variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Result<Mode
         .unwrap_or_else(|| attributes::apply_serde_variant_case(&rust_name, serde.rename_all));
     let docs = attributes::docs_tokens(&variant.attrs);
     let ident = &variant.ident;
-    let (fields, check_arm) = match &variant.fields {
-        Fields::Unit => (Vec::new(), quote!(Self::#ident => {})),
+    let (fields, check_arm, needs_check) = match &variant.fields {
+        Fields::Unit => (Vec::new(), quote!(Self::#ident => {}), false),
         Fields::Named(fields) if serde.tag.is_some() => {
             let fields = model_fields(fields, serde.rename_all_fields, Some(&rust_name))?;
-            let (bindings, pattern) = types::field_bindings(&fields);
-            let checks = fields
-                .iter()
-                .zip(&bindings)
-                .map(|(field, binding)| field.check(&quote!(#binding)));
-            let check_arm = quote!(Self::#ident #pattern => { #(#checks)* });
-            (fields, check_arm)
+            let needs_check = fields.iter().any(|field| !field.is_rule_free());
+            let check_arm = if needs_check {
+                let (bindings, pattern) = types::field_bindings(&fields);
+                let checks = fields
+                    .iter()
+                    .zip(&bindings)
+                    .map(|(field, binding)| field.check(&quote!(#binding)));
+                quote!(Self::#ident #pattern => { #(#checks)* })
+            } else {
+                quote!(Self::#ident { .. } => {})
+            };
+            (fields, check_arm, needs_check)
         }
         other => {
             return Err(syn::Error::new(
@@ -272,6 +290,7 @@ fn variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Result<Mode
             fields: vec![#(#definitions),*],
         }),
         check_arm,
+        needs_check,
     })
 }
 
@@ -284,16 +303,19 @@ fn external_enum_shape(serde: &SerdeContainer, data: &DataEnum) -> syn::Result<M
         .map(|variant| external_variant_tokens(variant, serde))
         .collect::<syn::Result<_>>()?;
     let definitions = variants.iter().map(|variant| &variant.definition);
-    let arms = variants.iter().map(|variant| &variant.check_arm);
+    let check = variants.iter().any(|variant| variant.needs_check).then(|| {
+        let arms = variants.iter().map(|variant| &variant.check_arm);
+        quote! {
+            match self {
+                #(#arms)*
+            }
+        }
+    });
     Ok(ModelShape {
         shape: quote!(::bimetal::ir::TypeShape::ExternalEnum {
             variants: vec![#(#definitions),*],
         }),
-        check: Some(quote! {
-            match self {
-                #(#arms)*
-            }
-        }),
+        check,
     })
 }
 
@@ -309,10 +331,11 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
         .unwrap_or_else(|| attributes::apply_serde_variant_case(&rust_name, serde.rename_all));
     let docs = attributes::docs_tokens(&variant.attrs);
     let ident = &variant.ident;
-    let (payload, check_arm) = match &variant.fields {
+    let (payload, check_arm, needs_check) = match &variant.fields {
         Fields::Unit => (
             quote!(::bimetal::ir::VariantPayload::Unit),
             quote!(Self::#ident => {}),
+            false,
         ),
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             let field = fields
@@ -330,14 +353,24 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
                 ));
             }
             let ty = types::type_ref_tokens(&field.ty, None)?;
-            (
-                quote!(::bimetal::ir::VariantPayload::Value { ty: #ty }),
+            let inner = &field.ty;
+            let needs_check = !types::is_known_rule_free(inner);
+            let check_arm = if needs_check {
                 quote! {
                     Self::#ident(__bimetal_value) => {
-                        ::bimetal::ContractType::check_rules(__bimetal_value)
-                            .map_err(|violation| violation.in_field(#wire_name))?;
+                        if <#inner as ::bimetal::ContractType>::HAS_RULES {
+                            ::bimetal::ContractType::check_rules(__bimetal_value)
+                                .map_err(|violation| violation.in_field(#wire_name))?;
+                        }
                     }
-                },
+                }
+            } else {
+                quote!(Self::#ident(_) => {})
+            };
+            (
+                quote!(::bimetal::ir::VariantPayload::Value { ty: #ty }),
+                check_arm,
+                needs_check,
             )
         }
         Fields::Unnamed(fields) => {
@@ -348,16 +381,14 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
         }
         Fields::Named(fields) => {
             let fields = model_fields(fields, serde.rename_all_fields, Some(&rust_name))?;
-            let (bindings, pattern) = types::field_bindings(&fields);
-            let checks = fields
-                .iter()
-                .zip(&bindings)
-                .map(|(field, binding)| field.check(&quote!(#binding)));
+            let needs_check = fields.iter().any(|field| !field.is_rule_free());
             let definitions = fields.iter().map(|field| &field.definition);
-            (
-                quote!(::bimetal::ir::VariantPayload::Fields {
-                    fields: vec![#(#definitions),*],
-                }),
+            let check_arm = if needs_check {
+                let (bindings, pattern) = types::field_bindings(&fields);
+                let checks = fields
+                    .iter()
+                    .zip(&bindings)
+                    .map(|(field, binding)| field.check(&quote!(#binding)));
                 quote! {
                     Self::#ident #pattern => {
                         let __bimetal_check =
@@ -367,7 +398,16 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
                             };
                         __bimetal_check().map_err(|violation| violation.in_field(#wire_name))?;
                     }
-                },
+                }
+            } else {
+                quote!(Self::#ident { .. } => {})
+            };
+            (
+                quote!(::bimetal::ir::VariantPayload::Fields {
+                    fields: vec![#(#definitions),*],
+                }),
+                check_arm,
+                needs_check,
             )
         }
     };
@@ -379,6 +419,7 @@ fn external_variant_tokens(variant: &Variant, serde: &SerdeContainer) -> syn::Re
             payload: #payload,
         }),
         check_arm,
+        needs_check,
     })
 }
 

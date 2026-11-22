@@ -10,7 +10,8 @@
 
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -47,29 +48,58 @@ impl Fingerprint {
         }
     }
 
+    /// Fold a byte slice in without iterator overhead.
+    pub(crate) fn add_bytes(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 ^= u128::from(byte);
+            self.0 = self.0.wrapping_mul(FNV_PRIME);
+        }
+    }
+
+    /// Stream the contents of `path` into this fingerprint using a fixed buffer
+    /// so large binaries (`.wasm`, `.so`, `.node`) never allocate a whole-file
+    /// buffer.
+    pub(crate) fn add_file(&mut self, path: &Path) -> Result<()> {
+        let mut file =
+            File::open(path).with_context(|| format!("failed to read {}", path.display()))?;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = file
+                .read(&mut buffer)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            if count == 0 {
+                return Ok(());
+            }
+            self.add_bytes(&buffer[..count]);
+        }
+    }
+
     /// Fold one input in under its name: a file by its contents, a directory
     /// by the files in it that git would track, except hidden ones, as Cargo
     /// watches a directory by its files, and a missing path by its absence.
     pub(crate) fn add_input(&mut self, kind: &str, name: &str, path: &Path) -> Result<()> {
-        self.add(kind.bytes().chain(name.bytes()).chain([0]));
+        self.add_bytes(kind.as_bytes());
+        self.add_bytes(name.as_bytes());
+        self.add_bytes(&[0]);
         let metadata = scratch::optional(fs::metadata(path))
             .with_context(|| format!("failed to read {}", path.display()))?;
         let Some(metadata) = metadata else {
-            self.add([0]);
+            self.add_bytes(&[0]);
             return Ok(());
         };
         if !metadata.is_dir() {
-            let contents =
-                fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-            self.add([1].into_iter().chain(contents).chain([0]));
+            self.add_bytes(&[1]);
+            self.add_file(path)?;
+            self.add_bytes(&[0]);
             return Ok(());
         }
-        self.add([2]);
+        self.add_bytes(&[2]);
         for file in directory_files(path)? {
             let relative = paths::portable(file.strip_prefix(path)?)?;
-            let contents =
-                fs::read(&file).with_context(|| format!("failed to read {}", file.display()))?;
-            self.add(relative.bytes().chain([0]).chain(contents).chain([0]));
+            self.add_bytes(relative.as_bytes());
+            self.add_bytes(&[0]);
+            self.add_file(&file)?;
+            self.add_bytes(&[0]);
         }
         Ok(())
     }
@@ -121,11 +151,20 @@ impl LocalInputs {
 }
 
 /// Return the fingerprint of a file's bytes.
+#[cfg(test)]
 #[must_use]
 pub(super) fn content_fingerprint(bytes: &[u8]) -> String {
     let mut fingerprint = Fingerprint::new();
-    fingerprint.add(bytes.iter().copied());
+    fingerprint.add_bytes(bytes);
     fingerprint.finish()
+}
+
+/// Return the fingerprint of a file on disk without reading it into memory at
+/// once.
+pub(super) fn file_fingerprint(path: &Path) -> Result<String> {
+    let mut fingerprint = Fingerprint::new();
+    fingerprint.add_file(path)?;
+    Ok(fingerprint.finish())
 }
 
 /// Return the fingerprint of the local inputs as they are now.
@@ -160,7 +199,10 @@ pub(super) fn output_fingerprint(owned: &BTreeMap<PathBuf, OwnedFile>) -> Result
     let mut fingerprint = Fingerprint::new();
     for (name, path) in names {
         if path.is_file() {
-            fingerprint.add(name.bytes().chain([0]).chain(fs::read(path)?).chain([0]));
+            fingerprint.add_bytes(name.as_bytes());
+            fingerprint.add_bytes(&[0]);
+            fingerprint.add_file(path)?;
+            fingerprint.add_bytes(&[0]);
         } else {
             // A missing owned file can never fingerprint as up to date.
             return Ok(None);
@@ -280,5 +322,19 @@ mod tests {
         assert_eq!(local_fingerprint(&local).unwrap(), present);
         fs::write(&file, "[build]\njobs = 1\n").unwrap();
         assert_ne!(local_fingerprint(&local).unwrap(), present);
+    }
+
+    #[test]
+    fn file_fingerprint_matches_content_fingerprint_across_chunks() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("binary.bin");
+        let bytes: Vec<u8> = (0..150_000_usize)
+            .map(|index| (index.wrapping_mul(31) & 0xff) as u8)
+            .collect();
+        fs::write(&file, &bytes).unwrap();
+        assert_eq!(
+            file_fingerprint(&file).unwrap(),
+            content_fingerprint(&bytes)
+        );
     }
 }
