@@ -29,4 +29,4 @@ crates.io keeps a version for ever, so publishing comes after every build. The c
 
 ## What users install
 
-`cargo install --locked bimetal-cli` builds the command from crates.io, and each release has it built. Both hash the same generator sources, as [The crates](crates.md) says, so they agree on every application's fingerprint. An application names the runtime as `bimetal = "=YYYYMM.DD.N"`, which `bimetal new` writes.
+`cargo install --locked bimetal-cli` builds the command from crates.io, `cargo binstall bimetal-cli` downloads the prebuilt release archive for the host platform, and each release has it built. Both hash the same generator sources, as [The crates](crates.md) says, so they agree on every application's fingerprint. An application names the runtime as `bimetal = "=YYYYMM.DD.N"`, which `bimetal new` writes.

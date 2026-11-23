@@ -149,6 +149,7 @@ export class Rows {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 

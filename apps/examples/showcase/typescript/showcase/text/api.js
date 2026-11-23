@@ -2,8 +2,8 @@
 
 import { checkArgument as $checkArgument, checkNative as $checkNative, native as $native, restoreHost as $restoreHost } from "../runtime.js";
 
-const $spec0 = ["named", "showcase::showcase::text::Words"];
-const $spec1 = ["named", "showcase::showcase::text::Phrase"];
+const $spec0 = ["named", 10];
+const $spec1 = ["named", 11];
 
 export function list(text) {
   $checkNative();

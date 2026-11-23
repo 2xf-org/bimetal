@@ -96,10 +96,13 @@ function guardExports(exports) {
 
 function guardExport(enter, isHostCallback) {
   return (...args) => {
-    // Wrappers check the module before they call it, so only the host's
-    // callbacks get here after an abort. They find nothing to do, and the
-    // bindings read 0 as no result and no error.
-    if (nativeAborted !== undefined) return 0;
+    // Host callbacks find nothing to do after an abort, and the bindings read
+    // 0 as no result and no error. Direct `#[wasm_bindgen]` exports skip
+    // `checkNative`, so reject them here with the abort error.
+    if (nativeAborted !== undefined) {
+      if (isHostCallback) return 0;
+      throw nativeUnusable();
+    }
     nativeDepth += 1;
     try {
       const result = enter(...args);
@@ -239,7 +242,6 @@ export function prepareHost(value, spec = null) {
     return { secs: nanoseconds / 1_000_000_000n, nanos: Number(nanoseconds % 1_000_000_000n) };
   }
   if (kind === "named") return prepareHost(value, nativeSchemas[spec[1]]);
-  if (kind === "alias") return prepareHost(value, spec[1]);
   // A value of the wrong shape crosses as it is, and Rust names what it
   // expected there.
   if (typeof value !== "object" || ArrayBuffer.isView(value)) return value;
@@ -261,28 +263,28 @@ export function prepareHost(value, spec = null) {
   }
   if (kind === "struct") return prepareFields(value, spec[1], spec[2]);
   if (kind === "tagged") {
-    const variant = value[spec[1]];
-    requirePresent(value, spec[3]?.[variant]);
-    const fields = spec[2][variant];
-    return prepareEntries(value, (item, key) => prepareHost(item, fields?.[key]));
+    const variant = spec[1] != null ? value[spec[1]] : undefined;
+    return prepareFields(value, spec[2]?.[variant], spec[3]?.[variant]);
   }
   // A variant with data is an object whose only key is its name; one
   // without data is its name, which crossed above as it is.
   if (kind === "external") {
     const variants = spec[1];
-    return prepareEntries(value, (item, key) => prepareHost(item, variants[key]));
+    return variants == null
+      ? prepareFields(value, null, undefined)
+      : prepareEntries(value, (item, key) => prepareHost(item, variants[key]));
   }
   return value;
 }
 
-// The `[key, spec]` pairs of the fields that have a spec, by field-spec object: those have no
-// prototype, so V8 keeps them in dictionary mode, where each enumeration sorts the keys.
+// The `[key, spec]` pairs of each field-spec object, cached because those
+// objects have no prototype and V8 keeps them in dictionary mode.
 const specifiedFields = new WeakMap();
 
 function specified(fields) {
   let entries = specifiedFields.get(fields);
   if (entries === undefined) {
-    entries = Object.entries(fields).filter(([, spec]) => spec != null);
+    entries = Object.entries(fields);
     specifiedFields.set(fields, entries);
   }
   return entries;
@@ -305,8 +307,9 @@ function prepareFields(value, fields, required) {
   requirePresent(value, required);
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
-    return prepareEntries(value, (item, key) => prepareHost(item, fields[key]));
+    return prepareEntries(value, (item, key) => prepareHost(item, fields?.[key]));
   }
+  if (fields == null) return value;
   let prepared;
   for (const [key, spec] of specified(fields)) {
     if (!Object.hasOwn(value, key)) continue;
@@ -390,7 +393,6 @@ function specFreezesOnly(spec, seen) {
       return true;
     case "list":
     case "map":
-    case "alias":
       return specFreezesOnly(spec[1], seen);
     case "tuple":
       return every(spec[1]);
@@ -398,9 +400,9 @@ function specFreezesOnly(spec, seen) {
       return specFreezesOnly(nativeSchemas[spec[1]], seen);
     case "struct":
     case "external":
-      return every(Object.values(spec[1]));
+      return spec[1] == null || every(Object.values(spec[1]));
     case "tagged":
-      return Object.values(spec[2]).every((fields) => every(Object.values(fields)));
+      return spec[2] == null || Object.values(spec[2]).every((fields) => fields == null || every(Object.values(fields)));
     default:
       return false;
   }
@@ -440,9 +442,8 @@ export function restoreHost(value, spec) {
     return restoreItems(value, (item, index) => restoreHost(item, detail[index]));
   }
   if (kind === "named") return restoreHost(value, nativeSchemas[spec[1]]);
-  if (kind === "alias") return restoreHost(value, spec[1]);
   if (kind === "struct") return restoreFields(value, spec[1]);
-  if (kind === "tagged") return restoreFields(value, spec[2][value[spec[1]]]);
+  if (kind === "tagged") return restoreFields(value, spec[2]?.[value[spec[1]]]);
   if (kind === "external" && typeof value === "object") return restoreFields(value, spec[1]);
   return value;
 }
@@ -479,7 +480,8 @@ export function callbackFromHost(callback, parameters, returns, label) {
 }
 
 // What `checkArgument` requires of each kind of argument, and how its error
-// names that kind. The buffer kinds are the keys of `bufferConstructors`.
+// names that kind. Nullable variants (`kind?`) are pre-populated so each call
+// is one lookup.
 const argumentKinds = {
   boolean: ["a boolean", (value) => typeof value === "boolean"],
   number: ["a number", (value) => typeof value === "number"],
@@ -494,16 +496,17 @@ for (const [key, BufferType] of Object.entries(bufferConstructors)) {
   const article = BufferType.name.startsWith("I") ? "an" : "a";
   argumentKinds[key] = [`${article} ${BufferType.name}`, (value) => value instanceof BufferType];
 }
+for (const [key, [expected, accepts]] of Object.entries(argumentKinds)) {
+  argumentKinds[`${key}?`] = [`${expected} or null`, (value) => value == null || accepts(value)];
+}
 
 // Throw a TypeError, before the call enters the module, when an argument is
-// not the kind of value that its parameter's type needs. A kind that ends in
-// `?` also accepts null and undefined. Rust reports what this does not see,
-// such as a field of the wrong type inside a model.
+// not the kind of value that its parameter's type needs. Rust reports what
+// this does not see, such as a field of the wrong type inside a model.
 export function checkArgument(value, kind, label) {
-  const nullable = kind.endsWith("?");
-  const [expected, accepts] = argumentKinds[nullable ? kind.slice(0, -1) : kind];
-  if ((nullable && value == null) || accepts(value)) return;
-  throw new TypeError(`${label} must be ${expected}${nullable ? " or null" : ""}, got ${typeName(value)}`);
+  const entry = argumentKinds[kind];
+  if (entry[1](value)) return;
+  throw new TypeError(`${label} must be ${entry[0]}, got ${typeName(value)}`);
 }
 
 function typeName(value) {
@@ -514,25 +517,19 @@ function typeName(value) {
   return name && name !== "Object" ? name : "object";
 }
 
-// `bimetal build` defines `nativeSchemas`, the schema of each model by its key,
-// below.
-const nativeSchemas = {
-  "showcase::showcase::Entry": ["struct", {__proto__: null, amount: null, balance: null}],
-  "showcase::showcase::Event": ["tagged", "kind", {__proto__: null, created: {__proto__: null, recordId: ["named", "showcase::showcase::RecordId"]}, deleted: {__proto__: null, reason: null, recordId: ["named", "showcase::showcase::RecordId"]}, moved: {__proto__: null, recordId: ["named", "showcase::showcase::RecordId"], to: ["named", "showcase-geometry::showcase_geometry::Point"]}}],
-  "showcase::showcase::Holiday": ["struct", {__proto__: null, date: null, observed: null}],
-  "showcase::showcase::Numbers": ["struct", {__proto__: null, double: null, flag: null, large: null, medium: null, signed: null, signedLarge: null, single: null, small: null, tiny: null}],
-  "showcase::showcase::Priority": null,
-  "showcase::showcase::Record": ["struct", {__proto__: null, checksum: ["list", null], counters: ["map", null], createdAt: ["date"], id: ["named", "showcase::showcase::RecordId"], label: null, localTime: ["date"], location: ["named", "showcase-geometry::showcase_geometry::Point"], metadata: ["json"], note: null, priority: ["named", "showcase::showcase::Priority"], ranges: ["map", ["tuple", [null, null]]], revision: null, score: ["named", "showcase::showcase::Score"], stars: null, tags: ["list", null]}, ["note"]],
-  "showcase::showcase::RecordId": ["alias", null],
-  "showcase::showcase::Retry": ["struct", {__proto__: null, attempts: null, factor: null}],
-  "showcase::showcase::Score": ["alias", null],
-  "showcase::showcase::Settings": ["struct", {__proto__: null, color: null, icon: null, prefix: null, retry: ["named", "showcase::showcase::Retry"], tags: ["list", null], theme: null, verbose: null, version: null}],
-  "showcase::showcase::Statement": ["struct", {__proto__: null, balance: null, entries: null, owner: null}],
-  "showcase::showcase::Stroke": ["external", {__proto__: null, again: ["named", "showcase::showcase::Stroke"], lift: null, line_to: ["struct", {__proto__: null, to: ["named", "showcase-geometry::showcase_geometry::Point"], width: null}], move_to: ["named", "showcase-geometry::showcase_geometry::Point"], pause: null}],
-  "showcase::showcase::shelf::ShelfErrorFull": ["struct", {__proto__: null, limit: null, title: null}],
-  "showcase::showcase::shelf::ShelfErrorVisitor": ["struct", {__proto__: null, reason: null}],
-  "showcase::showcase::shelf::ShortageDetails": ["struct", {__proto__: null, held: null, wanted: null}],
-  "showcase::showcase::text::Phrase": ["struct", {__proto__: null, text: null, wordCount: null}],
-  "showcase::showcase::text::Words": ["struct", {__proto__: null, json: null, lengths: ["list", null], list: ["list", null]}],
-  "showcase-geometry::showcase_geometry::Point": ["struct", {__proto__: null, x: null, y: null}],
-};
+// `bimetal build` defines `nativeSchemas`, the indexed schemas of the models
+// that the generated API modules reach, below.
+const nativeSchemas = [
+  ["struct"],
+  ["struct", {__proto__: null, checksum: ["list", null], counters: ["map", null], createdAt: ["date"], localTime: ["date"], location: ["named", 0], metadata: ["json"], ranges: ["map", ["tuple", [null, null]]], tags: ["list", null]}, ["note"]],
+  ["tagged", "kind", {__proto__: null, moved: {__proto__: null, to: ["named", 0]}}],
+  ["struct"],
+  ["struct", {__proto__: null, retry: ["named", 5], tags: ["list", null]}],
+  ["struct"],
+  ["external", {__proto__: null, again: ["named", 6], line_to: ["struct", {__proto__: null, to: ["named", 0]}], move_to: ["named", 0]}],
+  ["struct"],
+  ["struct"],
+  ["struct"],
+  ["struct", {__proto__: null, lengths: ["list", null], list: ["list", null]}],
+  ["struct"],
+];

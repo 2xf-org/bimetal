@@ -12,10 +12,10 @@ additional_packages = ["showcase-geometry"]
 
 [generated]
 # Fingerprint of the Rust/Cargo sources and the tables above.
-source_fingerprint = "110542d6e1cc576faf58e372e5214392"
+source_fingerprint = "ac7ad79760fe922a9d9595138b33e0d7"
 
 # Fingerprint of the published files; lets build and check no-op when current.
-output_fingerprint = "38f500f14e096df6c651342882839732"
+output_fingerprint = "cf8bcc08a5a70b188d385ae9d453bc37"
 
 # Files that the WebAssembly build, or contract discovery without one, reads,
 # such as Rust sources and include_str! files, relative to the Cargo workspace.
@@ -69,6 +69,7 @@ inputs = [
     "../../../packages/runtime/src/runtime.rs",
     "../../../packages/runtime/src/runtime/callback.rs",
     "../../../packages/runtime/src/runtime/contract_error.rs",
+    "../../../packages/runtime/src/runtime/local_lock.rs",
     "../../../packages/runtime/src/runtime/resource.rs",
     "../../../packages/runtime/src/runtime/rules.rs",
     "../../../packages/runtime/src/runtime/value_error.rs",

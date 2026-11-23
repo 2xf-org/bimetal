@@ -72,21 +72,19 @@ BIMETAL_REVERSE_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_c0
 BIMETAL_ROUTE_LENGTH_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_acf984cc050cd9cc")
 BIMETAL_ADAPTER_13 = bimetal.Adapter(lambda: list[bimetal_models_4.Point])
 BIMETAL_RUNNING_TOTAL_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_1c8ac8b1b7860d02")
-BIMETAL_ADAPTER_14 = bimetal.Adapter(lambda: Int64Buffer, arbitrary_types=True)
 BIMETAL_SCALE_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_1f201a625951f028")
-BIMETAL_ADAPTER_15 = bimetal.Adapter(lambda: Float32Buffer, arbitrary_types=True)
 BIMETAL_SHOWCASE_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_bc6c11225303a76b")
 BIMETAL_THEME_OF_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_ad1cb8e475b4a36b")
-BIMETAL_ADAPTER_16 = bimetal.Adapter(lambda: Settings | None)
+BIMETAL_ADAPTER_14 = bimetal.Adapter(lambda: Settings | None)
 BIMETAL_TOTAL_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_799abc456a4ee505")
-BIMETAL_ADAPTER_17 = bimetal.Adapter(lambda: list[bimetal.Duration | None])
+BIMETAL_ADAPTER_15 = bimetal.Adapter(lambda: list[bimetal.Duration | None])
 BIMETAL_TOTALS_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_d30b7d529c9e1bc7")
 BIMETAL_TOUCH_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_2adbd68385e21351")
-BIMETAL_ADAPTER_18 = bimetal.Adapter(lambda: pydantic.AwareDatetime)
+BIMETAL_ADAPTER_16 = bimetal.Adapter(lambda: pydantic.AwareDatetime)
 BIMETAL_WRAP_NATIVE = getattr(bimetal.native, "__bimetal_function_showcase_10c2fad8652be154")
-BIMETAL_ADAPTER_19 = bimetal.Adapter(lambda: bimetal.JsonValue)
+BIMETAL_ADAPTER_17 = bimetal.Adapter(lambda: bimetal.JsonValue)
 BIMETAL_LEDGER_NATIVE = getattr(bimetal.native, "__bimetal_resource_showcase_0c183a113e0877c9")
-BIMETAL_ADAPTER_20 = bimetal.Adapter(lambda: str)
+BIMETAL_ADAPTER_18 = bimetal.Adapter(lambda: str)
 BIMETAL_MAILBOX_NATIVE = getattr(bimetal.native, "__bimetal_resource_showcase_a86681b694c8eb6c")
 
 #: The version of this contract.
@@ -470,8 +468,7 @@ def running_total(values: Int64Buffer) -> Int64Buffer:
     """
     A running total. Buffers become NumPy arrays and typed arrays.
     """
-    bimetal_native = BIMETAL_RUNNING_TOTAL_NATIVE(values)
-    bimetal_result: Int64Buffer = BIMETAL_ADAPTER_14.validate(bimetal.restore_host(bimetal_native, ["buffer", "int64"]))
+    bimetal_result: Int64Buffer = BIMETAL_RUNNING_TOTAL_NATIVE(values)
     return bimetal_result
 
 
@@ -479,10 +476,7 @@ def scale(samples: Float32Buffer, factor: float) -> Float32Buffer:
     """
     Scale samples by a factor.
     """
-    bimetal_native = BIMETAL_SCALE_NATIVE(samples, factor)
-    bimetal_result: Float32Buffer = BIMETAL_ADAPTER_15.validate(
-        bimetal.restore_host(bimetal_native, ["buffer", "float32"]),
-    )
+    bimetal_result: Float32Buffer = BIMETAL_SCALE_NATIVE(samples, factor)
     return bimetal_result
 
 
@@ -502,7 +496,7 @@ def theme_of(settings: Settings | None = None) -> str | None:
         bimetal_result: str | None = BIMETAL_THEME_OF_NATIVE(settings)
     except bimetal.Revalidate:
         bimetal_result = BIMETAL_THEME_OF_NATIVE(
-            None if settings is None else bimetal.Dumped(BIMETAL_ADAPTER_16.dump(settings)),
+            None if settings is None else bimetal.Dumped(BIMETAL_ADAPTER_14.dump(settings)),
         )
     return bimetal_result
 
@@ -514,7 +508,7 @@ def total(waits: list[bimetal.Duration | None]) -> bimetal.Duration:
     try:
         bimetal_result: bimetal.Duration = BIMETAL_TOTAL_NATIVE(waits)
     except bimetal.Revalidate:
-        bimetal_result = BIMETAL_TOTAL_NATIVE(bimetal.Dumped(BIMETAL_ADAPTER_17.dump(waits)))
+        bimetal_result = BIMETAL_TOTAL_NATIVE(bimetal.Dumped(BIMETAL_ADAPTER_15.dump(waits)))
     return bimetal_result
 
 
@@ -535,7 +529,7 @@ def touch(record: Record, at: pydantic.AwareDatetime) -> Record:
     except bimetal.Revalidate:
         bimetal_result = BIMETAL_TOUCH_NATIVE(
             bimetal.Dumped(BIMETAL_ADAPTER_8.dump(record)),
-            bimetal.Dumped(BIMETAL_ADAPTER_18.dump(at)),
+            bimetal.Dumped(BIMETAL_ADAPTER_16.dump(at)),
         )
     return bimetal_result
 
@@ -544,7 +538,7 @@ def wrap(value: bimetal.JsonValue) -> bimetal.JsonValue:
     """
     Wrap a JSON value in an envelope.
     """
-    bimetal_result: bimetal.JsonValue = BIMETAL_WRAP_NATIVE(BIMETAL_ADAPTER_19.dump(value))
+    bimetal_result: bimetal.JsonValue = BIMETAL_WRAP_NATIVE(BIMETAL_ADAPTER_17.dump(value))
     return bimetal_result
 
 
@@ -634,7 +628,7 @@ class Ledger:
         `statements` feature, or return why `label` failed. A call that takes a host
         function starts on a worker on the native hosts all the same.
         """
-        bimetal_result: str = await self.native_resource.labelOwnerAtOnce((label, BIMETAL_ADAPTER_20))
+        bimetal_result: str = await self.native_resource.labelOwnerAtOnce((label, BIMETAL_ADAPTER_18))
         return bimetal_result
 
     def close(self) -> None:

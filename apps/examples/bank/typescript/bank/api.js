@@ -3,11 +3,11 @@
 import { checkArgument as $checkArgument, checkNative as $checkNative, native as $native, nativeError as $nativeError, nativePromise as $nativePromise, nativeUsable as $nativeUsable, prepareHost as $prepareHost, restoreHost as $restoreHost } from "./runtime.js";
 import { arrowFromIpc as $arrowFromIpc } from "./arrow.js";
 
-const $spec0 = ["list", ["named", "bank::bank::Opening"]];
-const $spec1 = ["named", "bank::bank::Transfer"];
-const $spec2 = ["named", "bank::bank::Receipt"];
-const $spec3 = ["list", ["named", "bank::bank::Receipt"]];
-const $spec4 = ["named", "bank::bank::Statement"];
+const $spec0 = ["list", ["named", 0]];
+const $spec1 = ["named", 1];
+const $spec2 = ["named", 2];
+const $spec3 = ["list", ["named", 2]];
+const $spec4 = ["named", 3];
 
 export class AccountError extends globalThis.Error {
   constructor(code, message) {
@@ -74,6 +74,7 @@ export class Account {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -143,6 +144,7 @@ export class Bank {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 

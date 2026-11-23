@@ -94,10 +94,13 @@ function guardExports(exports) {
 
 function guardExport(enter, isHostCallback) {
   return (...args) => {
-    // Wrappers check the module before they call it, so only the host's
-    // callbacks get here after an abort. They find nothing to do, and the
-    // bindings read 0 as no result and no error.
-    if (nativeAborted !== undefined) return 0;
+    // Host callbacks find nothing to do after an abort, and the bindings read
+    // 0 as no result and no error. Direct `#[wasm_bindgen]` exports skip
+    // `checkNative`, so reject them here with the abort error.
+    if (nativeAborted !== undefined) {
+      if (isHostCallback) return 0;
+      throw nativeUnusable();
+    }
     nativeDepth += 1;
     try {
       const result = enter(...args);

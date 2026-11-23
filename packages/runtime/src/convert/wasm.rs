@@ -27,7 +27,6 @@ use std::sync::Arc;
 use bimetal_ir::typescript_names;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::sync::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsError, JsValue};
 use wasm_bindgen_futures::js_sys::{Array, Function, Object, Reflect};
@@ -37,6 +36,7 @@ pub use super::parameter::Parameter;
 pub use super::wasm_arrow::{arrow_from_host, arrow_to_host};
 use crate::convert::parameter;
 use crate::owned::Owned;
+use crate::runtime::local_lock::{OwnedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use crate::runtime::{
     self, Callback, CallbackError, ContractError, ReachedResources, Resource, ResourceError, rules,
 };

@@ -13,6 +13,7 @@ use pyo3::buffer::{ElementType, PyUntypedBuffer};
 use pyo3::exceptions::{PyBufferError, PyException, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyByteArray, PyBytes, PyList, PyString, PyTuple};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -281,12 +282,17 @@ buffer_element!(
     f64 => F64, Float,
 );
 
-/// Return a numeric buffer as a `bytearray` of native-endian values.
+/// Return a numeric buffer as a writable NumPy array when the extension runs
+/// inside its generated package, or as a `bytearray` of native-endian values
+/// when loaded standalone.
 ///
-/// Generated Python wraps it with `numpy.frombuffer`. A `bytearray` is
-/// writable, so the array needs no copy of its own.
-#[must_use]
-pub fn buffer_to_host<T: PythonBufferElement>(py: Python<'_>, value: &[T]) -> Py<PyAny> {
+/// Copying into a `bytearray` once and wrapping it with `numpy.frombuffer`
+/// produces a writable array without a second copy.
+///
+/// # Errors
+///
+/// Returns the Python error if importing `numpy` or wrapping the buffer fails.
+pub fn buffer_to_host<T: PythonBufferElement>(py: Python<'_>, value: &[T]) -> PyResult<Py<PyAny>> {
     let length = mem::size_of_val(value);
     // Viewing the values as bytes lets Python copy them once. A safe
     // conversion would first copy every value into a new byte vector, a second
@@ -295,7 +301,20 @@ pub fn buffer_to_host<T: PythonBufferElement>(py: Python<'_>, value: &[T]) -> Py
     // padding, so all of its bytes are initialized, and the byte slice cannot
     // outlive `value` during this call.
     let bytes = unsafe { slice::from_raw_parts(value.as_ptr().cast::<u8>(), length) };
-    PyByteArray::new(py, bytes).into_any().unbind()
+    let buffer = PyByteArray::new(py, bytes);
+    if python_plan::classes(py).is_none() {
+        return Ok(buffer.into_any().unbind());
+    }
+    static FROMBUFFER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+    let frombuffer = FROMBUFFER
+        .get_or_try_init(py, || {
+            py.import(intern!(py, "numpy"))?
+                .getattr(intern!(py, "frombuffer"))
+                .map(Bound::unbind)
+        })?
+        .bind(py);
+    let array = frombuffer.call1((buffer, T::NUMPY))?;
+    Ok(array.unbind())
 }
 
 /// Check the field rules of what `callable` returned, and serialize it into

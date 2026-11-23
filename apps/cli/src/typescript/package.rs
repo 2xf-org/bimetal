@@ -4,6 +4,7 @@
 //! wasm-bindgen output calls into the module through the runtime's guard, or
 //! the Node.js addon's, which `bimetal build` installs beside it.
 
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
@@ -12,7 +13,7 @@ use anyhow::{Context, Result};
 use bimetal_ir::Namespace;
 use wasm_bindgen_cli_support::Bindgen;
 
-use crate::contract::{self, Contract};
+use crate::contract::{Contract, SchemaTable};
 use crate::literal;
 use crate::output;
 
@@ -100,25 +101,21 @@ pub(crate) fn emit(
             NODE_CLOSE,
         ),
     };
-    Module {
-        javascript: typescript_runtime(&loader, contract),
-        declarations: declarations.to_owned(),
-    }
-    .write(&package, RUNTIME_MODULE)?;
     if contract.uses_arrow() {
         output::write(
             &package.join(format!("{ARROW_MODULE}.js")),
             &module::generated_typescript(ARROW_SOURCE),
         )?;
     }
+    let schemas = RefCell::new(SchemaTable::default());
     for (namespace, items) in contract.namespaces() {
         let namespace_package = namespace
             .typescript_segments()
             .iter()
             .fold(package.clone(), |path, segment| path.join(segment));
         // Each module imports what its own code uses.
-        let models_context = TypeScriptContext::new(contract, namespace);
-        let api_context = TypeScriptContext::new(contract, namespace);
+        let models_context = TypeScriptContext::new(contract, namespace, &schemas);
+        let api_context = TypeScriptContext::new(contract, namespace, &schemas);
         models::typescript_models(items, &models_context)?
             .write(&namespace_package, MODELS_MODULE)?;
         api::typescript_api(items, close, &api_context)?.write(&namespace_package, API_MODULE)?;
@@ -136,6 +133,11 @@ pub(crate) fn emit(
         }
         .write(&namespace_package, "index")?;
     }
+    Module {
+        javascript: typescript_runtime(&loader, &schemas.borrow()),
+        declarations: declarations.to_owned(),
+    }
+    .write(&package, RUNTIME_MODULE)?;
     Ok(())
 }
 
@@ -173,19 +175,17 @@ fn emit_wasm(wasm: &Path, native: &Path) -> Result<()> {
 }
 
 /// Render the private runtime: `loader`, [`RUNTIME_SOURCE`], then the
-/// schema of each model.
+/// compact indexed schemas that the generated API modules reference.
 #[must_use]
-fn typescript_runtime(loader: &str, contract: &Contract<'_>) -> String {
-    let mut source = format!("{loader}\n{RUNTIME_SOURCE}const nativeSchemas = {{\n");
-    for definition in &contract.manifest.types {
-        let _ = writeln!(
-            source,
-            "  {}: {},",
-            render::typescript_property(&definition.identity().to_string()),
-            render::spec_literal(&contract::named_spec(definition))
-        );
+fn typescript_runtime(loader: &str, schemas: &SchemaTable) -> String {
+    let mut source = format!("{loader}\n{RUNTIME_SOURCE}const nativeSchemas = [");
+    if !schemas.entries().is_empty() {
+        source.push('\n');
+        for schema in schemas.entries() {
+            let _ = writeln!(source, "  {},", render::spec_literal(schema));
+        }
     }
-    source.push_str("};\n");
+    source.push_str("];\n");
     source
 }
 
@@ -223,8 +223,11 @@ fn guard_native_exports(bindings: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use bimetal_ir::discovery;
     use bimetal_ir::typescript_names;
-    use bimetal_ir::{BufferElement, discovery};
+    use bimetal_ir::{BufferElement, TypeRef};
+
+    use crate::fixtures;
 
     use super::*;
 
@@ -288,5 +291,54 @@ mod tests {
             .expect_err("bindings without the anchor cannot be guarded")
             .to_string();
         assert!(error.contains("cannot guard the calls"), "{error}");
+    }
+
+    #[test]
+    fn wasm_guard_rejects_direct_exports_after_abort_and_silences_host_callbacks() {
+        assert!(
+            WASM_LOADER.contains(
+                "    if (nativeAborted !== undefined) {\n      if (isHostCallback) return 0;\n      throw nativeUnusable();\n    }"
+            ),
+            "guardExport must return 0 only for host callbacks after an abort"
+        );
+    }
+
+    #[test]
+    fn typescript_runtime_emits_only_recorded_schemas() {
+        let mut manifest = fixtures::manifest();
+        let unused = fixtures::model(
+            "Unused",
+            vec![fixtures::typed_field("hidden", TypeRef::DateTime)],
+        );
+        let event = fixtures::model(
+            "Event",
+            vec![
+                fixtures::typed_field("label", TypeRef::String),
+                fixtures::typed_field("at", TypeRef::DateTime),
+            ],
+        );
+        let event_id = event.identity();
+        manifest.types = vec![unused, event];
+        let contract = fixtures::contract(&manifest);
+        let empty = SchemaTable::default();
+        let runtime_empty = typescript_runtime("", &empty);
+        assert!(
+            runtime_empty.ends_with("const nativeSchemas = [];\n"),
+            "{runtime_empty}"
+        );
+
+        let mut recorded = SchemaTable::default();
+        let spec = recorded.spec(&TypeRef::Named { identity: event_id }, &contract);
+        assert_eq!(spec, serde_json::json!(["named", 0]));
+        let runtime_with_event = typescript_runtime("", &recorded);
+        let (_, schemas_block) = runtime_with_event
+            .split_once("const nativeSchemas = ")
+            .expect("runtime declares nativeSchemas");
+        assert_eq!(
+            schemas_block,
+            "[\n  [\"struct\", {__proto__: null, at: [\"date\"]}],\n];\n"
+        );
+        assert!(!schemas_block.contains("hidden"));
+        assert!(!schemas_block.contains("label"));
     }
 }

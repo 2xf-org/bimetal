@@ -266,9 +266,11 @@ fn emit_python_callable(
     let unit = matches!(returns, TypeRef::Unit);
     let arrow = python_arrow_result(returns, context);
     let wraps = contract::nodes(returns).any(|node| matches!(node, TypeRef::Resource { .. }));
-    // The extension makes the value as Pydantic would validate it, so only a
-    // NumPy buffer is left to restore and validate.
+    // The extension makes the value as Pydantic would validate it, including
+    // direct bytes and NumPy buffers, so only models holding buffers are left
+    // to restore and validate.
     let validates = !python_direct_bytes(returns)
+        && !python_direct_buffer(returns)
         && context
             .contract
             .reaches(returns, |item| matches!(item, TypeRef::Buffer { .. }))?;
@@ -356,6 +358,7 @@ fn binds_native(
         return Ok(false);
     }
     Ok(python_direct_bytes(returns)
+        || python_direct_buffer(returns)
         || !context
             .contract
             .reaches(returns, |item| matches!(item, TypeRef::Buffer { .. }))?)
@@ -367,6 +370,16 @@ fn python_direct_bytes(returns: &TypeRef) -> bool {
     match returns {
         TypeRef::Bytes | TypeRef::FixedBytes { .. } => true,
         TypeRef::Option { item } => python_direct_bytes(item),
+        _ => false,
+    }
+}
+
+/// Whether a call returns a numeric buffer, or an option of one, through the
+/// direct binary boundary that makes a NumPy array.
+fn python_direct_buffer(returns: &TypeRef) -> bool {
+    match returns {
+        TypeRef::Buffer { .. } => true,
+        TypeRef::Option { item } => python_direct_buffer(item),
         _ => false,
     }
 }
@@ -1203,7 +1216,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
         python_api(&contract.namespaces()[&namespace], &context).expect("render the module")
     }
 
@@ -1563,9 +1577,9 @@ mod tests {
         assert!(!source.contains(".validate("), "{source}");
     }
 
-    /// Guards the one result that is restored and validated: a value that
-    /// holds a NumPy buffer. A model of bytes returns as the extension makes
-    /// it.
+    /// Guards the one result that is restored and validated: a model that
+    /// holds a NumPy buffer. Direct bytes and direct buffers return as the
+    /// extension makes them.
     #[test]
     fn only_buffers_are_restored_and_validated() {
         let mut manifest = fixtures::recorder_manifest();
@@ -1582,6 +1596,13 @@ mod tests {
         ];
         manifest.functions = vec![
             function("blob", Vec::new(), fixtures::named("Blob")),
+            function(
+                "wave",
+                Vec::new(),
+                TypeRef::Buffer {
+                    element: BufferElement::F64,
+                },
+            ),
             function("samples", Vec::new(), fixtures::named("Samples")),
         ];
 
@@ -1591,10 +1612,16 @@ mod tests {
             source.contains("    bimetal_result: Blob = BIMETAL_BLOB_NATIVE()\n"),
             "{source}"
         );
-        // The validation leaves no room for the value on its line.
-        assert!(source.contains(
-            "    bimetal_result: Samples = BIMETAL_ADAPTER_0.validate(\n        bimetal.restore_host(bimetal_native, [\"named\", \"test::test::Samples\"]),\n    )\n"
-        ), "{source}");
+        assert!(
+            source.contains("    bimetal_result: Float64Buffer = BIMETAL_WAVE_NATIVE()\n"),
+            "{source}"
+        );
+        assert!(
+            source.contains(
+                "    bimetal_result: Samples = BIMETAL_ADAPTER_0.validate(bimetal.restore_host(bimetal_native, [\"named\", 0]))\n"
+            ),
+            "{source}"
+        );
     }
 
     /// Guards which functions the module binds to the native function: a

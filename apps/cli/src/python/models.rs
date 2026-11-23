@@ -646,7 +646,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
 
@@ -698,7 +699,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
 
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
@@ -728,7 +730,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
 
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
@@ -773,7 +776,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
 
         let source =
             python_models(&contract.namespaces()[&namespace], &context).expect("render the models");
@@ -822,7 +826,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
         let field = FieldDef {
             docs: Some("The \"size\" in bytes.\nMust be positive.".to_owned()),
             ..fixtures::field("byte_size", "byte_size")
@@ -845,7 +850,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
         let mut source = String::new();
 
         for field in [

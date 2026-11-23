@@ -18,6 +18,7 @@ description = "Runtime and contract macros for Rust APIs that Bimetal compiles i
 python = [
     "dep:pyo3",
     "dep:pythonize",
+    "dep:tokio",
     "arrow-array?/ffi",
     "arrow-array-59?/ffi",
     "tokio/rt-multi-thread",
@@ -25,7 +26,7 @@ python = [
 ]
 # The native Node.js boundary: the Node-API addon that the TypeScript package
 # loads with `backend = "node"`. The CLI enables it for the addon's build.
-node = ["dep:napi-sys", "tokio/rt-multi-thread", "tokio/time"]
+node = ["dep:napi-sys", "dep:tokio", "tokio/rt-multi-thread", "tokio/time"]
 # The hosts' types for alloy's `Address`, fixed bytes such as `B256`, `U256`, and
 # `Bytes`, which cross as the hex strings alloy's Serde writes. An application
 # that holds them in models turns on alloy's own `serde` feature.
@@ -51,7 +52,7 @@ arrow-59 = [
 ]
 # What both turn on; enable one of them instead. A record batch stream is a
 # `Stream`, and an async reader pulls a blocking one on Tokio's blocking threads.
-arrow-api = ["dep:futures-core", "tokio/rt"]
+arrow-api = ["dep:futures-core", "dep:tokio", "tokio/rt"]
 
 [dependencies]
 bimetal-ir.workspace = true
@@ -74,9 +75,9 @@ futures-core = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-# `sync`: the lock that resource wrappers share with async calls. The `python`
-# and `node` features add the runtime that async exports run on.
-tokio.workspace = true
+# Enabled by `python`, `node`, and `arrow-api` for native async runtimes,
+# resource locks, and Arrow IPC channels.
+tokio = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Collects the exports for discovery and the native hosts. The Wasm module
@@ -94,6 +95,7 @@ pythonize = { workspace = true, optional = true }
 napi-sys.workspace = true
 pyo3.workspace = true
 pythonize.workspace = true
+tokio.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Without `wasmbind`, `Utc::now()` panics on `wasm32-unknown-unknown`.
@@ -108,6 +110,7 @@ wasm-bindgen-futures.workspace = true
 [dev-dependencies]
 # The alloy fixtures derive Serde, which alloy writes as hex strings.
 alloy-primitives = { workspace = true, features = ["serde"] }
+tokio.workspace = true
 
 [lints]
 workspace = true
