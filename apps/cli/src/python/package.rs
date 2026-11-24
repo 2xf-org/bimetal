@@ -11,7 +11,7 @@ use bimetal_ir::Namespace;
 use bimetal_ir::discovery;
 use bimetal_ir::python_names::{NATIVE_MODULE, PANIC_EXCEPTION, RUNTIME_MODULE};
 
-use crate::contract::{self, Contract, NamespaceItems};
+use crate::contract::{Contract, NamespaceItems, SchemaTable};
 use crate::literal;
 use crate::output;
 
@@ -31,7 +31,7 @@ const RUNTIME_SOURCE: &str = include_str!("runtime.py");
 /// The declarations of the runtime's tables, which [`python_runtime`] gives
 /// their values.
 const CONTRACT_DECLARATION: &str = "CONTRACT: str\n";
-const SCHEMAS_DECLARATION: &str = "NATIVE_SCHEMAS: dict[str, typing.Any]";
+const SCHEMAS_DECLARATION: &str = "NATIVE_SCHEMAS: list[typing.Any]";
 const ERRORS_DECLARATION: &str = "NATIVE_ERRORS: dict[str, tuple[str, str]]";
 
 /// The extension's stub. Its exports are wrapper targets whose names are
@@ -77,12 +77,9 @@ pub(crate) fn emit(
         &package.join(format!("{NATIVE_MODULE}.pyi")),
         &generated_python(&python_native_stub()),
     )?;
-    output::write(
-        &package.join(format!("{RUNTIME_MODULE}.py")),
-        &generated_python(&python_runtime(contract, python_package, contract_hash)),
-    )?;
     output::write(&package.join("py.typed"), &output::banner("#", ""))?;
 
+    let schemas = RefCell::new(SchemaTable::default());
     for (namespace, items) in contract.namespaces() {
         let namespace_package = namespace
             .python_segments()
@@ -90,9 +87,15 @@ pub(crate) fn emit(
             .fold(package.clone(), |path, segment| path.join(segment));
         // Each module imports what its own code uses.
         let (models_imports, api_imports) = (RefCell::default(), RefCell::default());
-        let models_context =
-            PythonContext::new(contract, python_package, namespace, &models_imports);
-        let api_context = PythonContext::new(contract, python_package, namespace, &api_imports);
+        let models_context = PythonContext::new(
+            contract,
+            python_package,
+            namespace,
+            &models_imports,
+            &schemas,
+        );
+        let api_context =
+            PythonContext::new(contract, python_package, namespace, &api_imports, &schemas);
         let exports = python_export_names(items, contract, namespace);
         output::write(
             &namespace_package.join(format!("{MODELS_MODULE}.py")),
@@ -111,29 +114,32 @@ pub(crate) fn emit(
             &generated_python(&python_init(&module, &exports)),
         )?;
     }
+    output::write(
+        &package.join(format!("{RUNTIME_MODULE}.py")),
+        &generated_python(&python_runtime(
+            contract,
+            python_package,
+            contract_hash,
+            &schemas.borrow(),
+        )),
+    )?;
     Ok(())
 }
 
 /// Render the runtime: [`RUNTIME_SOURCE`] with the hash of the contract that
-/// the extension must match, the schema of each model, and the module and
-/// class of each error, inside `python_package`.
+/// the extension must match, the schemas that `restore_host` uses, and the
+/// module and class of each error, inside `python_package`.
 #[must_use]
-fn python_runtime(contract: &Contract<'_>, python_package: &str, contract_hash: &str) -> String {
-    let schemas: Vec<String> = contract
-        .manifest
-        .types
+fn python_runtime(
+    contract: &Contract<'_>,
+    python_package: &str,
+    contract_hash: &str,
+    schemas: &SchemaTable,
+) -> String {
+    let schema_entries: Vec<String> = schemas
+        .entries()
         .iter()
-        .map(|definition| {
-            render::python_json_lines(
-                &format!(
-                    "    {}: ",
-                    literal::quoted(&definition.identity().to_string())
-                ),
-                &contract::named_spec(definition),
-                "",
-                "    ",
-            )
-        })
+        .map(|schema| render::python_json_lines("    ", schema, "", "    "))
         .collect();
     let errors: Vec<String> = contract
         .manifest
@@ -153,7 +159,18 @@ fn python_runtime(contract: &Contract<'_>, python_package: &str, contract_hash: 
             )
         })
         .collect();
-    let table = |declaration: &str, entries: &[String]| {
+    let list_table = |declaration: &str, entries: &[String]| {
+        if entries.is_empty() {
+            return format!("{declaration} = []");
+        }
+        let mut table = format!("{declaration} = [\n");
+        for entry in entries {
+            let _ = writeln!(table, "{entry},");
+        }
+        table.push(']');
+        table
+    };
+    let dict_table = |declaration: &str, entries: &[String]| {
         if entries.is_empty() {
             return format!("{declaration} = {{}}");
         }
@@ -182,10 +199,14 @@ fn python_runtime(contract: &Contract<'_>, python_package: &str, contract_hash: 
         )
         .replacen(
             SCHEMAS_DECLARATION,
-            &table(SCHEMAS_DECLARATION, &schemas),
+            &list_table(SCHEMAS_DECLARATION, &schema_entries),
             1,
         )
-        .replacen(ERRORS_DECLARATION, &table(ERRORS_DECLARATION, &errors), 1)
+        .replacen(
+            ERRORS_DECLARATION,
+            &dict_table(ERRORS_DECLARATION, &errors),
+            1,
+        )
 }
 
 /// Prefix generated Python source with the ownership warning.
@@ -313,6 +334,10 @@ fn python_export_names(
 
 #[cfg(test)]
 mod tests {
+    use bimetal_ir::{BufferElement, TypeRef};
+
+    use crate::fixtures;
+
     use super::*;
 
     #[test]
@@ -396,5 +421,50 @@ mod tests {
             python_init("app.stats", &empty),
             "\"\"\"\nThe public API of `app.stats`.\n\"\"\"\n\n__all__: list[str] = []\n"
         );
+    }
+
+    #[test]
+    fn python_runtime_emits_only_recorded_schemas() {
+        let mut manifest = fixtures::manifest();
+        let plain = fixtures::model(
+            "Plain",
+            vec![fixtures::typed_field(
+                "count",
+                TypeRef::Int {
+                    bits: 32,
+                    signed: true,
+                },
+            )],
+        );
+        let wave = fixtures::model(
+            "Wave",
+            vec![fixtures::typed_field(
+                "samples",
+                TypeRef::Buffer {
+                    element: BufferElement::F32,
+                },
+            )],
+        );
+        let wave_id = wave.identity();
+        manifest.types = vec![plain, wave];
+        let contract = fixtures::contract(&manifest);
+        let empty = SchemaTable::default();
+        let runtime_empty = python_runtime(&contract, "acme", "deadbeef", &empty);
+        assert!(
+            runtime_empty.contains("NATIVE_SCHEMAS: list[typing.Any] = []"),
+            "{runtime_empty}"
+        );
+
+        let mut recorded = SchemaTable::default();
+        let spec = recorded.spec(&TypeRef::Named { identity: wave_id }, &contract);
+        assert_eq!(spec, serde_json::json!(["named", 0]));
+        let runtime_with_wave = python_runtime(&contract, "acme", "deadbeef", &recorded);
+        assert!(
+            runtime_with_wave.contains(
+                "NATIVE_SCHEMAS: list[typing.Any] = [\n    [\"struct\", {\"samples\": [\"buffer\", \"float32\"]}],\n]"
+            ),
+            "{runtime_with_wave}"
+        );
+        assert!(!runtime_with_wave.contains("\"count\""));
     }
 }

@@ -4,27 +4,27 @@ import { callbackFromHost as $callbackFromHost, checkArgument as $checkArgument,
 import * as api_geometry from "./geometry/api.js";
 
 const $spec0 = ["tuple", [null, null]];
-const $spec1 = ["tuple", [["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"], ["named", "showcase-geometry::showcase_geometry::Point"]]];
-const $spec2 = ["list", ["named", "showcase::showcase::Record"]];
+const $spec1 = ["tuple", [["named", 0], ["named", 0], ["named", 0], ["named", 0]]];
+const $spec2 = ["list", ["named", 1]];
 const $spec3 = ["map", null];
-const $spec4 = ["named", "showcase::showcase::Event"];
-const $spec5 = ["named", "showcase-geometry::showcase_geometry::Point"];
-const $spec6 = ["named", "showcase::showcase::Numbers"];
-const $spec7 = ["named", "showcase::showcase::Record"];
-const $spec8 = ["named", "showcase::showcase::Settings"];
+const $spec4 = ["named", 2];
+const $spec5 = ["named", 0];
+const $spec6 = ["named", 3];
+const $spec7 = ["named", 1];
+const $spec8 = ["named", 4];
 const $spec9 = ["bytes"];
-const $spec10 = ["list", ["named", "showcase::showcase::Stroke"]];
-const $spec11 = ["named", "showcase::showcase::Stroke"];
+const $spec10 = ["list", ["named", 6]];
+const $spec11 = ["named", 6];
 const $spec12 = ["duration"];
-const $spec13 = ["named", "showcase::showcase::Holiday"];
-const $spec14 = ["list", ["named", "showcase-geometry::showcase_geometry::Point"]];
+const $spec13 = ["named", 7];
+const $spec14 = ["list", ["named", 0]];
 const $spec15 = ["buffer", "int64"];
 const $spec16 = ["buffer", "float32"];
 const $spec17 = ["list", ["duration"]];
 const $spec18 = ["date"];
 const $spec19 = ["json"];
-const $spec20 = ["list", ["named", "showcase::showcase::Entry"]];
-const $spec21 = ["named", "showcase::showcase::Statement"];
+const $spec20 = ["list", ["named", 8]];
+const $spec21 = ["named", 9];
 const $spec22 = [null];
 const $spec23 = null;
 const $spec24 = ["list", null];
@@ -351,6 +351,7 @@ export class Ledger {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -411,6 +412,7 @@ export class Mailbox {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -429,7 +431,7 @@ export const CONTRACT_VERSION = 3;
 
 export const DEFAULT_LABEL = "untitled";
 
-export const FIRST_STROKE = $restoreHost({move_to: {x: 0.0, y: 0.0}}, ["named", "showcase::showcase::Stroke"]);
+export const FIRST_STROKE = $restoreHost({move_to: {x: 0.0, y: 0.0}}, ["named", 6]);
 
 export const NO_STROKES = $restoreHost([], ["tuple", []]);
 

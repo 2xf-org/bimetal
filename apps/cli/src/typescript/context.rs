@@ -11,9 +11,10 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::path::PathBuf;
 
-use bimetal_ir::Namespace;
+use bimetal_ir::{Namespace, TypeRef};
+use serde_json::Value;
 
-use crate::contract::Contract;
+use crate::contract::{Contract, SchemaTable};
 use crate::dependencies::APACHE_ARROW;
 use crate::literal;
 use crate::paths;
@@ -60,17 +61,30 @@ pub(super) struct TypeScriptContext<'emit> {
     pub(super) namespace: &'emit Namespace,
     /// What the module has imported so far.
     imports: RefCell<Imports>,
+    /// The package-wide schema table for `runtime.js`.
+    schemas: &'emit RefCell<SchemaTable>,
 }
 
 impl<'emit> TypeScriptContext<'emit> {
     /// Create the context of one module, which has imported nothing yet.
     #[must_use]
-    pub(super) fn new(contract: &'emit Contract<'emit>, namespace: &'emit Namespace) -> Self {
+    pub(super) fn new(
+        contract: &'emit Contract<'emit>,
+        namespace: &'emit Namespace,
+        schemas: &'emit RefCell<SchemaTable>,
+    ) -> Self {
         Self {
             contract,
             namespace,
             imports: RefCell::default(),
+            schemas,
         }
+    }
+
+    /// Record and return the compact schema of `reference`.
+    #[must_use]
+    pub(super) fn schema(&self, reference: &TypeRef) -> Value {
+        self.schemas.borrow_mut().spec(reference, self.contract)
     }
 
     /// Spell the runtime's export `name`. The bindings that a module
@@ -299,7 +313,8 @@ mod tests {
             contract.namespace(&CargoPackageId::new("test-data-feeds"), "test_data_feeds");
         let data = contract.namespace(&CargoPackageId::new("test-data"), "test_data");
         let root = Namespace::root();
-        let context = TypeScriptContext::new(&contract, &root);
+        let schemas = RefCell::default();
+        let context = TypeScriptContext::new(&contract, &root, &schemas);
 
         assert_eq!(context.models_namespace(&nested), "types_data_feeds$2");
         assert_eq!(context.models_namespace(&hyphenated), "types_data_feeds$3");

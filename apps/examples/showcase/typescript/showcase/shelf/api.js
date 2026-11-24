@@ -84,6 +84,7 @@ export class AsyncSession {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -125,6 +126,7 @@ export class Labeler {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -176,6 +178,7 @@ export class Session {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -439,6 +442,7 @@ export class Shelf {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -482,6 +486,7 @@ export class TitleStream {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 
@@ -521,6 +526,7 @@ export class Titles {
   }
 
   close() {
+    if (!$nativeUsable()) return;
     this.nativeResource.close();
   }
 

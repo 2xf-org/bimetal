@@ -338,10 +338,17 @@ pub(super) fn return_plan(
                     result.clone(),
                     quote!(Ok(#convert::bytes_to_host(#context #reference))),
                 ),
-                (DirectType::Buffer { element, .. }, HostValue::Object { result, .. }) => (
-                    result.clone(),
-                    quote!(Ok(#convert::buffer_to_host::<#element>(#context #reference))),
-                ),
+                (DirectType::Buffer { element, .. }, HostValue::Object { result, .. }) => {
+                    let call = match backend {
+                        HostBackend::Python => {
+                            quote!(#convert::buffer_to_host::<#element>(#context #reference))
+                        }
+                        HostBackend::Node | HostBackend::Wasm => {
+                            quote!(Ok(#convert::buffer_to_host::<#element>(#context #reference)))
+                        }
+                    };
+                    (result.clone(), call)
+                }
                 // wasm-bindgen returns a vector.
                 (direct, _) => {
                     let element = direct.element().expect("Arrow values return above");

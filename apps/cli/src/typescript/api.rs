@@ -92,7 +92,7 @@ pub(super) fn typescript_api(
             render::type_ref(&constant.ty, context)?
         );
         let value = render::typescript_value(&constant.value, &constant.ty, context.contract)?;
-        let spec = contract::spec(&constant.ty);
+        let spec = context.schema(&constant.ty);
         let value = if spec.is_null() {
             value
         } else {
@@ -440,10 +440,10 @@ fn emit_typescript_resource(
         "  ",
     );
     declarations.push_str("  [Symbol.asyncDispose](): Promise<void>;\n}\n");
-    // Closing skips `checkNative`, so it does nothing once a trap aborts the
-    // module, and a `using` block reports the trap alone. A closed resource
-    // skips the exit method, and so does an aborted module, where it would
-    // throw over the trap.
+    // Closing checks `nativeUsable` instead of `checkNative`, so it does
+    // nothing once a trap aborts the module, and a `using` block reports the
+    // trap alone. A closed resource skips the exit method, and so does an
+    // aborted module, where it would throw over the trap.
     let usable = context.runtime("nativeUsable");
     let exiting = |awaited: &str| match exit {
         Some(method) => format!(
@@ -463,7 +463,7 @@ fn emit_typescript_resource(
     let async_dispose = exiting(if needs_async { "await " } else { "" });
     let _ = writeln!(
         module.javascript,
-        "\n  close() {{\n    this.{NATIVE_RESOURCE}.close();\n  }}\n\n  get closed() {{\n    return !{usable}() || this.{NATIVE_RESOURCE}.closed();\n  }}\n}}\nif (globalThis.Symbol.dispose) {name}.prototype[globalThis.Symbol.dispose] = function () {{\n{dispose}}};\nif (globalThis.Symbol.asyncDispose) {name}.prototype[globalThis.Symbol.asyncDispose] = async function () {{\n{async_dispose}}};"
+        "\n  close() {{\n    if (!{usable}()) return;\n    this.{NATIVE_RESOURCE}.close();\n  }}\n\n  get closed() {{\n    return !{usable}() || this.{NATIVE_RESOURCE}.closed();\n  }}\n}}\nif (globalThis.Symbol.dispose) {name}.prototype[globalThis.Symbol.dispose] = function () {{\n{dispose}}};\nif (globalThis.Symbol.asyncDispose) {name}.prototype[globalThis.Symbol.asyncDispose] = async function () {{\n{async_dispose}}};"
     );
     Ok(())
 }
@@ -720,7 +720,7 @@ fn host_arguments(params: &[ParamDef], label: &str, context: &TypeScriptContext<
                 reference => format!(
                     "{}({name}, {})",
                     context.runtime("prepareHost"),
-                    context.spec(render::spec_literal(&contract::spec(reference)))
+                    context.spec(render::spec_literal(&context.schema(reference)))
                 ),
             }
         })
@@ -757,24 +757,6 @@ fn reads_directly(reference: &TypeRef, contract: &Contract<'_>) -> bool {
     })
 }
 
-/// Whether a return value of `reference` is already a plain primitive (or an
-/// alias / string enum of one) so `restoreHost` would return it unchanged.
-fn restores_directly(reference: &TypeRef, contract: &Contract<'_>) -> bool {
-    match reference {
-        TypeRef::Option { item } => restores_directly(item, contract),
-        TypeRef::Named { identity } => {
-            contract
-                .type_definition(identity)
-                .is_ok_and(|definition| match &definition.shape {
-                    TypeShape::StringEnum { .. } => true,
-                    TypeShape::Alias { target } => restores_directly(target, contract),
-                    _ => false,
-                })
-        }
-        reference => contract::spec(reference).is_null(),
-    }
-}
-
 /// Render the argument of a parameter that crosses as a host object: a
 /// resource's native object, or the function that wraps a callback. Its errors
 /// name `label`, the callable as [`Callable`] writes it.
@@ -802,14 +784,14 @@ fn host_object_argument(
                 .expect("a callback's signature ends with its return");
             let params = params
                 .iter()
-                .map(|param| render::spec_literal(&contract::spec(param)))
+                .map(|param| render::spec_literal(&context.schema(param)))
                 .collect::<Vec<_>>()
                 .join(", ");
             Some(format!(
                 "{}({name}, {}, {}, {})",
                 context.runtime("callbackFromHost"),
                 context.spec(format!("[{params}]")),
-                context.spec(render::spec_literal(&contract::spec(returns))),
+                context.spec(render::spec_literal(&context.schema(returns))),
                 literal::quoted(&argument_label)
             ))
         }
@@ -857,13 +839,13 @@ fn host_result(call: &str, returns: &TypeRef, context: &TypeScriptContext<'_>) -
             arrow_result("$native", *value, context)
         );
     }
-    let spec = contract::spec(returns);
+    let spec = context.schema(returns);
     // wasm-bindgen returns an empty `Option` of bytes or a buffer as `undefined`.
     let direct_option = matches!(returns, TypeRef::Option { item } if matches!(
         item.as_ref(),
         TypeRef::Bytes | TypeRef::FixedBytes { .. } | TypeRef::Buffer { .. }
     ));
-    if restores_directly(returns, context.contract) {
+    if spec.is_null() {
         call.to_owned()
     } else if direct_option {
         format!(
@@ -944,6 +926,8 @@ fn argument_kind(reference: &TypeRef, contract: &Contract<'_>) -> Result<Option<
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use bimetal_ir::{
         ArrowKind, CargoPackageId, ConstantDef, FunctionDef, Manifest, MethodDef, Namespace,
         TypeDef,
@@ -956,7 +940,8 @@ mod tests {
     fn render_api(manifest: &Manifest) -> Module {
         let namespace = Namespace::root();
         let contract = fixtures::contract(manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
         typescript_api(&contract.namespaces()[&namespace], "Closes.", &context)
             .expect("render the module")
     }

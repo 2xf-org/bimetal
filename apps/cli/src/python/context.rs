@@ -9,10 +9,11 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
-use bimetal_ir::Namespace;
 use bimetal_ir::python_names::{BUILTINS, RUNTIME_MODULE};
+use bimetal_ir::{Namespace, TypeRef};
+use serde_json::Value;
 
-use crate::contract::Contract;
+use crate::contract::{Contract, SchemaTable};
 
 use super::package::MODELS_MODULE;
 use super::render;
@@ -66,6 +67,8 @@ pub(super) struct PythonContext<'emit> {
     hidden_builtins: BTreeSet<&'static str>,
     /// What the module's scopes have imported so far.
     imports: &'emit RefCell<Imports>,
+    /// The package-wide schema table for `restore_host`.
+    schemas: &'emit RefCell<SchemaTable>,
 }
 
 impl<'emit> PythonContext<'emit> {
@@ -76,6 +79,7 @@ impl<'emit> PythonContext<'emit> {
         package: &'emit str,
         namespace: &'emit Namespace,
         imports: &'emit RefCell<Imports>,
+        schemas: &'emit RefCell<SchemaTable>,
     ) -> Self {
         Self {
             contract,
@@ -83,7 +87,14 @@ impl<'emit> PythonContext<'emit> {
             namespace,
             hidden_builtins: BTreeSet::new(),
             imports,
+            schemas,
         }
+    }
+
+    /// Record and return the compact schema of `reference` for `restore_host`.
+    #[must_use]
+    pub(super) fn schema(&self, reference: &TypeRef) -> Value {
+        self.schemas.borrow_mut().spec(reference, self.contract)
     }
 
     /// Return this context inside a scope that also defines `names`: the

@@ -258,6 +258,8 @@ fn emit_field(
 mod tests {
     use bimetal_ir::{Manifest, Namespace};
 
+    use std::cell::RefCell;
+
     use super::*;
     use crate::fixtures;
 
@@ -266,7 +268,8 @@ mod tests {
         let manifest = fixtures::manifest();
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
 
         let models =
             typescript_models(&NamespaceItems::default(), &context).expect("render models");
@@ -283,7 +286,8 @@ mod tests {
         };
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
 
         let models =
             typescript_models(&contract.namespaces()[&namespace], &context).expect("render models");
@@ -298,7 +302,8 @@ mod tests {
         let manifest = fixtures::manifest();
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
         let field = |name: &str, ty: TypeRef, literal: ScalarValue| {
             let mut field = fixtures::typed_field(name, ty);
             field.constraints.literal = Some(literal);

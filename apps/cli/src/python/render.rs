@@ -639,7 +639,7 @@ pub(super) fn python_restored(
         format!(
             "{}({value}, {})",
             context.runtime("restore_host"),
-            python_json(&contract::spec(reference))
+            python_json(&context.schema(reference))
         )
     } else {
         value.to_owned()
@@ -855,7 +855,8 @@ mod tests {
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
         let imports = RefCell::default();
-        let context = PythonContext::new(&contract, "test", &namespace, &imports);
+        let schemas = RefCell::default();
+        let context = PythonContext::new(&contract, "test", &namespace, &imports, &schemas);
         let mut callable = CallableDef {
             docs: Some(
                 "Process a value.\n\nRetains ordering.\n\n# Arguments\n\n- `value` - Value to process.\n\n# Returns\n\nThe processed value.\n\n# Errors\n\nReturns `ExampleError` when validation fails.".to_owned(),

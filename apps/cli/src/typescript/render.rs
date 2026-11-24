@@ -206,10 +206,10 @@ pub(crate) fn parameter_name(param: &ParamDef) -> String {
     typescript_names::parameter_name(&param.host_name).into_owned()
 }
 
-/// Render a schema of [`contract::spec`] or [`contract::named_spec`] as
-/// JavaScript. Its objects have no prototype, so the runtime's lookup of a
-/// key such as `constructor` or `toString` finds no spec rather than a
-/// member of `Object.prototype`.
+/// Render a schema of [`crate::contract::SchemaTable`] as JavaScript. Its
+/// objects have no prototype, so the runtime's lookup of a key such as
+/// `constructor` or `toString` finds no spec rather than a member of
+/// `Object.prototype`.
 #[must_use]
 pub(super) fn spec_literal(spec: &Value) -> String {
     match spec {
@@ -230,7 +230,7 @@ pub(super) fn spec_literal(spec: &Value) -> String {
                 .collect();
             format!("{{__proto__: null{entries}}}")
         }
-        // Schemas hold no numbers or Booleans, only strings and nulls.
+        // Schemas hold strings, integer table indices, and nulls.
         other => other.to_string(),
     }
 }
@@ -678,7 +678,8 @@ mod tests {
         manifest.errors.push(fixtures::error("ExampleError"));
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = std::cell::RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
         let mut callable = CallableDef {
             docs: Some(
                 "Process a value.\n\nRetains ordering.\n\n# Arguments\n\n- `value` - Value to process.\n\n# Returns\n\nThe processed value.\n\n# Errors\n\nReturns `ExampleError` when validation fails.".to_owned(),
@@ -739,9 +740,15 @@ mod tests {
             },
             ..fixtures::model("Event", Vec::new())
         };
+        let identity = definition.identity();
+        let mut manifest = fixtures::manifest();
+        manifest.types.push(definition);
+        let contract = fixtures::contract(&manifest);
+        let mut schemas = crate::contract::SchemaTable::default();
+        let _ = schemas.spec(&TypeRef::Named { identity }, &contract);
 
         assert_eq!(
-            spec_literal(&contract::named_spec(&definition)),
+            spec_literal(&schemas.entries()[0]),
             "[\"tagged\", \"kind\", {__proto__: null, constructor: {__proto__: null, toString: [\"bytes\"]}}]"
         );
     }
@@ -754,7 +761,8 @@ mod tests {
             .push(fixtures::function("load_value", "loadValue", Vec::new()));
         let namespace = Namespace::root();
         let contract = fixtures::contract(&manifest);
-        let context = TypeScriptContext::new(&contract, &namespace);
+        let schemas = std::cell::RefCell::default();
+        let context = TypeScriptContext::new(&contract, &namespace, &schemas);
 
         assert_eq!(
             typescript_documentation_text("Call [`load_value`] next.", &context),

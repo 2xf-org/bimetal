@@ -31,12 +31,7 @@ except ImportError as error:
 # module and name of each error's class by the error's key, which the extension
 # raises a typed error as.
 CONTRACT = "9181a75318334248"
-NATIVE_SCHEMAS: dict[str, typing.Any] = {
-    "bank::bank::Opening": ["struct", {"balance": None, "owner": None}],
-    "bank::bank::Receipt": ["struct", {"id": None, "transfer": ["named", "bank::bank::Transfer"]}],
-    "bank::bank::Statement": ["struct", {"balances": ["map", None], "transfers": None}],
-    "bank::bank::Transfer": ["struct", {"amount": None, "recipient": None, "sender": None}],
-}
+NATIVE_SCHEMAS: list[typing.Any] = []
 NATIVE_ERRORS: dict[str, tuple[str, str]] = {
     "bank::bank::AccountError": ("bank.api", "AccountError"),
     "bank::bank::OpenError": ("bank.api", "OpenError"),
@@ -179,6 +174,14 @@ JsonValue: typing.TypeAlias = typing.Annotated[
 # ---------------------------------------------------------------------------
 
 
+@functools.cache
+def numpy_frombuffer() -> typing.Any:
+    """
+    Return `numpy.frombuffer`, imported once on first use.
+    """
+    return importlib.import_module("numpy").frombuffer
+
+
 def restore_host(value: typing.Any, spec: typing.Any) -> typing.Any:
     """
     Return a native result with its bytes and buffers in their Python types.
@@ -196,7 +199,7 @@ def restore_host(value: typing.Any, spec: typing.Any) -> typing.Any:
     if kind == "bytes":
         return bytes(value)
     if kind == "buffer":
-        return importlib.import_module("numpy").frombuffer(value, dtype=spec[1])
+        return numpy_frombuffer()(value, dtype=spec[1])
     if kind == "list":
         return [restore_host(item, spec[1]) for item in value]
     if kind == "map":
@@ -204,18 +207,21 @@ def restore_host(value: typing.Any, spec: typing.Any) -> typing.Any:
     if kind == "tuple":
         return tuple(restore_host(item, item_spec) for item, item_spec in zip(value, spec[1]))
     if kind == "named":
-        return restore_host(value, NATIVE_SCHEMAS.get(spec[1]))
-    if kind == "alias":
-        return restore_host(value, spec[1])
+        return restore_host(value, NATIVE_SCHEMAS[spec[1]])
     if kind == "struct":
-        return {key: restore_host(item, spec[1].get(key)) for key, item in value.items()}
+        fields = spec[1] if len(spec) > 1 else None
+        return value if fields is None else {key: restore_host(item, fields.get(key)) for key, item in value.items()}
     if kind == "tagged":
-        fields = spec[2].get(value.get(spec[1]), {})
-        return {key: restore_host(item, fields.get(key)) for key, item in value.items()}
+        variants = spec[2] if len(spec) > 2 else None
+        fields = variants.get(value.get(spec[1])) if variants is not None else None
+        return value if fields is None else {key: restore_host(item, fields.get(key)) for key, item in value.items()}
     # A variant without data is its name, which crosses as it is.
     if kind == "external" and isinstance(value, dict):
         entries: dict[str, typing.Any] = value  # pyright: ignore[reportUnknownVariableType]
-        return {name: restore_host(item, spec[1].get(name)) for name, item in entries.items()}
+        variants = spec[1] if len(spec) > 1 else None
+        if variants is None:
+            return entries
+        return {name: restore_host(item, variants.get(name)) for name, item in entries.items()}
     # Pydantic validates the other kinds, such as `json`, as they arrive.
     return value
 

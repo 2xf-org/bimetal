@@ -554,37 +554,163 @@ pub(super) fn declared_variants(definition: &TypeDef) -> Vec<&str> {
     }
 }
 
-/// Return the schema with which both runtimes restore a value of
-/// `reference`, and the TypeScript runtime prepares one: `null` for a value
-/// that crosses as it is, and otherwise `[kind, ...]`. A `named` schema
-/// names a model by its [`DefinitionId`], whose own schema, [`named_spec`],
-/// each runtime holds once.
-#[must_use]
-pub(super) fn spec(reference: &TypeRef) -> Value {
-    match reference {
-        TypeRef::Option { item } => spec(item),
-        TypeRef::List { item } => json!(["list", spec(item)]),
-        TypeRef::Map { value } => json!(["map", spec(value)]),
-        TypeRef::Tuple { items } => {
-            let items: Vec<Value> = items.iter().map(spec).collect();
-            json!(["tuple", items])
+/// The schemas that one generated host package's runtime keeps in its indexed
+/// table (`nativeSchemas` in TypeScript, `NATIVE_SCHEMAS` in Python), recorded
+/// on first use in deterministic order.
+///
+/// Only models that a wrapper or constant actually reaches take a slot. String
+/// enums and transparent aliases resolve in place without taking a slot, and
+/// fields or variants whose schema is `null` are omitted.
+#[derive(Default)]
+pub(crate) struct SchemaTable {
+    indices: BTreeMap<DefinitionId, usize>,
+    entries: Vec<Value>,
+}
+
+impl SchemaTable {
+    /// Return the schema of `reference`, recording every named model it
+    /// reaches.
+    #[must_use]
+    pub(crate) fn spec(&mut self, reference: &TypeRef, contract: &Contract<'_>) -> Value {
+        match reference {
+            TypeRef::Option { item } => self.spec(item, contract),
+            TypeRef::List { item } => json!(["list", self.spec(item, contract)]),
+            TypeRef::Map { value } => json!(["map", self.spec(value, contract)]),
+            TypeRef::Tuple { items } => {
+                let items: Vec<Value> =
+                    items.iter().map(|item| self.spec(item, contract)).collect();
+                json!(["tuple", items])
+            }
+            TypeRef::Named { identity } => self.named(identity, contract),
+            TypeRef::Bytes | TypeRef::FixedBytes { .. } => json!(["bytes"]),
+            TypeRef::Duration => json!(["duration"]),
+            TypeRef::Buffer { element } => json!(["buffer", element.numpy_name()]),
+            TypeRef::Json => json!(["json"]),
+            // A date-time argument may be a JavaScript `Date`.
+            TypeRef::DateTime => json!(["date"]),
+            TypeRef::Unit
+            | TypeRef::Bool
+            | TypeRef::Int { .. }
+            | TypeRef::Float { .. }
+            | TypeRef::String
+            | TypeRef::Date
+            | TypeRef::Arrow { .. }
+            | TypeRef::Resource { .. }
+            | TypeRef::Callback { .. } => Value::Null,
         }
-        TypeRef::Named { identity } => json!(["named", identity.to_string()]),
-        TypeRef::Bytes | TypeRef::FixedBytes { .. } => json!(["bytes"]),
-        TypeRef::Duration => json!(["duration"]),
-        TypeRef::Buffer { element } => json!(["buffer", element.numpy_name()]),
-        TypeRef::Json => json!(["json"]),
-        // A date-time argument may be a JavaScript `Date`.
-        TypeRef::DateTime => json!(["date"]),
-        TypeRef::Unit
-        | TypeRef::Bool
-        | TypeRef::Int { .. }
-        | TypeRef::Float { .. }
-        | TypeRef::String
-        | TypeRef::Date
-        | TypeRef::Arrow { .. }
-        | TypeRef::Resource { .. }
-        | TypeRef::Callback { .. } => Value::Null,
+    }
+
+    /// Return the recorded model schemas in index order.
+    #[must_use]
+    pub(crate) fn entries(&self) -> &[Value] {
+        &self.entries
+    }
+
+    /// Return the schema of the named type `identity`, recording a slot for
+    /// models and enums with data.
+    fn named(&mut self, identity: &DefinitionId, contract: &Contract<'_>) -> Value {
+        let Ok(definition) = contract.type_definition(identity) else {
+            return Value::Null;
+        };
+        match &definition.shape {
+            TypeShape::StringEnum { .. } => return Value::Null,
+            TypeShape::Alias { target } => return self.spec(target, contract),
+            _ => {}
+        }
+        if let Some(&index) = self.indices.get(identity) {
+            return json!(["named", index]);
+        }
+        // Reserve the slot before recursing so self- and mutually-recursive
+        // models resolve to this index.
+        let index = self.entries.len();
+        self.indices.insert(identity.clone(), index);
+        self.entries.push(Value::Null);
+        let schema = self.named_schema(definition, contract);
+        self.entries[index] = schema;
+        json!(["named", index])
+    }
+
+    /// Build the schema of `definition`, omitting fields and variants whose
+    /// own schema is `null`.
+    ///
+    /// A struct's schema, a struct variant's, and a tagged enum's by variant
+    /// also list the `Option` fields marked `required`: Serde reads a missing
+    /// `Option` as `None`, so the TypeScript runtime checks that they are
+    /// present.
+    fn named_schema(&mut self, definition: &TypeDef, contract: &Contract<'_>) -> Value {
+        match &definition.shape {
+            TypeShape::Struct { fields } => self.struct_schema(fields, contract),
+            TypeShape::TaggedEnum { tag, variants } => {
+                let mut variant_fields = serde_json::Map::new();
+                let mut required = serde_json::Map::new();
+                for variant in variants {
+                    let fields = self.field_specs(&variant.fields, contract);
+                    if !fields.is_empty() {
+                        variant_fields.insert(variant.wire_name.clone(), Value::Object(fields));
+                    }
+                    let options = required_options(&variant.fields);
+                    if !options.is_empty() {
+                        required.insert(variant.wire_name.clone(), json!(options));
+                    }
+                }
+                match (variant_fields.is_empty(), required.is_empty()) {
+                    (true, true) => json!(["tagged"]),
+                    (false, true) => json!(["tagged", tag, Value::Object(variant_fields)]),
+                    (true, false) => json!(["tagged", tag, Value::Null, Value::Object(required)]),
+                    (false, false) => json!([
+                        "tagged",
+                        tag,
+                        Value::Object(variant_fields),
+                        Value::Object(required)
+                    ]),
+                }
+            }
+            TypeShape::ExternalEnum { variants } => {
+                let mut payloads = serde_json::Map::new();
+                for variant in variants {
+                    let payload = match &variant.payload {
+                        VariantPayload::Unit => Value::Null,
+                        VariantPayload::Value { ty } => self.spec(ty, contract),
+                        VariantPayload::Fields { fields } => self.struct_schema(fields, contract),
+                    };
+                    if !payload.is_null() {
+                        payloads.insert(variant.wire_name.clone(), payload);
+                    }
+                }
+                if payloads.is_empty() {
+                    json!(["external"])
+                } else {
+                    json!(["external", Value::Object(payloads)])
+                }
+            }
+            TypeShape::Alias { .. } | TypeShape::StringEnum { .. } => Value::Null,
+        }
+    }
+
+    fn field_specs(
+        &mut self,
+        fields: &[FieldDef],
+        contract: &Contract<'_>,
+    ) -> serde_json::Map<String, Value> {
+        let mut map = serde_json::Map::new();
+        for field in fields {
+            let schema = self.spec(&field.ty, contract);
+            if !schema.is_null() {
+                map.insert(field.wire_name.clone(), schema);
+            }
+        }
+        map
+    }
+
+    fn struct_schema(&mut self, fields: &[FieldDef], contract: &Contract<'_>) -> Value {
+        let map = self.field_specs(fields, contract);
+        let required = required_options(fields);
+        match (map.is_empty(), required.is_empty()) {
+            (true, true) => json!(["struct"]),
+            (false, true) => json!(["struct", Value::Object(map)]),
+            (true, false) => json!(["struct", Value::Null, required]),
+            (false, false) => json!(["struct", Value::Object(map), required]),
+        }
     }
 }
 
@@ -608,68 +734,6 @@ pub(super) fn omissible_params(params: &[ParamDef]) -> Vec<bool> {
 #[must_use]
 pub(super) fn property_name(setter: &str) -> &str {
     setter.strip_prefix("set_").unwrap_or(setter)
-}
-
-/// Return the schema of a model: its fields' schemas by wire name, by
-/// variant for a tagged enum, the schema of what each variant of an
-/// externally tagged enum carries, or the schema of an alias's target.
-///
-/// A struct's schema, a struct variant's, and a tagged enum's by variant also
-/// list the `Option` fields marked `required`: Serde reads a missing `Option`
-/// as `None`, so the TypeScript runtime checks that they are present.
-#[must_use]
-pub(super) fn named_spec(definition: &TypeDef) -> Value {
-    let fields = |fields: &[FieldDef]| -> Value {
-        fields
-            .iter()
-            .map(|field| (field.wire_name.clone(), spec(&field.ty)))
-            .collect()
-    };
-    let structure = |members: &[FieldDef]| -> Value {
-        let required = required_options(members);
-        if required.is_empty() {
-            json!(["struct", fields(members)])
-        } else {
-            json!(["struct", fields(members), required])
-        }
-    };
-    match &definition.shape {
-        TypeShape::Struct { fields: members } => structure(members),
-        TypeShape::TaggedEnum { tag, variants } => {
-            let required: serde_json::Map<String, Value> = variants
-                .iter()
-                .filter_map(|variant| {
-                    let required = required_options(&variant.fields);
-                    (!required.is_empty()).then(|| (variant.wire_name.clone(), json!(required)))
-                })
-                .collect();
-            let variants: Value = variants
-                .iter()
-                .map(|variant| (variant.wire_name.clone(), fields(&variant.fields)))
-                .collect();
-            if required.is_empty() {
-                json!(["tagged", tag, variants])
-            } else {
-                json!(["tagged", tag, variants, required])
-            }
-        }
-        TypeShape::ExternalEnum { variants } => {
-            let variants: Value = variants
-                .iter()
-                .map(|variant| {
-                    let payload = match &variant.payload {
-                        VariantPayload::Unit => Value::Null,
-                        VariantPayload::Value { ty } => spec(ty),
-                        VariantPayload::Fields { fields: members } => structure(members),
-                    };
-                    (variant.wire_name.clone(), payload)
-                })
-                .collect();
-            json!(["external", variants])
-        }
-        TypeShape::Alias { target } => json!(["alias", spec(target)]),
-        TypeShape::StringEnum { .. } => Value::Null,
-    }
 }
 
 /// Return the wire names of the `Option` fields marked `required`.
@@ -761,14 +825,24 @@ mod tests {
         assert!(contract.namespaces()[&sources].functions.is_empty());
     }
 
+    fn named_schema_of(definition: TypeDef) -> Value {
+        let mut manifest = fixtures::manifest();
+        let identity = definition.identity();
+        manifest.types.push(definition);
+        let contract = fixtures::contract(&manifest);
+        let mut table = SchemaTable::default();
+        assert_eq!(
+            table.spec(&TypeRef::Named { identity }, &contract),
+            json!(["named", 0])
+        );
+        table.entries()[0].clone()
+    }
+
     #[test]
     fn external_enums_restore_what_each_variant_carries() {
         assert_eq!(
-            named_spec(&fixtures::external_enum()),
-            json!([
-                "external",
-                {"empty": null, "label": null, "circle": ["struct", {"radius": null}]}
-            ])
+            named_schema_of(fixtures::external_enum()),
+            json!(["external", {"circle": ["struct"]}])
         );
     }
 
@@ -793,10 +867,7 @@ mod tests {
             fixtures::typed_field("label", TypeRef::String),
         ];
         let review = fixtures::model("Review", fields.clone());
-        assert_eq!(
-            named_spec(&review),
-            json!(["struct", {"note": null, "hint": null, "label": null}, ["note"]])
-        );
+        assert_eq!(named_schema_of(review), json!(["struct", null, ["note"]]));
 
         let variant = |name: &str, fields: Vec<FieldDef>| EnumVariantDef {
             rust_name: name.to_owned(),
@@ -812,17 +883,12 @@ mod tests {
             ..fixtures::model("Event", Vec::new())
         };
         assert_eq!(
-            named_spec(&event),
-            json!([
-                "tagged",
-                "kind",
-                {"noted": {"note": null, "hint": null, "label": null}, "plain": {}},
-                {"noted": ["note"]}
-            ])
+            named_schema_of(event),
+            json!(["tagged", "kind", null, {"noted": ["note"]}])
         );
         assert_eq!(
-            named_spec(&fixtures::model("Plain", vec![optional("hint")])),
-            json!(["struct", {"hint": null}])
+            named_schema_of(fixtures::model("Plain", vec![optional("hint")])),
+            json!(["struct"])
         );
     }
 

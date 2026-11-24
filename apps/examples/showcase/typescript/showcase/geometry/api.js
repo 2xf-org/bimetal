@@ -2,7 +2,7 @@
 
 import { checkArgument as $checkArgument, checkNative as $checkNative, native as $native, nativeError as $nativeError, prepareHost as $prepareHost, restoreHost as $restoreHost } from "../runtime.js";
 
-const $spec0 = ["named", "showcase-geometry::showcase_geometry::Point"];
+const $spec0 = ["named", 0];
 
 export class GeometryError extends globalThis.Error {
   constructor(code, message) {

@@ -409,12 +409,12 @@ export interface InitOutput {
     readonly __wbg___bimetal_resource_showcase_a86681b694c8eb6c_free: (a: number, b: number) => void;
     readonly __bimetal_function_showcase_geometry_454d48bb338e5d76: (a: any, b: any) => [number, number, number];
     readonly __bimetal_function_showcase_geometry_72526f9c125cc1b5: (a: any, b: any) => [number, number, number];
-    readonly __bimetal_resource_showcase_76e8f87db51658db_closed: (a: number) => number;
     readonly __bimetal_resource_showcase_a8bdea895f38cf72_closed: (a: number) => number;
-    readonly __bimetal_resource_showcase_76e8f87db51658db_close: (a: number) => void;
-    readonly __wbg___bimetal_resource_showcase_76e8f87db51658db_free: (a: number, b: number) => void;
     readonly __bimetal_resource_showcase_a8bdea895f38cf72_close: (a: number) => void;
     readonly __wbg___bimetal_resource_showcase_a8bdea895f38cf72_free: (a: number, b: number) => void;
+    readonly __wbg___bimetal_resource_showcase_76e8f87db51658db_free: (a: number, b: number) => void;
+    readonly __bimetal_resource_showcase_76e8f87db51658db_closed: (a: number) => number;
+    readonly __bimetal_resource_showcase_76e8f87db51658db_close: (a: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h01ad6b11ca7c2435: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen__convert__closures_____invoke__h553eeb1212a902f5: (a: number, b: number, c: number, d: number) => void;
     readonly wasm_bindgen__convert__closures_____invoke__h993efb0ef89c6d51: (a: number, b: number, c: any, d: any) => void;

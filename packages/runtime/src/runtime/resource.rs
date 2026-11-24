@@ -3,7 +3,11 @@
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "python", feature = "node")))]
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
+
+#[cfg(any(target_arch = "wasm32", not(any(feature = "python", feature = "node"))))]
+use super::local_lock::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
 use crate::ir::DefinitionId;
 

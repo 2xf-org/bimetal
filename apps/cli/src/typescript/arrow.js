@@ -1,6 +1,6 @@
 import { RecordBatch, Schema, Table, Vector, tableFromIPC, tableToIPC } from "apache-arrow";
 
-import { checkNative, nativePromise } from "./runtime.js";
+import { checkNative, nativePromise, nativeUsable } from "./runtime.js";
 
 // Arrow values cross into Rust as an IPC stream on either backend: a vector
 // as a one-column table, and a schema as a table without batches.
@@ -65,6 +65,7 @@ export class RecordBatchStream {
   close() {
     if (this.#closed) return;
     this.#closed = true;
+    if (!nativeUsable()) return;
     this.#native.close();
   }
 
@@ -143,7 +144,7 @@ async function writeBatches(feed, schema, batches, first) {
       feed.write(arrowToIpc(inSchema(batch, schema), "recordBatch"));
     }
   } catch (error) {
-    feed.fail(error instanceof Error ? error.message : String(error));
+    if (nativeUsable()) feed.fail(error instanceof Error ? error.message : String(error));
   }
   // Rust stopped reading, or the source failed.
   await closeSource(batches);
